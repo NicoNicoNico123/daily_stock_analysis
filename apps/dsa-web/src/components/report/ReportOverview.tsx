@@ -1,4 +1,5 @@
 import type React from 'react';
+import { useMemo } from 'react';
 import type {
   ReportDetails as ReportDetailsType,
   ReportMeta,
@@ -6,6 +7,7 @@ import type {
 } from '../../types/analysis';
 import { Badge, Button, Card, ScoreGauge } from '../common';
 import { formatDateTime } from '../../utils/format';
+import { buildDecisionActionLabelMap, getDecisionActionLabel, getLegacyDecisionActionLabel } from '../../utils/decisionAction';
 import { getMarketPhaseSummaryLabel, getPartialBarLabel } from '../../utils/marketPhase';
 import { getReportText } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
@@ -171,6 +173,7 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
   // 报告区块标签跟随界面语言，而不是报告内容语言（报告正文仍按其内容语言展示）。
   const { language: uiLanguage, t } = useUiLanguage();
   const text = getReportText(uiLanguage);
+  const decisionActionLabels = useMemo(() => buildDecisionActionLabelMap(t), [t]);
   const marketPhaseLabel = getMarketPhaseSummaryLabel(meta.marketPhaseSummary, uiLanguage);
   const partialBarLabel = meta.marketPhaseSummary?.isPartialBar === true
     ? getPartialBarLabel(uiLanguage)
@@ -332,7 +335,12 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
                 <div className="space-y-1.5">
                   <h4 className="home-insight-title text-[11px] font-medium uppercase tracking-[0.16em]">{text.actionAdvice}</h4>
                   <p className="home-insight-body text-sm leading-6">
-                    {summary.operationAdvice || text.noAdvice}
+                    {/* 结构化 action / 可分类的建议文案 → 本地化标签；无法分类时保留后端原文 */}
+                    {(summary.action || summary.actionLabel
+                      ? getDecisionActionLabel(summary.action, summary.actionLabel, null, null, decisionActionLabels)
+                      : getLegacyDecisionActionLabel(summary.operationAdvice, decisionActionLabels))
+                      || summary.operationAdvice
+                      || text.noAdvice}
                   </p>
                 </div>
               </div>
