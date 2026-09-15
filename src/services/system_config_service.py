@@ -2088,6 +2088,15 @@ class SystemConfigService:
             except Exception as exc:  # pragma: no cover - defensive branch
                 logger.error("Configuration reload failed: %s", exc, exc_info=True)
                 warnings.append("Configuration updated but reload failed")
+            # 认证/多用户开关可能被本次写入修改；刷新认证状态
+            # （含 MULTI_USER_ENABLED OFF->ON 切换时的 session secret 轮换）
+            if any(key in ("ADMIN_AUTH_ENABLED", "MULTI_USER_ENABLED") for key, _ in updates):
+                try:
+                    from src.auth import refresh_auth_state
+
+                    refresh_auth_state()
+                except Exception as exc:  # pragma: no cover - defensive branch
+                    logger.warning("Auth state refresh after config update failed: %s", exc)
 
         warnings.extend(
             self._build_explainability_warnings(

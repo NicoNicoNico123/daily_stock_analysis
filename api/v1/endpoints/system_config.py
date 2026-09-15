@@ -7,7 +7,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from api.deps import get_runtime_scheduler_service, get_system_config_service
+from api.deps import get_runtime_scheduler_service, get_system_config_service, require_admin
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.system_config import (
     AgentBackendStatusPreviewRequest,
@@ -45,7 +45,9 @@ from src.services.runtime_scheduler import RuntimeSchedulerService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+# 全部系统配置 / 全局调度端点仅管理员可用（多用户模式）；
+# MULTI_USER_ENABLED 关闭时 require_admin 直通，保持单管理员语义不变。
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 @router.get(

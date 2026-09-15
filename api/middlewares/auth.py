@@ -12,12 +12,13 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.auth import COOKIE_NAME, is_auth_enabled, verify_session
+from src.auth import COOKIE_NAME, is_auth_enabled, resolve_session_user, verify_session
 
 logger = logging.getLogger(__name__)
 
 EXEMPT_PATHS = frozenset({
     "/api/v1/auth/login",
+    "/api/v1/auth/register",
     "/api/v1/auth/status",
     "/api/health",
     "/api/v1/health",
@@ -61,6 +62,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "message": "Login required",
                 },
             )
+
+        # 多用户模式：解析身份供依赖注入使用（resolve 已校验 is_active/token_version）
+        current_user = resolve_session_user(cookie_val)
+        if current_user is not None:
+            request.state.current_user = current_user
 
         return await call_next(request)
 

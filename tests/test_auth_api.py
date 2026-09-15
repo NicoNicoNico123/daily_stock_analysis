@@ -178,11 +178,12 @@ class AuthApiTestCase(unittest.TestCase):
 
         response = asyncio.run(
             auth_endpoint.auth_change_password(
+                self._build_request(),
                 auth_endpoint.ChangePasswordRequest(
                     currentPassword="oldpass6",
                     newPassword="newpass6",
                     newPasswordConfirm="newpass6",
-                )
+                ),
             )
         )
         self.assertIn(response.status_code, (200, 204))
@@ -198,11 +199,12 @@ class AuthApiTestCase(unittest.TestCase):
 
         response = asyncio.run(
             auth_endpoint.auth_change_password(
+                self._build_request(),
                 auth_endpoint.ChangePasswordRequest(
                     currentPassword="wrong",
                     newPassword="new123",
                     newPasswordConfirm="new123",
-                )
+                ),
             )
         )
         self.assertEqual(response.status_code, 400)

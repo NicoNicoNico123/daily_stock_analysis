@@ -16,8 +16,10 @@ from contextlib import contextmanager
 import hashlib
 import json
 import logging
+import os
 import threading
 import time
+from pathlib import Path
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Dict, Any, TYPE_CHECKING, Tuple, Callable, TypeVar, Union
 
@@ -32,6 +34,7 @@ from sqlalchemy import (
     DateTime,
     Integer,
     ForeignKey,
+    LargeBinary,
     Index,
     UniqueConstraint,
     CheckConstraint,
@@ -95,6 +98,105 @@ class DatabaseSchemaMigration(Base):
     version = Column(String(64), primary_key=True)
     description = Column(String(255), nullable=False)
     applied_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+
+
+# 用户角色常量（多用户模式；单管理员模式下 admin 行由 .admin_password_hash 迁移而来）
+USER_ROLE_ADMIN = "admin"
+USER_ROLE_USER = "user"
+
+
+class User(Base):
+    """
+    多用户账号模型（MULTI_USER_ENABLED）。
+
+    - password_salt/password_hash：PBKDF2-HMAC-SHA256（见 src/auth.py，与旧 .admin_password_hash 同格式）
+    - role：'admin' | 'user'
+    - token_version：密码修改/禁用/角色变更时递增，用于让旧签名的会话 cookie 立即失效
+    """
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(64), nullable=False, unique=True, index=True)
+    password_salt = Column(LargeBinary, nullable=False)
+    password_hash = Column(LargeBinary, nullable=False)
+    role = Column(String(16), nullable=False, default=USER_ROLE_USER)
+    is_active = Column(Boolean, nullable=False, default=True)
+    token_version = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    def to_auth_dict(self) -> Dict[str, Any]:
+        """返回不含密码字段的用户信息字典。"""
+        return {
+            "id": self.id,
+            "username": self.username,
+            "role": self.role,
+            "is_active": bool(self.is_active),
+            "token_version": int(self.token_version or 0),
+            "created_at": self.created_at,
+        }
+
+
+class UserStock(Base):
+    """每用户自选股（多用户模式；替代 Web 端对 .env STOCK_LIST 的读写）。
+
+    STOCK_LIST 仍是 CLI / GitHub Actions 的分析来源；多用户开启时仅一次性回填进
+    admin 用户的 user_stocks，此后 Web 端增删只影响该表，不回写 .env。
+    """
+
+    __tablename__ = 'user_stocks'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    stock_code = Column(String(32), nullable=False, index=True)
+    asset_type = Column(String(16))  # 可选：stock/index/etf 等分类标记
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'stock_code', name='uix_user_stock_unique'),
+    )
+
+
+class UserSetting(Base):
+    """每用户设置（多用户模式）：key 取 schedule / notification_channels 等。
+
+    与全局 .env 配置的边界：用户相关、非密钥治理的偏好存这里；
+    LLM Key、数据源 token、全局通知等仍存 .env 且仅 admin 可管理。
+    """
+
+    __tablename__ = 'user_settings'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    key = Column(String(64), nullable=False)
+    value_json = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'key', name='uix_user_setting_unique'),
+    )
+
+
+class UserDailyCounter(Base):
+    """每用户每日用量计数器（多用户配额护栏，服务端强制）。
+
+    原子递增路径：UPDATE ... WHERE count < limit（SQLite 写锁下天然原子），
+    不走 TTL 缓存，避免并发提交绕过配额。
+    """
+
+    __tablename__ = 'user_daily_counters'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    counter_date = Column(String(10), nullable=False, index=True)  # UTC YYYY-MM-DD
+    counter_key = Column(String(32), nullable=False)  # analysis / chat
+    count = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'counter_date', 'counter_key', name='uix_user_daily_counter_unique'),
+    )
 
 
 class StockDaily(Base):
@@ -318,6 +420,8 @@ class ScreeningRun(Base):
     run_id = Column(String(64), nullable=False, unique=True, index=True)
     strategy = Column(String(64), nullable=False, index=True)
     market = Column(String(16), nullable=False, index=True)
+    # 所属用户（多用户模式；NULL = legacy/无主，仅 admin 可见）
+    user_id = Column(String(64), nullable=True, index=True)
     snapshot_source = Column(String(64), index=True)
     snapshot_count = Column(Integer)
     after_filter_count = Column(Integer)
@@ -347,6 +451,9 @@ class AnalysisHistory(Base):
 
     # 关联查询链路
     query_id = Column(String(64), index=True)
+
+    # 所属用户（多用户模式；NULL = legacy/无主/全局运行，仅 admin 可见；大盘复盘行始终全员可见）
+    user_id = Column(String(64), nullable=True, index=True)
 
     # 股票信息
     code = Column(String(10), nullable=False, index=True)
@@ -415,6 +522,8 @@ class BacktestResult(Base):
 
     # 冗余字段，便于按股票筛选
     code = Column(String(10), nullable=False, index=True)
+    # 所属用户（多用户模式；跟随 analysis_history 归属；NULL = legacy/无主，仅 admin 可见）
+    user_id = Column(String(64), nullable=True, index=True)
     analysis_date = Column(Date, index=True)
 
     # 回测参数
@@ -729,6 +838,8 @@ class ConversationMessage(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String(100), index=True, nullable=False)
+    # 所属用户（多用户模式；NULL = legacy/bot 会话；web 会话按用户隔离）
+    user_id = Column(String(64), nullable=True, index=True)
     role = Column(String(20), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now, index=True)
@@ -740,6 +851,8 @@ class ConversationSessionState(Base):
     __tablename__ = 'conversation_session_states'
 
     session_id = Column(String(100), primary_key=True)
+    # 所属用户（多用户模式；NULL = legacy/bot 会话）
+    user_id = Column(String(64), nullable=True, index=True)
     selected_skill_ids_json = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
@@ -752,6 +865,8 @@ class ConversationSummary(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String(100), nullable=False, unique=True, index=True)
+    # 所属用户（多用户模式；NULL = legacy/bot 会话）
+    user_id = Column(String(64), nullable=True, index=True)
     summary = Column(Text, nullable=False)
     covered_message_id = Column(Integer, nullable=False, default=0)
     source_message_count = Column(Integer, nullable=False, default=0)
@@ -795,6 +910,8 @@ class LLMUsage(Base):
     call_type = Column(String(32), nullable=False, index=True)
     model = Column(String(128), nullable=False)
     stock_code = Column(String(16), nullable=True)
+    # 所属用户（多用户模式；NULL = legacy/无主，仅 admin 可见）
+    user_id = Column(String(64), nullable=True, index=True)
     provider = Column(String(64), nullable=True)
     prompt_tokens = Column(Integer, nullable=False, default=0)
     completion_tokens = Column(Integer, nullable=False, default=0)
@@ -938,6 +1055,8 @@ class AlertRuleRecord(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(64), nullable=False)
+    # 所属用户（多用户模式；NULL = legacy/无主规则，仅 admin 可见；legacy_env 规则保持 NULL）
+    user_id = Column(String(64), nullable=True, index=True)
     target_scope = Column(String(32), nullable=False, default='single_symbol', index=True)
     target = Column(String(64), nullable=False, index=True)
     alert_type = Column(String(32), nullable=False, index=True)
@@ -992,6 +1111,8 @@ class AlertNotificationRecord(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     trigger_id = Column(Integer, index=True)
+    # 冗余所属用户（多用户模式；跟随触发规则归属，便于按用户过滤投递记录）
+    user_id = Column(String(64), nullable=True, index=True)
     channel = Column(String(32), nullable=False, index=True)
     attempt = Column(Integer, nullable=False, default=1)
     success = Column(Boolean, nullable=False, default=False, index=True)
@@ -1385,6 +1506,10 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_intelligence_item_scope_values()
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
+            self._ensure_users_bootstrap()
+            self._ensure_user_scope_columns()
+            self._ensure_user_scope_backfill()
+            self._ensure_sqlite_file_permissions()
 
             self._initialized = True
             logger.info(f"数据库初始化完成: {db_url}")
@@ -1428,6 +1553,603 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             raise
         finally:
             session.close()
+
+    def _ensure_users_bootstrap(self) -> None:
+        """把遗留 data/.admin_password_hash 迁入 users 表 admin 行（幂等，best-effort）。
+
+        多用户模式开启后，users 表的 admin 行是管理密码的唯一校验真源；
+        本迁移在任意模式下的 DB 初始化时执行，保证开启开关时 admin 行已就绪。
+        迁移失败不阻断 DB 初始化（认证层会回退读取遗留文件）。
+        """
+        if not self._is_sqlite_engine:
+            return
+        session = self._SessionLocal()
+        try:
+            existing_admin = (
+                session.query(User)
+                .filter(User.role == USER_ROLE_ADMIN)
+                .order_by(User.id.asc())
+                .first()
+            )
+            if existing_admin is not None:
+                return
+
+            from src.auth import _get_credential_path, _parse_password_hash
+
+            cred_path = _get_credential_path()
+            if not cred_path.exists():
+                return
+            parsed = _parse_password_hash(cred_path.read_text(encoding="utf-8").strip())
+            if parsed is None:
+                logger.warning("[users] .admin_password_hash 格式无效，跳过 admin 行迁移")
+                return
+            salt, stored_hash = parsed
+            session.add(
+                User(
+                    username="admin",
+                    password_salt=salt,
+                    password_hash=stored_hash,
+                    role=USER_ROLE_ADMIN,
+                    is_active=True,
+                    token_version=0,
+                )
+            )
+            session.commit()
+            logger.info("[users] 已将遗留 .admin_password_hash 迁移为 users 表 admin 行")
+        except Exception as exc:
+            session.rollback()
+            logger.warning("[users] admin 凭据迁移失败（认证层将回退遗留文件）: %s", exc)
+        finally:
+            session.close()
+
+    # === 用户账号存取（多用户模式） ===
+
+    def get_user_by_username(self, username: str) -> Optional[User]:
+        with self._SessionLocal() as session:
+            return session.query(User).filter(User.username == username).first()
+
+    def get_admin_user(self) -> Optional[User]:
+        """返回第一个 admin 行（多用户模式下管理凭据的校验真源）。"""
+        with self._SessionLocal() as session:
+            return (
+                session.query(User)
+                .filter(User.role == USER_ROLE_ADMIN)
+                .order_by(User.id.asc())
+                .first()
+            )
+
+    def upsert_admin_password(self, password_salt: bytes, password_hash: bytes) -> Optional[int]:
+        """写入/更新 admin 行密码，递增 token_version。返回新 token_version；失败返回 None。"""
+        with self._SessionLocal() as session:
+            try:
+                admin = (
+                    session.query(User)
+                    .filter(User.role == USER_ROLE_ADMIN)
+                    .order_by(User.id.asc())
+                    .first()
+                )
+                if admin is None:
+                    admin = User(
+                        username="admin",
+                        password_salt=password_salt,
+                        password_hash=password_hash,
+                        role=USER_ROLE_ADMIN,
+                        is_active=True,
+                        token_version=0,
+                    )
+                    session.add(admin)
+                else:
+                    admin.password_salt = password_salt
+                    admin.password_hash = password_hash
+                    admin.token_version = int(admin.token_version or 0) + 1
+                    admin.is_active = True
+                session.commit()
+                return int(admin.token_version)
+            except IntegrityError:
+                session.rollback()
+                return None
+
+    # === 用户作用域迁移与回填 ===
+
+    _USER_SCOPE_TABLES = (
+        # (table, index_name)：多用户模式的 user_id 作用域列 + 查询索引
+        ("screening_runs", "ix_screening_runs_user_id"),
+        ("analysis_history", "ix_analysis_history_user_id"),
+        ("backtest_results", "ix_backtest_results_user_id"),
+        ("conversation_messages", "ix_conversation_messages_user_id"),
+        ("conversation_session_states", "ix_conversation_session_states_user_id"),
+        ("conversation_summaries", "ix_conversation_summaries_user_id"),
+        ("llm_usage", "ix_llm_usage_user_id"),
+        ("alert_rules", "ix_alert_rules_user_id"),
+        ("alert_notifications", "ix_alert_notifications_user_id"),
+    )
+
+    _USER_SCOPE_BACKFILL_MARKER = "2026-09-14-user-scope-backfill"
+
+    def _ensure_user_scope_columns(self) -> None:
+        """为存量表补充 nullable user_id 列与索引（幂等，沿用遥测列迁移模式）。"""
+        if not self._is_sqlite_engine:
+            return
+        inspector = inspect(self._engine)
+        max_retries = self._sqlite_write_retry_max
+        for table_name, index_name in self._USER_SCOPE_TABLES:
+            if not inspector.has_table(table_name):
+                continue
+            try:
+                existing = {
+                    column["name"]
+                    for column in inspector.get_columns(table_name)
+                }
+            except Exception as exc:
+                logger.warning("[users] 检查 %s.user_id 列失败，跳过: %s", table_name, exc)
+                continue
+            if "user_id" in existing:
+                continue
+            for attempt in range(max_retries + 1):
+                try:
+                    with self._engine.begin() as connection:
+                        connection.exec_driver_sql(
+                            f"ALTER TABLE {table_name} ADD COLUMN user_id VARCHAR(64)"
+                        )
+                        connection.exec_driver_sql(
+                            f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} (user_id)"
+                        )
+                    break
+                except OperationalError as exc:
+                    if "duplicate column" in str(exc).lower():
+                        break
+                    if self._is_sqlite_locked_error(exc) and attempt < max_retries:
+                        delay = self._sqlite_write_retry_base_delay * (2 ** attempt)
+                        if delay > 0:
+                            time.sleep(delay)
+                        continue
+                    logger.warning("[users] %s 增加 user_id 列失败: %s", table_name, exc)
+                    break
+                finally:
+                    existing = set()
+
+    def _ensure_user_scope_backfill(self) -> None:
+        """一次性回填（多用户模式）：STOCK_LIST -> admin 自选股、portfolio owner_id -> admin。
+
+        用 schema_migrations 标记保证只跑一次；失败不阻断 DB 初始化。
+        """
+        if not self._is_sqlite_engine:
+            return
+        session = self._SessionLocal()
+        try:
+            from src.auth import is_multi_user_enabled
+
+            if not is_multi_user_enabled():
+                return
+            done = (
+                session.query(DatabaseSchemaMigration)
+                .filter(DatabaseSchemaMigration.version == self._USER_SCOPE_BACKFILL_MARKER)
+                .first()
+            )
+            if done is not None:
+                return
+
+            admin = (
+                session.query(User)
+                .filter(User.role == USER_ROLE_ADMIN)
+                .order_by(User.id.asc())
+                .first()
+            )
+            if admin is not None:
+                stock_codes = self._stock_list_codes_for_backfill()
+                if stock_codes:
+                    for index, code in enumerate(stock_codes):
+                        statement = sqlite_insert(UserStock).values(
+                            user_id=admin.id,
+                            stock_code=code,
+                            sort_order=index,
+                        )
+                        statement = statement.on_conflict_do_nothing(
+                            index_elements=["user_id", "stock_code"]
+                        )
+                        session.execute(statement)
+                session.query(PortfolioAccount).filter(
+                    or_(
+                        PortfolioAccount.owner_id.is_(None),
+                        PortfolioAccount.owner_id == "",
+                    )
+                ).update({"owner_id": str(admin.id)}, synchronize_session=False)
+                # 全局排程迁入 admin 的用户排程（多用户开启后 .env SCHEDULE_* 不再触发）
+                try:
+                    config = get_config()
+                    schedule_times = list(getattr(config, "schedule_times", None) or [])
+                    if not schedule_times:
+                        single_time = getattr(config, "schedule_time", None)
+                        if single_time:
+                            schedule_times = [str(single_time)]
+                    if getattr(config, "schedule_enabled", False) and schedule_times:
+                        session.add(
+                            UserSetting(
+                                user_id=admin.id,
+                                key="schedule",
+                                value_json=json.dumps(
+                                    {"enabled": True, "times": [str(t) for t in schedule_times]},
+                                    ensure_ascii=False,
+                                ),
+                            )
+                        )
+                except Exception as schedule_exc:
+                    logger.warning("[users] 全局排程迁入 admin 用户排程失败（跳过）: %s", schedule_exc)
+            session.execute(
+                sqlite_insert(DatabaseSchemaMigration).values(
+                    version=self._USER_SCOPE_BACKFILL_MARKER,
+                    description="Backfill STOCK_LIST into admin user_stocks and portfolio owner_id",
+                )
+            )
+            session.commit()
+            logger.info("[users] 多用户作用域一次性回填完成")
+        except Exception as exc:
+            session.rollback()
+            logger.warning("[users] 作用域回填失败（下次初始化重试）: %s", exc)
+        finally:
+            session.close()
+
+    @staticmethod
+    def _stock_list_codes_for_backfill() -> List[str]:
+        """读取 STOCK_LIST 原始配置（逗号分隔），供回填 admin 自选股。"""
+        try:
+            config = get_config()
+            codes = [str(code).strip() for code in (config.stock_list or [])]
+            return [code for code in codes if code]
+        except Exception as exc:
+            logger.warning("[users] 读取 STOCK_LIST 失败，跳过自选股回填: %s", exc)
+            return []
+
+    def _ensure_sqlite_file_permissions(self) -> None:
+        """收紧 SQLite 数据文件权限（多用户模式下用户数据入库，降低本地读取面）。"""
+        if not getattr(self, "_sqlite_file_db", False):
+            return
+        try:
+            db_path = Path(str(self._engine.url.database))
+            if db_path.exists():
+                os.chmod(db_path, 0o600)
+            # 目录收紧仅多用户模式：单用户部署的 data/ 可能承载其他共享文件
+            if db_path.parent.exists():
+                from src.auth import is_multi_user_enabled
+
+                if is_multi_user_enabled():
+                    os.chmod(db_path.parent, 0o700)
+        except OSError as exc:
+            logger.warning("[storage] SQLite 文件权限收紧失败（跳过）: %s", exc)
+
+    def get_user_by_id(self, user_id: int) -> Optional[User]:
+        with self._SessionLocal() as session:
+            return session.get(User, user_id)
+
+    def list_users(self) -> List[User]:
+        with self._SessionLocal() as session:
+            return session.query(User).order_by(User.id.asc()).all()
+
+    def count_active_admins(self) -> int:
+        with self._SessionLocal() as session:
+            return int(
+                session.query(func.count(User.id))
+                .filter(User.role == USER_ROLE_ADMIN, User.is_active.is_(True))
+                .scalar()
+                or 0
+            )
+
+    def create_user(
+        self,
+        username: str,
+        password_salt: bytes,
+        password_hash: bytes,
+        role: str = USER_ROLE_USER,
+    ) -> User:
+        """创建用户；用户名冲突抛 IntegrityError，由调用方转换为业务错误。"""
+        with self._SessionLocal() as session:
+            user = User(
+                username=username,
+                password_salt=password_salt,
+                password_hash=password_hash,
+                role=role,
+                is_active=True,
+                token_version=0,
+            )
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+            return user
+
+    def update_user_password(self, user_id: int, password_salt: bytes, password_hash: bytes) -> Optional[int]:
+        """更新密码并递增 token_version（使该用户旧会话失效）。返回新 token_version。"""
+        with self._SessionLocal() as session:
+            user = session.get(User, user_id)
+            if user is None:
+                return None
+            user.password_salt = password_salt
+            user.password_hash = password_hash
+            user.token_version = int(user.token_version or 0) + 1
+            session.commit()
+            return int(user.token_version)
+
+    def update_user_role(self, user_id: int, role: str) -> Optional[User]:
+        """变更角色并递增 token_version。返回更新后的用户（脱敏）。"""
+        with self._SessionLocal() as session:
+            user = session.get(User, user_id)
+            if user is None:
+                return None
+            user.role = role
+            user.token_version = int(user.token_version or 0) + 1
+            session.commit()
+            session.refresh(user)
+            return user
+
+    def update_user_active(self, user_id: int, is_active: bool) -> Optional[User]:
+        """启用/禁用用户并递增 token_version。返回更新后的用户（脱敏）。"""
+        with self._SessionLocal() as session:
+            user = session.get(User, user_id)
+            if user is None:
+                return None
+            user.is_active = bool(is_active)
+            user.token_version = int(user.token_version or 0) + 1
+            session.commit()
+            session.refresh(user)
+            return user
+
+    # === 每用户自选股与设置（多用户模式） ===
+
+    def list_user_stocks(self, user_id: int) -> List[str]:
+        """按加入顺序返回用户自选股代码列表。"""
+        with self._SessionLocal() as session:
+            rows = (
+                session.query(UserStock)
+                .filter(UserStock.user_id == user_id)
+                .order_by(UserStock.sort_order.asc(), UserStock.id.asc())
+                .all()
+            )
+            return [row.stock_code for row in rows]
+
+    def add_user_stock(self, user_id: int, stock_code: str, asset_type: Optional[str] = None) -> bool:
+        """新增自选股（幂等）。返回是否新增成功。"""
+        code = str(stock_code or "").strip()
+        if not code:
+            return False
+        with self._SessionLocal() as session:
+            try:
+                exists = (
+                    session.query(UserStock.id)
+                    .filter(UserStock.user_id == user_id, UserStock.stock_code == code)
+                    .first()
+                )
+                if exists:
+                    return False
+                max_order = (
+                    session.query(func.max(UserStock.sort_order))
+                    .filter(UserStock.user_id == user_id)
+                    .scalar()
+                )
+                session.add(
+                    UserStock(
+                        user_id=user_id,
+                        stock_code=code,
+                        asset_type=asset_type,
+                        sort_order=int(max_order or 0) + 1,
+                    )
+                )
+                session.commit()
+                return True
+            except IntegrityError:
+                session.rollback()
+                return False
+
+    def remove_user_stock(self, user_id: int, stock_code: str) -> bool:
+        """移除自选股。返回是否确实移除了存在项。"""
+        code = str(stock_code or "").strip()
+        if not code:
+            return False
+        with self._SessionLocal() as session:
+            deleted = (
+                session.query(UserStock)
+                .filter(UserStock.user_id == user_id, UserStock.stock_code == code)
+                .delete()
+            )
+            session.commit()
+            return int(deleted or 0) > 0
+
+    def count_user_stocks(self, user_id: int) -> int:
+        with self._SessionLocal() as session:
+            return int(
+                session.query(func.count(UserStock.id))
+                .filter(UserStock.user_id == user_id)
+                .scalar()
+                or 0
+            )
+
+    def get_user_setting(self, user_id: int, key: str) -> Optional[Any]:
+        """读取用户设置（JSON 反序列化）；不存在返回 None。"""
+        with self._SessionLocal() as session:
+            row = (
+                session.query(UserSetting)
+                .filter(UserSetting.user_id == user_id, UserSetting.key == key)
+                .first()
+            )
+            if row is None:
+                return None
+            try:
+                return json.loads(row.value_json)
+            except (TypeError, ValueError):
+                return None
+
+    def set_user_setting(self, user_id: int, key: str, value: Any) -> bool:
+        """写入用户设置（JSON 序列化，upsert 语义）。"""
+        try:
+            value_json = json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError) as exc:
+            logger.warning("[users] 用户设置序列化失败: key=%s err=%s", key, exc)
+            return False
+        with self._SessionLocal() as session:
+            try:
+                statement = sqlite_insert(UserSetting).values(
+                    user_id=user_id,
+                    key=key,
+                    value_json=value_json,
+                )
+                statement = statement.on_conflict_do_update(
+                    index_elements=["user_id", "key"],
+                    set_={"value_json": value_json, "updated_at": datetime.now()},
+                )
+                session.execute(statement)
+                session.commit()
+                return True
+            except IntegrityError as exc:
+                session.rollback()
+                logger.warning("[users] 用户设置写入失败: key=%s err=%s", key, exc)
+                return False
+
+    def list_user_settings_by_key(self, key: str) -> Dict[int, Any]:
+        """读取所有用户的指定设置项（key -> {user_id: value}），供调度器枚举。"""
+        with self._SessionLocal() as session:
+            rows = session.query(UserSetting).filter(UserSetting.key == key).all()
+            result: Dict[int, Any] = {}
+            for row in rows:
+                try:
+                    result[int(row.user_id)] = json.loads(row.value_json)
+                except (TypeError, ValueError):
+                    continue
+            return result
+
+    def incr_user_daily_counter(
+        self,
+        user_id: int,
+        counter_key: str,
+        max_value: Optional[int] = None,
+        counter_date: Optional[str] = None,
+    ) -> Optional[int]:
+        """原子递增每日计数器并返回新值。
+
+        - max_value 为 None：不设上限，直接递增
+        - max_value <= 0：视为不限（返回递增后的值）
+        - 已达 max_value：不递增，返回 None（配额已满，fail-closed）
+        """
+        from sqlalchemy import update as sa_update
+
+        date_key = counter_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        def _try_increment(session: Session) -> Optional[int]:
+            if max_value is not None and max_value > 0:
+                result = session.execute(
+                    sa_update(UserDailyCounter)
+                    .where(
+                        UserDailyCounter.user_id == user_id,
+                        UserDailyCounter.counter_date == date_key,
+                        UserDailyCounter.counter_key == counter_key,
+                        UserDailyCounter.count < max_value,
+                    )
+                    .values(count=UserDailyCounter.count + 1)
+                )
+                if result.rowcount > 0:
+                    new_count = session.execute(
+                        select(UserDailyCounter.count).where(
+                            UserDailyCounter.user_id == user_id,
+                            UserDailyCounter.counter_date == date_key,
+                            UserDailyCounter.counter_key == counter_key,
+                        )
+                    ).scalar()
+                    return int(new_count)
+                existing = session.execute(
+                    select(UserDailyCounter).where(
+                        UserDailyCounter.user_id == user_id,
+                        UserDailyCounter.counter_date == date_key,
+                        UserDailyCounter.counter_key == counter_key,
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    return None  # 已达上限
+            statement = sqlite_insert(UserDailyCounter).values(
+                user_id=user_id,
+                counter_date=date_key,
+                counter_key=counter_key,
+                count=1,
+            )
+            statement = statement.on_conflict_do_update(
+                index_elements=["user_id", "counter_date", "counter_key"],
+                set_={"count": UserDailyCounter.count + 1, "updated_at": datetime.now()},
+            )
+            session.execute(statement)
+            new_count = session.execute(
+                select(UserDailyCounter.count).where(
+                    UserDailyCounter.user_id == user_id,
+                    UserDailyCounter.counter_date == date_key,
+                    UserDailyCounter.counter_key == counter_key,
+                )
+            ).scalar()
+            return int(new_count)
+
+        session = self._SessionLocal()
+        try:
+            value = _try_increment(session)
+            session.commit()
+            return value
+        except IntegrityError:
+            # 并发首插竞争：唯一约束冲突后重读并按上限语义再试一次
+            session.rollback()
+            try:
+                value = _try_increment(session)
+                session.commit()
+                return value
+            except Exception as exc:
+                session.rollback()
+                logger.warning("[users] 每日计数器递增失败: %s", exc)
+                return None
+        except Exception as exc:
+            session.rollback()
+            logger.warning("[users] 每日计数器递增失败: %s", exc)
+            return None
+        finally:
+            session.close()
+
+    def get_user_daily_counter(
+        self,
+        user_id: int,
+        counter_key: str,
+        counter_date: Optional[str] = None,
+    ) -> int:
+        date_key = counter_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        with self._SessionLocal() as session:
+            value = session.execute(
+                select(UserDailyCounter.count).where(
+                    UserDailyCounter.user_id == user_id,
+                    UserDailyCounter.counter_date == date_key,
+                    UserDailyCounter.counter_key == counter_key,
+                )
+            ).scalar()
+            return int(value or 0)
+
+    def list_enabled_user_schedules(self) -> List[Dict[str, Any]]:
+        """枚举启用排程且自选股非空的用户（供每用户调度遍历）。"""
+        schedules = self.list_user_settings_by_key("schedule")
+        result: List[Dict[str, Any]] = []
+        for user_id_value, schedule in schedules.items():
+            if not isinstance(schedule, dict) or not schedule.get("enabled"):
+                continue
+            times = schedule.get("times") or []
+            if not isinstance(times, list) or not times:
+                continue
+            try:
+                user_id = int(user_id_value)
+            except (TypeError, ValueError):
+                continue
+            stock_codes = self.list_user_stocks(user_id)
+            if not stock_codes:
+                continue
+            result.append(
+                {
+                    "user_id": user_id,
+                    "times": [str(t) for t in times],
+                    "stock_codes": stock_codes,
+                }
+            )
+        return result
+
+    def count_users(self) -> int:
+        with self._SessionLocal() as session:
+            return int(session.query(func.count(User.id)).scalar() or 0)
 
     def _ensure_decision_signal_profile_schema(self) -> None:
         """Add and backfill nullable decision_profile for existing SQLite DBs."""
@@ -2576,7 +3298,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             except Exception:
                 return None
 
-    def save_screening_run(self, payload: Dict[str, Any]) -> int:
+    def save_screening_run(self, payload: Dict[str, Any], owner_user_id: Optional[str] = None) -> int:
         """Persist one completed screening response without blocking screening on DB errors."""
         run_id = str(payload.get("run_id") or "").strip()
         if not run_id:
@@ -2588,6 +3310,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         values = {
             "strategy": str(normalized_payload.get("strategy") or "").strip() or "unknown",
             "market": str(normalized_payload.get("market") or "").strip() or "cn",
+            "user_id": owner_user_id,
             "snapshot_source": str(normalized_payload.get("snapshot_source") or "").strip() or None,
             "snapshot_count": self._optional_int(normalized_payload.get("snapshot_count")),
             "after_filter_count": self._optional_int(normalized_payload.get("after_filter_count")),
@@ -2629,6 +3352,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         limit: int = 20,
         strategy: Optional[str] = None,
         market: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[Dict[str, Any]]:
         """List recent screening runs as compact summaries."""
         normalized_limit = max(0, min(int(limit), 100))
@@ -2641,19 +3366,31 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 statement = statement.where(ScreeningRun.strategy == str(strategy).strip())
             if market:
                 statement = statement.where(ScreeningRun.market == str(market).strip())
+            scope = self._user_scope_condition(ScreeningRun.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                statement = statement.where(scope)
             rows = session.execute(
                 statement.order_by(desc(ScreeningRun.created_at), desc(ScreeningRun.id)).limit(normalized_limit)
             ).scalars().all()
             return [self._screening_run_to_dict(row, include_result=False) for row in rows]
 
-    def get_screening_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+    def get_screening_run(
+        self,
+        run_id: str,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         """Load a completed screening run by its stable run id."""
         normalized_run_id = str(run_id or "").strip()
         if not normalized_run_id:
             return None
         with self.get_session() as session:
+            conditions = [ScreeningRun.run_id == normalized_run_id]
+            scope = self._user_scope_condition(ScreeningRun.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                conditions.append(scope)
             row = session.execute(
-                select(ScreeningRun).where(ScreeningRun.run_id == normalized_run_id)
+                select(ScreeningRun).where(and_(*conditions))
             ).scalar_one_or_none()
             if row is None:
                 return None
@@ -2791,6 +3528,20 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
 
             return list(results)
 
+    @staticmethod
+    def _user_scope_condition(column, owner_user_id: Optional[str], include_unowned: bool = False):
+        """构造 user_id 作用域过滤条件。
+
+        - owner_user_id 为空：返回 None（不过滤，保持单用户/全局路径行为不变）
+        - include_unowned=True（admin）：可见自己 + NULL（legacy/无主）行
+        - 其他用户：仅可见自己的行
+        """
+        if not owner_user_id:
+            return None
+        if include_unowned:
+            return or_(column == owner_user_id, column.is_(None))
+        return column == owner_user_id
+
     def save_analysis_history(
         self,
         result: Any,
@@ -2798,10 +3549,14 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         report_type: str,
         news_content: Optional[str],
         context_snapshot: Optional[Dict[str, Any]] = None,
-        save_snapshot: bool = True
+        save_snapshot: bool = True,
+        owner_user_id: Optional[str] = None
     ) -> int:
         """
         保存分析结果历史记录。
+
+        Args:
+            owner_user_id: 归属用户 id（多用户模式；None = legacy/全局运行）
 
         Returns:
             新保存的 AnalysisHistory.id；保存失败返回 0。
@@ -2819,6 +3574,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             def _write(session: Session) -> int:
                 history = AnalysisHistory(
                     query_id=query_id,
+                    user_id=owner_user_id,
                     code=result.code,
                     name=result.name,
                     report_type=report_type,
@@ -2932,6 +3688,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         days: int = 30,
         limit: int = 50,
         exclude_query_id: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[AnalysisHistory]:
         """
         Query analysis history records.
@@ -2940,6 +3698,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         - If query_id is provided, perform exact lookup and ignore days window.
         - If query_id is not provided, apply days-based time filtering.
         - exclude_query_id: exclude records with this query_id (for history comparison).
+        - 多用户模式：owner_user_id 过滤归属；大盘复盘（全局）行始终可见。
         """
         cutoff_date = datetime.now() - timedelta(days=days)
 
@@ -2957,6 +3716,13 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             # exclude_query_id only applies when not doing exact lookup (query_id is None)
             if exclude_query_id and not query_id:
                 conditions.append(AnalysisHistory.query_id != exclude_query_id)
+
+            scope = self._user_scope_condition(AnalysisHistory.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                # 大盘复盘行为全局共享，任何用户可见
+                conditions.append(
+                    or_(scope, AnalysisHistory.code == self._market_review_history_code())
+                )
 
             results = session.execute(
                 select(AnalysisHistory)
@@ -3002,11 +3768,13 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         offset: int = 0,
-        limit: int = 20
+        limit: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Tuple[List[AnalysisHistory], int]:
         """
         分页查询分析历史记录（带总数）
-        
+
         Args:
             code: 股票代码筛选
             report_type: 报告类型筛选
@@ -3014,15 +3782,17 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             end_date: 结束日期（含）
             offset: 偏移量（跳过前 N 条）
             limit: 每页数量
-            
+            owner_user_id: 归属用户过滤（多用户模式）
+            include_unowned: admin 同时可见 NULL（legacy/无主）行
+
         Returns:
             Tuple[List[AnalysisHistory], int]: (记录列表, 总数)
         """
         from sqlalchemy import func
-        
+
         with self.get_session() as session:
             conditions = []
-            
+
             if code:
                 if isinstance(code, list):
                     codes = [c for c in code if c]
@@ -3038,7 +3808,13 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             if end_date:
                 # created_at < end_date+1 00:00:00 (即 <= end_date 23:59:59)
                 conditions.append(AnalysisHistory.created_at < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
-            
+
+            scope = self._user_scope_condition(AnalysisHistory.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                # 大盘复盘行为全局共享，任何用户可见
+                conditions.append(
+                    or_(scope, AnalysisHistory.code == self._market_review_history_code())
+                )
             # 构建 where 子句
             where_clause = and_(*conditions) if conditions else True
             
@@ -3058,26 +3834,54 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             
             return list(results), total
     
-    def get_analysis_history_by_id(self, record_id: int) -> Optional[AnalysisHistory]:
+    @staticmethod
+    def _market_review_history_code() -> str:
+        """大盘复盘在 analysis_history 中的合成代码（懒加载避免存储层反向依赖核心编排）。"""
+        try:
+            from src.core.market_review import MARKET_REVIEW_HISTORY_CODE
+
+            return MARKET_REVIEW_HISTORY_CODE
+        except Exception:
+            return "MARKET_REVIEW"
+
+    def get_analysis_history_by_id(
+        self,
+        record_id: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[AnalysisHistory]:
         """
         根据数据库主键 ID 查询单条分析历史记录
-        
+
         由于 query_id 可能重复（批量分析时多条记录共享同一 query_id），
         使用主键 ID 确保精确查询唯一记录。
-        
+
         Args:
             record_id: 分析历史记录的主键 ID
-            
+            owner_user_id: 归属用户过滤（多用户模式）
+            include_unowned: admin 同时可见 NULL（legacy/无主）行
+
         Returns:
-            AnalysisHistory 对象，不存在返回 None
+            AnalysisHistory 对象，不存在（或无权访问）返回 None
         """
         with self.get_session() as session:
+            conditions = [AnalysisHistory.id == record_id]
+            scope = self._user_scope_condition(AnalysisHistory.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                conditions.append(
+                    or_(scope, AnalysisHistory.code == self._market_review_history_code())
+                )
             result = session.execute(
-                select(AnalysisHistory).where(AnalysisHistory.id == record_id)
+                select(AnalysisHistory).where(and_(*conditions))
             ).scalars().first()
             return result
 
-    def delete_analysis_history_records(self, record_ids: List[int]) -> int:
+    def delete_analysis_history_records(
+        self,
+        record_ids: List[int],
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> int:
         """
         删除指定的分析历史记录。
 
@@ -3096,9 +3900,21 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             return 0
 
         def _write(session: Session) -> int:
+            delete_conditions = [AnalysisHistory.id.in_(ids)]
+            scope = self._user_scope_condition(
+                AnalysisHistory.user_id, owner_user_id, include_unowned
+            )
+            if scope is not None:
+                # 大盘复盘行为全局共享，任何用户不可删除
+                delete_conditions.append(
+                    and_(
+                        scope,
+                        AnalysisHistory.code != self._market_review_history_code(),
+                    )
+                )
             existing_ids = sorted(
                 session.execute(
-                    select(AnalysisHistory.id).where(AnalysisHistory.id.in_(ids))
+                    select(AnalysisHistory.id).where(and_(*delete_conditions))
                 ).scalars().all()
             )
             if not existing_ids:
@@ -3167,6 +3983,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         end_date: Optional[date] = None,
         limit: int = 200,
         include_market_review: bool = False,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[AnalysisHistory]:
         """
         获取历史记录中的不重复股票列表，每只股票取最新一条记录。
@@ -3208,6 +4026,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                         ),
                     )
                 )
+            scope = self._user_scope_condition(AnalysisHistory.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                subq = subq.where(scope)
             subq = subq.group_by(AnalysisHistory.code).subquery()
 
             results = (
@@ -3649,13 +4470,20 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         digest = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
         return f"no-url:{code}:{digest}"
 
-    def save_conversation_message(self, session_id: str, role: str, content: str) -> int:
+    def save_conversation_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        owner_user_id: Optional[str] = None,
+    ) -> int:
         """
         保存 Agent 对话消息
         """
         with self.session_scope() as session:
             msg = ConversationMessage(
                 session_id=session_id,
+                user_id=owner_user_id,
                 role=role,
                 content=content
             )
@@ -3668,11 +4496,13 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         session_id: str,
         content: str,
         selected_skill_ids: Optional[List[str]] = None,
+        owner_user_id: Optional[str] = None,
     ) -> int:
         """Persist a user message and an optional session Skill selection atomically."""
         with self.session_scope() as session:
             msg = ConversationMessage(
                 session_id=session_id,
+                user_id=owner_user_id,
                 role="user",
                 content=content,
             )
@@ -3683,6 +4513,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 now = datetime.now()
                 values = {
                     "session_id": session_id,
+                    "user_id": owner_user_id,
                     "selected_skill_ids_json": json.dumps(selected_skill_ids, ensure_ascii=False),
                     "created_at": now,
                     "updated_at": now,
@@ -3703,38 +4534,73 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
     def get_conversation_session_selected_skill_ids(
         self,
         session_id: str,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Optional[List[str]]:
         """Return the saved Skill selection, or None when the session has no state row."""
         with self.session_scope() as session:
             state = session.get(ConversationSessionState, session_id)
             if state is None:
                 return None
+            if not self._owner_allowed(state.user_id, owner_user_id, include_unowned):
+                return None
             return json.loads(state.selected_skill_ids_json)
 
-    def get_conversation_history(self, session_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _owner_allowed(
+        row_user_id: Optional[str],
+        owner_user_id: Optional[str],
+        include_unowned: bool,
+    ) -> bool:
+        """单行归属判定：无过滤（单用户/全局）→ 允许；admin 额外允许 NULL 行。"""
+        if not owner_user_id:
+            return True
+        if row_user_id == owner_user_id:
+            return True
+        return bool(include_unowned and row_user_id is None)
+
+    def get_conversation_history(
+        self,
+        session_id: str,
+        limit: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> List[Dict[str, Any]]:
         """
         获取 Agent 对话历史
         """
         with self.session_scope() as session:
+            conditions = [ConversationMessage.session_id == session_id]
+            scope = self._user_scope_condition(ConversationMessage.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                conditions.append(scope)
             stmt = select(ConversationMessage).filter(
-                ConversationMessage.session_id == session_id
+                *conditions
             ).order_by(ConversationMessage.created_at.desc()).limit(limit)
             messages = session.execute(stmt).scalars().all()
 
             # 倒序返回，保证时间顺序
             return [{"role": msg.role, "content": msg.content} for msg in reversed(messages)]
 
-    def get_visible_conversation_messages(self, session_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_visible_conversation_messages(
+        self,
+        session_id: str,
+        limit: Optional[int] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> List[Dict[str, Any]]:
         """Return visible user/assistant conversation messages in chronological order."""
         with self.session_scope() as session:
+            conditions = [
+                ConversationMessage.session_id == session_id,
+                ConversationMessage.role.in_(["user", "assistant"]),
+            ]
+            scope = self._user_scope_condition(ConversationMessage.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                conditions.append(scope)
             stmt = (
                 select(ConversationMessage)
-                .where(
-                    and_(
-                        ConversationMessage.session_id == session_id,
-                        ConversationMessage.role.in_(["user", "assistant"]),
-                    )
-                )
+                .where(and_(*conditions))
                 .order_by(ConversationMessage.created_at, ConversationMessage.id)
             )
             if limit is not None:
@@ -3757,12 +4623,19 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 if msg.content
             ]
 
-    def get_conversation_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_conversation_summary(
+        self,
+        session_id: str,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         """Return the rolling summary for a conversation session, if present."""
         with self.session_scope() as session:
-            stmt = select(ConversationSummary).where(
-                ConversationSummary.session_id == session_id
-            )
+            conditions = [ConversationSummary.session_id == session_id]
+            scope = self._user_scope_condition(ConversationSummary.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                conditions.append(scope)
+            stmt = select(ConversationSummary).where(and_(*conditions))
             row = session.execute(stmt).scalar_one_or_none()
             if row is None:
                 return None
@@ -3948,6 +4821,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         limit: int = 50,
         session_prefix: Optional[str] = None,
         extra_session_ids: Optional[List[str]] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         获取聊天会话列表（从 conversation_messages 聚合）
@@ -3959,6 +4834,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 ``"telegram_12345"``).
             extra_session_ids: Optional exact session ids to include in
                 addition to the scoped prefix.
+            owner_user_id: 归属用户过滤（多用户模式）
+            include_unowned: admin 同时可见 NULL（legacy/bot）会话
 
         Returns:
             按最近活跃时间倒序的会话列表，每条包含 session_id, title, message_count, last_active
@@ -3985,8 +4862,11 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 conditions.append(ConversationMessage.session_id.startswith(normalized_prefix))
             if exact_ids:
                 conditions.append(ConversationMessage.session_id.in_(exact_ids))
+            scope = self._user_scope_condition(ConversationMessage.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                conditions.append(scope)
             if conditions:
-                base = base.where(or_(*conditions))
+                base = base.where(or_(*conditions)) if len(conditions) > 1 else base.where(conditions[0])
             stmt = (
                 base
                 .group_by(ConversationMessage.session_id)
@@ -4021,14 +4901,24 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 })
             return results
 
-    def get_conversation_messages(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_conversation_messages(
+        self,
+        session_id: str,
+        limit: int = 100,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> List[Dict[str, Any]]:
         """
         获取单个会话的完整消息列表（用于前端恢复历史）
         """
         with self.session_scope() as session:
+            conditions = [ConversationMessage.session_id == session_id]
+            scope = self._user_scope_condition(ConversationMessage.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                conditions.append(scope)
             stmt = (
                 select(ConversationMessage)
-                .where(ConversationMessage.session_id == session_id)
+                .where(and_(*conditions))
                 .order_by(ConversationMessage.created_at)
                 .limit(limit)
             )
@@ -4043,14 +4933,32 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 for msg in messages
             ]
 
-    def delete_conversation_session(self, session_id: str) -> int:
+    def delete_conversation_session(
+        self,
+        session_id: str,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> int:
         """
         删除指定会话的所有消息
 
         Returns:
-            删除的消息数
+            删除的消息数（无权访问的会话返回 0）
         """
         with self.session_scope() as session:
+            # 先确认归属：会话中任一消息命中作用域才允许删除
+            ownership_conditions = [
+                ConversationMessage.session_id == session_id,
+            ]
+            scope = self._user_scope_condition(ConversationMessage.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                ownership_conditions.append(scope)
+            owned = session.execute(
+                select(ConversationMessage.id).where(and_(*ownership_conditions)).limit(1)
+            ).scalar()
+            if owned is None:
+                return 0
+
             session.execute(
                 delete(ConversationSessionState).where(
                     ConversationSessionState.session_id == session_id
@@ -4085,6 +4993,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         completion_tokens: int,
         total_tokens: int,
         stock_code: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
         **telemetry: Any,
     ) -> None:
         """Append one LLM call record to llm_usage."""
@@ -4092,6 +5001,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             "call_type": call_type,
             "model": model or "unknown",
             "stock_code": stock_code,
+            "user_id": owner_user_id,
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
@@ -4106,6 +5016,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         self,
         from_dt: datetime,
         to_dt: datetime,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         """Return aggregated token usage between from_dt and to_dt.
 
@@ -4117,10 +5029,14 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             total_tokens, max_total_tokens}
         """
         with self.session_scope() as session:
-            base_filter = and_(
+            summary_conditions = [
                 LLMUsage.called_at >= from_dt,
                 LLMUsage.called_at <= to_dt,
-            )
+            ]
+            scope = self._user_scope_condition(LLMUsage.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                summary_conditions.append(scope)
+            base_filter = and_(*summary_conditions)
 
             # Overall totals
             totals = session.execute(
@@ -4194,6 +5110,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         from_dt: datetime,
         to_dt: datetime,
         limit: int = 50,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[Dict[str, Any]]:
         """Return recent LLM usage audit rows between from_dt and to_dt.
 
@@ -4203,6 +5121,13 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         """
         normalized_limit = max(1, min(int(limit or 50), 200))
         with self.session_scope() as session:
+            record_conditions = [
+                LLMUsage.called_at >= from_dt,
+                LLMUsage.called_at <= to_dt,
+            ]
+            scope = self._user_scope_condition(LLMUsage.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                record_conditions.append(scope)
             rows = session.execute(
                 select(
                     LLMUsage.id,
@@ -4214,12 +5139,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     LLMUsage.total_tokens,
                     LLMUsage.called_at,
                 )
-                .where(
-                    and_(
-                        LLMUsage.called_at >= from_dt,
-                        LLMUsage.called_at <= to_dt,
-                    )
-                )
+                .where(and_(*record_conditions))
                 .order_by(desc(LLMUsage.called_at), desc(LLMUsage.id))
                 .limit(normalized_limit)
             ).all()
