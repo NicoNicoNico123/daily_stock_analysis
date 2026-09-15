@@ -1,10 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import type { AnalysisReport, MarketReviewPayload } from '../../../types/analysis';
 import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
 import { UI_LANGUAGE_STORAGE_KEY } from '../../../utils/uiLanguage';
 import { MarketReviewReportView } from '../MarketReviewReportView';
+import { historyApi } from '../../../api/history';
 
 const renderWithUiLanguage = (ui: ReactNode, language: 'zh' | 'en') => {
   window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, language);
@@ -14,6 +15,7 @@ const renderWithUiLanguage = (ui: ReactNode, language: 'zh' | 'en') => {
 vi.mock('../../../api/history', () => ({
   historyApi: {
     getMarkdown: vi.fn(),
+    getTranslation: vi.fn(),
   },
 }));
 
@@ -113,7 +115,44 @@ const noBreadthMarketReviewPayload: MarketReviewPayload = {
   sections: [],
 };
 
+const chineseMarketReviewReport: AnalysisReport = {
+  meta: {
+    id: 9001,
+    queryId: 'market-review-q-zh',
+    stockCode: 'MARKET',
+    stockName: '大盘复盘',
+    reportType: 'market_review',
+    reportLanguage: 'zh',
+    createdAt: '2026-09-15T08:00:00Z',
+  },
+  summary: {
+    analysisSummary: '2026-09-15 大盘复盘',
+    operationAdvice: '查看复盘',
+    trendPrediction: '大盘复盘',
+    sentimentScore: 50,
+  },
+};
+
+const chineseReviewPayload: MarketReviewPayload = {
+  version: 1,
+  kind: 'market_review',
+  region: 'hk',
+  language: 'zh',
+  title: '2026-09-15 大盘复盘',
+  sections: [{
+    key: 'market_overview',
+    title: '一、盘面总览',
+    markdown: '恒生指数收跌 0.86%，科技股相对抗跌。',
+  }],
+  news: [],
+};
+
 describe('MarketReviewReportView', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(historyApi.getMarkdown).mockResolvedValue('# 大盤覆盤');
+  });
+
   it('uses localized summary card labels and fallbacks for an english interface', () => {
     renderWithUiLanguage(
       <MarketReviewReportView
@@ -323,5 +362,71 @@ describe('MarketReviewReportView', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看歷史記錄 7 運行流' }));
 
     expect(onOpenRunFlow).toHaveBeenCalledWith(7);
+  });
+
+  it('renders translated review body and summary cards for an english interface', async () => {
+    vi.mocked(historyApi.getTranslation).mockResolvedValue({
+      cached: true,
+      targetLang: 'en',
+      summary: {
+        analysisSummary: '2026-09-15 Market Recap',
+        operationAdvice: 'View Recap',
+        trendPrediction: 'Tech stabilizing while heavyweights drag',
+      },
+      strategy: {},
+      markdown: '# Market Recap\n\n## 2026-09-15 Market Recap\n\n### I. Market Overview\n\nHang Seng Index closed lower.\n',
+    });
+
+    renderWithUiLanguage(
+      <MarketReviewReportView
+        report={chineseMarketReviewReport}
+        recordId={9001}
+        payload={chineseReviewPayload}
+      />,
+      'en',
+    );
+
+    await waitFor(() => {
+      expect(historyApi.getTranslation).toHaveBeenCalledWith(9001, 'en');
+    });
+
+    // 摘要卡使用译文
+    expect(await screen.findByText('2026-09-15 Market Recap')).toBeVisible();
+    expect(screen.getByText('View Recap')).toBeVisible();
+    // 正文来自译文 markdown，而不是中文 payload sections
+    expect(screen.getByText('Hang Seng Index closed lower.')).toBeVisible();
+    expect(screen.queryByText('一、盤面總覽')).not.toBeInTheDocument();
+  });
+
+  it('keeps the original review content when the translation request fails', async () => {
+    vi.mocked(historyApi.getTranslation).mockRejectedValue(new Error('translation unavailable'));
+
+    renderWithUiLanguage(
+      <MarketReviewReportView
+        report={chineseMarketReviewReport}
+        recordId={9002}
+        payload={chineseReviewPayload}
+      />,
+      'en',
+    );
+
+    await waitFor(() => {
+      expect(historyApi.getTranslation).toHaveBeenCalled();
+    });
+    expect(await screen.findByText('一、盘面总览')).toBeVisible();
+  });
+
+  it('does not fetch a translation for a chinese interface', async () => {
+    renderWithUiLanguage(
+      <MarketReviewReportView
+        report={chineseMarketReviewReport}
+        recordId={9003}
+        payload={chineseReviewPayload}
+      />,
+      'zh',
+    );
+
+    expect(await screen.findByText('一、盘面总览')).toBeVisible();
+    expect(historyApi.getTranslation).not.toHaveBeenCalled();
   });
 });

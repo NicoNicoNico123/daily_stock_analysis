@@ -12,6 +12,7 @@ import type {
 import { markdownToPlainText } from '../../utils/markdown';
 import { getReportText } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import { useReportTranslation } from '../../hooks/useReportTranslation';
 import { Card } from '../common';
 import { Tooltip } from '../common/Tooltip';
 import { ReportMarkdownBody } from './ReportMarkdownBody';
@@ -390,7 +391,11 @@ export const MarketReviewReportView: React.FC<MarketReviewReportViewProps> = ({
   const contextPayload = report?.details?.contextSnapshot?.marketReviewPayload;
   const marketReviewPayload = providedPayload ?? (isMarketReviewPayload(contextPayload) ? contextPayload : null);
   const loadedContent = loadedMarkdown && loadedMarkdown.recordId === recordId ? loadedMarkdown.content : '';
-  const content = providedContent ?? marketReviewPayload?.markdownReport ?? loadedContent;
+  // 英文界面下优先使用后端 LLM 译文渲染正文/摘要；未就绪或失败时回退原文。
+  const translated = useReportTranslation(recordId);
+  const translatedMarkdown = translated?.markdown || '';
+  const content = providedContent
+    ?? (translatedMarkdown || marketReviewPayload?.markdownReport || loadedContent);
   const error = loadError && loadError.recordId === recordId ? loadError.message : null;
   const hasStructuredContent = Boolean(marketReviewPayload?.sections?.length || marketReviewPayload?.markets);
   const isLoading = Boolean(recordId && !providedContent && !hasStructuredContent && loadedMarkdown?.recordId !== recordId && !error);
@@ -401,12 +406,16 @@ export const MarketReviewReportView: React.FC<MarketReviewReportViewProps> = ({
   );
   const sections = useMemo(
     () => {
+      // 有译文时按译文自身的标题切分正文（结构化板块数据仍来自原始 payload）
+      if (translatedMarkdown) {
+        return splitMarketReviewSections(structuredContent, uiLanguage);
+      }
       const payloadSections = getPayloadSections(marketReviewPayload);
       return payloadSections.length > 0
         ? payloadSections
         : splitMarketReviewSections(structuredContent, uiLanguage);
     },
-    [marketReviewPayload, structuredContent, uiLanguage],
+    [marketReviewPayload, structuredContent, translatedMarkdown, uiLanguage],
   );
   const structuredMarketData = useMemo(
     () => getStructuredMarketData(marketReviewPayload),
@@ -457,30 +466,42 @@ export const MarketReviewReportView: React.FC<MarketReviewReportViewProps> = ({
     }
   }, [content]);
 
-  const insightCards = useMemo(() => [
-    {
-      icon: FileText,
-      label: marketReviewText.reviewSummary,
-      value: summary?.analysisSummary || marketReviewText.noReviewSummary,
-    },
-    {
-      icon: Gauge,
-      label: text.marketSentiment,
-      value: summary?.sentimentScore !== undefined
-        ? `${summary.sentimentScore} / 100`
-        : marketReviewText.noSentimentScore,
-    },
-    {
-      icon: Layers,
-      label: marketReviewText.rotationAndFunds,
-      value: summary?.operationAdvice || marketReviewText.noRotationView,
-    },
-    {
-      icon: ShieldAlert,
-      label: marketReviewText.riskAndWatch,
-      value: summary?.trendPrediction || marketReviewText.noRiskWatch,
-    },
-  ], [marketReviewText, summary, text.marketSentiment]);
+  const insightCards = useMemo(() => {
+    // 后端摘要字段优先使用英文界面下的译文（如「查看复盘」/「2026-09-15 大盘复盘」）
+    const translatedSummary = translated?.summary;
+    const localizedSummary = summary && translatedSummary
+      ? {
+          ...summary,
+          analysisSummary: translatedSummary.analysisSummary || summary.analysisSummary,
+          operationAdvice: translatedSummary.operationAdvice || summary.operationAdvice,
+          trendPrediction: translatedSummary.trendPrediction || summary.trendPrediction,
+        }
+      : summary;
+    return [
+      {
+        icon: FileText,
+        label: marketReviewText.reviewSummary,
+        value: localizedSummary?.analysisSummary || marketReviewText.noReviewSummary,
+      },
+      {
+        icon: Gauge,
+        label: text.marketSentiment,
+        value: localizedSummary?.sentimentScore !== undefined
+          ? `${localizedSummary.sentimentScore} / 100`
+          : marketReviewText.noSentimentScore,
+      },
+      {
+        icon: Layers,
+        label: marketReviewText.rotationAndFunds,
+        value: localizedSummary?.operationAdvice || marketReviewText.noRotationView,
+      },
+      {
+        icon: ShieldAlert,
+        label: marketReviewText.riskAndWatch,
+        value: localizedSummary?.trendPrediction || marketReviewText.noRiskWatch,
+      },
+    ];
+  }, [marketReviewText, summary, text.marketSentiment, translated]);
 
   return (
     <div className={`animate-fade-in space-y-4 pb-8 ${className}`}>

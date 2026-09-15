@@ -4,6 +4,7 @@ import { historyApi } from '../../api/history';
 import { markdownToPlainText } from '../../utils/markdown';
 import { getReportText } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import { useReportTranslation } from '../../hooks/useReportTranslation';
 import { Tooltip } from '../common/Tooltip';
 import { ReportMarkdownBody } from './ReportMarkdownBody';
 import { ShareImageButton } from './ShareImageButton';
@@ -30,28 +31,32 @@ export const ReportMarkdownPanel: React.FC<ReportMarkdownPanelProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [copiedType, setCopiedType] = useState<'markdown' | 'text' | null>(null);
 
+  // 英文界面下优先展示后端 LLM 译文；未返回前先渲染原文，失败时保持原文。
+  const translated = useReportTranslation(recordId);
+  const displayContent = (uiLanguage === 'en' && translated?.markdown) || content;
+
   const handleCopyMarkdown = useCallback(async () => {
-    if (!content) return;
+    if (!displayContent) return;
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(displayContent);
       setCopiedType('markdown');
       setTimeout(() => setCopiedType(null), 2000);
     } catch (error) {
       console.error('Copy failed:', error);
     }
-  }, [content]);
+  }, [displayContent]);
 
   const handleCopyPlainText = useCallback(async () => {
-    if (!content) return;
+    if (!displayContent) return;
     try {
-      const plainText = markdownToPlainText(content);
+      const plainText = markdownToPlainText(displayContent);
       await navigator.clipboard.writeText(plainText);
       setCopiedType('text');
       setTimeout(() => setCopiedType(null), 2000);
     } catch (error) {
       console.error('Copy failed:', error);
     }
-  }, [content]);
+  }, [displayContent]);
 
   useEffect(() => {
     let isMounted = true;
@@ -107,7 +112,7 @@ export const ReportMarkdownPanel: React.FC<ReportMarkdownPanelProps> = ({
               <button
                 type="button"
                 onClick={handleCopyMarkdown}
-                disabled={isLoading || !content || copiedType !== null}
+                disabled={isLoading || !displayContent || copiedType !== null}
                 className="home-surface-button flex h-10 w-10 items-center justify-center rounded-lg text-secondary-text hover:text-foreground disabled:opacity-50"
                 aria-label={text.copyMarkdownSource}
               >
@@ -129,7 +134,7 @@ export const ReportMarkdownPanel: React.FC<ReportMarkdownPanelProps> = ({
               <button
                 type="button"
                 onClick={handleCopyPlainText}
-                disabled={isLoading || !content || copiedType !== null}
+                disabled={isLoading || !displayContent || copiedType !== null}
                 className="home-surface-button flex h-10 w-10 items-center justify-center rounded-lg text-secondary-text hover:text-foreground disabled:opacity-50"
                 aria-label={text.copyPlainText}
               >
@@ -170,7 +175,7 @@ export const ReportMarkdownPanel: React.FC<ReportMarkdownPanelProps> = ({
           </button>
         </div>
       ) : (
-        <ReportMarkdownBody content={content} />
+        <ReportMarkdownBody content={displayContent} />
       )}
 
       <div className="home-divider mt-6 flex justify-end border-t pt-4">
