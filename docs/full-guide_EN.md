@@ -1661,6 +1661,42 @@ python main.py --serve-only --host 0.0.0.0 --port 8888
 
 ---
 
+## Multi-User Mode (Experimental)
+
+Multi-user mode lets several people share one DSA deployment: each person signs in with their own account and gets isolated watchlist, analysis history, alert rules, chat sessions, personal schedule and notification channels. Global configuration (LLM keys, data sources) stays admin-managed.
+
+### Enabling & accounts
+
+1. Set `ADMIN_AUTH_ENABLED=true` and `MULTI_USER_ENABLED=true` in `.env`, then restart.
+2. Upgrade path: the existing admin password (`data/.admin_password_hash`) migrates automatically into an `admin` account; the global `STOCK_LIST` is backfilled once into the admin's watchlist.
+3. Accounts come from either the admin Users page (recommended for public deployments) or open registration via `AUTH_REGISTRATION_ENABLED=true` (use together with quotas).
+4. Usernames: 3-32 chars of letters, digits, `_` or `-`. Login failures are rate-limited per (username, IP); registration per IP.
+
+### Data boundaries
+
+- Watchlist / history / backtest / screening / usage: per-user; normal users see only their own records.
+- Alert rules: per-user CRUD; the background alert worker still scans all rules.
+- Chat sessions: scoped to the authenticated identity; session ids are no longer trusted as access tokens.
+- Market review: global, read-only shared.
+- LLM keys / data-source tokens / global notifications: `.env` only, admin-only (`/api/v1/system/*` returns 403 for normal users).
+- CLI / GitHub Actions / bot paths run unowned; their artifacts are visible to the admin only when multi-user is on.
+
+### Per-user schedule & notifications
+
+Each user configures a daily schedule (HH:MM, up to 5) and their own push channels under Settings → Personal settings. Scheduled runs analyze only that user's watchlist and push only to their channels (no channel configured = in-app report only). With multi-user on, the global `SCHEDULE_*` env keys stop triggering; they migrate into the admin account on first enable. User push credentials live in local SQLite, never enter `.env` export, and never fall back to the admin's global channels.
+
+### Quota guardrails
+
+Conservative defaults apply per user (admins exempt): 20 analyses/day, 100 chat turns/day, 50 watchlist entries — tunable via `MULTI_USER_DAILY_ANALYSIS_LIMIT` / `MULTI_USER_DAILY_CHAT_LIMIT` / `MULTI_USER_WATCHLIST_CAP` / `MULTI_USER_MAX_USERS` (`0` = unlimited). Exceeding a quota returns `429/403` with `quota_exceeded` / `watchlist_cap` error codes.
+
+### Session semantics changes
+
+Logout clears only the local session; password change or admin disable immediately invalidates that user's sessions; the auth toggle cannot be disabled from the web while multi-user is on.
+
+### Deployment notes
+
+Public/PaaS deployments: mount a persistent volume at `data/` (users and settings live in SQLite), point `ENV_FILE` at a writable file on that volume, and set `TRUST_X_FORWARDED_FOR=true` behind a reverse proxy. Confirm quota settings before enabling open registration on the public internet.
+
 ## FAQ
 
 ### Q: Push messages getting truncated?

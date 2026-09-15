@@ -485,6 +485,12 @@ daily_stock_analysis/
 |--------|------|--------|
 | `STOCK_LIST` | 自选股代码（逗号分隔） | - |
 | `ADMIN_AUTH_ENABLED` | Web 登录：设为 `true` 启用密码保护；首次访问在网页设置初始密码，可在「系统设置 > 修改密码」修改；忘记密码执行 `python -m src.auth reset_password`。Web 的 `.env` 备份导入导出仅在开启该开关后可用（桌面端不受此限制）。 | `false` |
+| `MULTI_USER_ENABLED` | 多用户模式（实验性）：需与 `ADMIN_AUTH_ENABLED` 同时为 `true` 才生效。开启后每个用户独立账号登录，自选股、分析历史、告警、Chat 会话、个人排程与通知渠道互相隔离；系统配置与用户管理仅管理员可见。首次开启会轮换会话密钥（所有旧会话失效），并把全局 `STOCK_LIST` 一次性回填为管理员的自选股、全局 `SCHEDULE_*` 迁入管理员排程（此后 `.env` 的全局排程不再触发）。 | `false` |
+| `AUTH_REGISTRATION_ENABLED` | 开放注册开关，仅在多用户模式下有意义。默认关闭（由管理员通过用户管理页建号）。公网部署建议配额开启后再开放注册。 | `false` |
+| `MULTI_USER_MAX_USERS` | 注册用户总量上限（多用户模式；管理员不受此限）。`0` 或留空 = 不限制 | `0` |
+| `MULTI_USER_DAILY_ANALYSIS_LIMIT` | 每用户每日分析次数上限（手动与排程共用计数；管理员不受限）。`0` = 不限制 | `20` |
+| `MULTI_USER_DAILY_CHAT_LIMIT` | 每用户每日 Agent Chat 对话轮数上限（管理员不受限）。`0` = 不限制 | `100` |
+| `MULTI_USER_WATCHLIST_CAP` | 每用户自选股数量上限（管理员不受限）。`0` = 不限制 | `50` |
 | `TRUST_X_FORWARDED_FOR` | 单层可信反向代理部署时设为 `true`，取 `X-Forwarded-For` 最右值作为真实客户端 IP（用于登录限流等）；直连公网时保持 `false` 防伪造。多级代理/CDN 场景下限流 key 可能退化为边缘代理 IP，需额外评估 | `false` |
 | `MAX_WORKERS` | 并发线程数 | `3` |
 | `MARKET_REVIEW_ENABLED` | 启用大盘复盘 | `true` |
@@ -1840,6 +1846,51 @@ python main.py --serve-only --host 0.0.0.0 --port 8888
 - 另见 [openclaw Skill 集成指南](openclaw-skill-integration.md)
 
 ---
+
+## 多用户模式（实验性）
+
+多用户模式让多人共用同一套 DSA 部署：每人独立账号登录，各自拥有隔离的自选股、分析历史、告警规则、Chat 会话、个人排程与通知渠道；LLM Key、数据源等全局配置仍由管理员统一管理。
+
+### 开启与账号
+
+1. `.env` 设置 `ADMIN_AUTH_ENABLED=true` 与 `MULTI_USER_ENABLED=true` 后重启服务。
+2. 升级兼容：已有部署的管理员密码（`data/.admin_password_hash`）会自动迁移为 `admin` 账号，原密码可直接登录；全局 `STOCK_LIST` 一次性回填为管理员的自选股。
+3. 账号来源二选一：
+   - 管理员在「设置 → 用户管理」页面建号（推荐，公网部署默认此方式）；
+   - 设置 `AUTH_REGISTRATION_ENABLED=true` 开放自助注册（配合配额护栏使用）。
+4. 注册用户名规则：3-32 位字母、数字、下划线或连字符；登录失败按「用户名 + IP」组合限流（5 次/5 分钟），注册按 IP 限流（5 次/小时）。
+
+### 数据边界
+
+| 数据 | 隔离方式 |
+| --- | --- |
+| 自选股 | 每用户独立存储；`STOCK_LIST` 仍作为 CLI / GitHub Actions 的分析来源，不回写 `.env` |
+| 分析历史 / 回测 / 筛选记录 / 用量统计 | 按用户过滤，普通用户仅见自己的记录 |
+| 告警规则 | 每用户管理自己的规则；后台告警监控仍扫描全部规则 |
+| Agent Chat 会话 | 按登录身份隔离，会话 ID 不再被信任为访问凭据 |
+| 大盘复盘 | 全局共享，所有用户只读可见，不可删除 |
+| LLM Key / 数据源 Token / 全局通知 | 仍在 `.env`，仅管理员可管理；`/api/v1/system/*` 对普通用户返回 403 |
+| CLI / GitHub Actions / Bot | 无登录态路径，产物归属「全局」（`user_id` 为空），多用户开启时仅管理员可见 |
+
+### 每用户排程与通知
+
+- 每人在「设置 → 个人设置」配置每日排程时间（HH:MM，最多 5 个）与自己的通知渠道（Telegram/邮件/Webhook 等）。排程到点只分析该用户自己的自选股，结果只推送到该用户配置的渠道；未配置渠道则仅保存站内报告。
+- 多用户开启后 `.env` 的全局 `SCHEDULE_ENABLED/SCHEDULE_TIME(S)` 不再触发；首次开启时会把全局排程迁入管理员账号。
+- 用户的推送凭证只存本地 SQLite（与 `.env` 同级信任边界），永不进入 `.env` 导出，也绝不回退使用管理员的全局渠道。
+
+### 配额护栏（防滥用）
+
+多用户模式下默认启用保守限额（管理员不受限）：每日分析 20 次、每日 Chat 100 轮、自选股 50 只，均可用上表中的 `MULTI_USER_*` 环境变量调整；`0` 表示不限制。超限时接口返回 `429/403` 与 `quota_exceeded` / `watchlist_cap` 错误码。
+
+### 会话语义变化
+
+- 登出仅清除本机会话，不再使其他用户下线。
+- 修改密码、管理员禁用用户会使该用户所有旧会话立即失效。
+- 多用户模式下不允许从网页关闭 `ADMIN_AUTH_ENABLED`（认证是多用户权限模型的根基）。
+
+### 部署提示
+
+公网 / PaaS 部署：务必给 `data/` 挂载持久卷（用户与设置都在 SQLite），设置 `ENV_FILE` 指向卷内可写文件（Web 设置页保存需要写 `.env`），反向代理下设置 `TRUST_X_FORWARDED_FOR=true`。公网开放注册前建议先确认配额配置。
 
 ## 常见问题
 
