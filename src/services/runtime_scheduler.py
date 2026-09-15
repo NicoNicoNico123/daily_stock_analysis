@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -28,6 +29,12 @@ RUNTIME_SCHEDULER_SUPPRESS_START_ENV = "DSA_RUNTIME_SCHEDULER_SUPPRESS_START"
 RUNTIME_SCHEDULER_ARGS_ENV = "DSA_RUNTIME_SCHEDULER_ARGS"
 RUNTIME_SCHEDULER_TIMEOUT_ENV = "DSA_RUNTIME_SCHEDULER_TIMEOUT_SECONDS"
 DEFAULT_RUNTIME_SCHEDULER_TIMEOUT_SECONDS = 45 * 60
+# 多用户定时排程：子进程归属用户注入的环境变量（main.py 侧消费）。
+SCHEDULER_USER_ID_ENV = "DSA_SCHEDULER_USER_ID"
+PER_USER_SCHEDULE_TASK_NAME = "per_user_schedule_tick"
+PER_USER_SCHEDULE_TICK_SECONDS = 60
+PER_USER_SCHEDULE_STAGGER_SECONDS = 120
+PER_USER_SCHEDULE_RETRY_SECONDS = 5 * 60
 _RUNTIME_ANALYSIS_LOCK = threading.Lock()
 SCHEDULE_ARGS_OVERRIDE_KEYS = {
     "no_notify",
@@ -63,8 +70,13 @@ def _run_scheduled_analysis_process(
     result_queue: Any,
     stock_codes: Optional[List[str]],
     schedule_args_overrides: Dict[str, Any],
+    owner_user_id: Optional[int] = None,
 ) -> None:
     """Run one analysis in a spawn-safe child process."""
+    if owner_user_id is not None:
+        # 在子进程环境注入归属用户：main.py 侧据此把历史/报告归属到该用户。
+        # 只新增这一个变量，不透传其他调度内部状态。
+        os.environ[SCHEDULER_USER_ID_ENV] = str(owner_user_id)
     if os.name == "posix":
         try:
             os.setsid()
@@ -283,6 +295,10 @@ class RuntimeSchedulerService:
         self._analysis_process: Optional[Any] = None
         self._analysis_process_lock = threading.Lock()
         self._analysis_generation = 0
+        # 多用户排程：记录当天已触发的 (日期|HH:MM|user_id)，避免同一时刻重复触发。
+        self._per_user_state_lock = threading.Lock()
+        self._per_user_fired_keys: Set[str] = set()
+        self._per_user_fired_date: Optional[str] = None
 
     def _make_schedule_args(self) -> SimpleNamespace:
         defaults = {
@@ -359,12 +375,25 @@ class RuntimeSchedulerService:
             )
             return DEFAULT_RUNTIME_SCHEDULER_TIMEOUT_SECONDS
 
+    def _bind_analysis_process_target(self, owner_user_id: Optional[int]) -> Any:
+        """Bind the owner user onto the spawn target without changing its arity.
+
+        既有测试/自定义 spawn target 只接受 3 个位置参数，因此仅在需要归属时
+        以 partial 追加 owner_user_id 关键字参数。
+        """
+        target = self._analysis_process_target
+        if owner_user_id is None:
+            return target
+        return partial(target, owner_user_id=owner_user_id)
+
     def _run_analysis_with_watchdog(
         self,
         stock_codes: Optional[List[str]] = None,
         *,
         lock_held: bool = False,
         generation: Optional[int] = None,
+        owner_user_id: Optional[int] = None,
+        start_gate: Optional[Callable[[], Optional[str]]] = None,
     ) -> None:
         if not lock_held and not self._run_lock.acquire(blocking=False):
             self._record_analysis_busy_skip()
@@ -378,11 +407,21 @@ class RuntimeSchedulerService:
             context = multiprocessing.get_context("spawn")
             result_queue = context.Queue()
             process = context.Process(
-                target=self._analysis_process_target,
+                target=self._bind_analysis_process_target(owner_user_id),
                 args=(result_queue, stock_codes, dict(self._schedule_args_overrides)),
                 name="runtime-scheduled-analysis",
             )
             timeout = self._analysis_timeout_seconds()
+            if start_gate is not None:
+                # 闸门在锁已持有、子进程即将启动前执行，保证每次真实运行只扣一次配额；
+                # 拒绝时不启动进程，直接按跳过记录。
+                gate_reason = start_gate()
+                if gate_reason is not None:
+                    with self._analysis_process_lock:
+                        if generation == self._analysis_generation:
+                            self._last_skipped_at = datetime.now().isoformat()
+                            self._last_skip_reason = gate_reason
+                    return
             with self._analysis_process_lock:
                 if generation != self._analysis_generation:
                     return
@@ -463,6 +502,8 @@ class RuntimeSchedulerService:
         stock_codes: Optional[List[str]] = None,
         *,
         generation: Optional[int] = None,
+        owner_user_id: Optional[int] = None,
+        start_gate: Optional[Callable[[], Optional[str]]] = None,
     ) -> bool:
         with self._analysis_process_lock:
             current_generation = self._analysis_generation
@@ -477,6 +518,8 @@ class RuntimeSchedulerService:
                 stock_codes,
                 lock_held=True,
                 generation=generation,
+                owner_user_id=owner_user_id,
+                start_gate=start_gate,
             ),
             daemon=True,
             name="runtime-scheduler-watchdog",
@@ -496,7 +539,169 @@ class RuntimeSchedulerService:
         )
 
     def _is_schedule_enabled(self, config: Config) -> bool:
+        if self._is_multi_user_mode():
+            # 多用户模式：排程唯一真源是用户配置，全局 SCHEDULE_ENABLED 不再决定调度开关。
+            return True
         return self._force_enabled or bool(getattr(config, "schedule_enabled", False))
+
+    def _is_multi_user_mode(self) -> bool:
+        """多用户模式开启时，定时排程切换为按用户配置触发。"""
+        try:
+            from src.auth import is_multi_user_enabled
+
+            return bool(is_multi_user_enabled())
+        except Exception as exc:  # noqa: BLE001 - 开关读取失败按关闭处理，保持旧全局行为。
+            logger.warning("[PerUserScheduler] 多用户开关读取失败，按关闭处理: %s", exc)
+            return False
+
+    def _list_enabled_user_schedules(self) -> List[Dict[str, Any]]:
+        """读取启用排程且自选股非空的用户（存储层已过滤空 watchlist）。"""
+        from src.storage import DatabaseManager
+
+        return DatabaseManager.get_instance().list_enabled_user_schedules()
+
+    def _count_enabled_user_schedules(self) -> int:
+        """状态接口用的启用排程用户数（不暴露任何用户的自选股内容）。"""
+        try:
+            return len(self._list_enabled_user_schedules())
+        except Exception as exc:  # noqa: BLE001 - 状态统计失败不能影响 status 接口。
+            logger.warning("[PerUserScheduler] 统计启用排程用户数失败: %s", exc)
+            return 0
+
+    @staticmethod
+    def _normalize_user_schedule_times(times: Any) -> List[str]:
+        """把用户排程时间归一化为 HH:MM 集合（容忍 HH:MM:SS 写法）。"""
+        normalized: Set[str] = set()
+        for item in times or []:
+            match = re.fullmatch(r"(\d{1,2}):(\d{2})(?::\d{2})?", str(item).strip())
+            if not match:
+                continue
+            hour, minute = int(match.group(1)), int(match.group(2))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                normalized.add(f"{hour:02d}:{minute:02d}")
+        return sorted(normalized)
+
+    def _build_user_quota_gate(self, user_id: int) -> Callable[[], Optional[str]]:
+        """构造子进程启动前的每日配额闸门；拒绝时返回 skip 原因。"""
+
+        def _gate() -> Optional[str]:
+            from src.services.user_quota import QUOTA_ANALYSIS, consume_daily_quota
+
+            allowed, used, limit = consume_daily_quota(user_id, QUOTA_ANALYSIS)
+            if allowed:
+                return None
+            logger.warning(
+                "[PerUserScheduler] 用户 %s 今日分析配额已用尽（%s/%s），跳过本次定时分析",
+                user_id,
+                used,
+                limit,
+            )
+            return "user_quota_exhausted"
+
+        return _gate
+
+    def _per_user_schedule_tick(self) -> None:
+        """多用户排程轮询：命中当前 HH:MM 的用户进入错峰分发。
+
+        由调度循环以后台任务方式调用；读取/分发都不阻塞调度主循环，
+        任何异常也不能拖垮调度器本身。
+        """
+        if not self._is_multi_user_mode():
+            return
+        try:
+            schedules = self._list_enabled_user_schedules()
+        except Exception as exc:  # noqa: BLE001 - 排程读取失败只影响本轮。
+            logger.warning("[PerUserScheduler] 读取用户排程失败，本轮跳过: %s", exc)
+            return
+
+        now = datetime.now()
+        current_hm = now.strftime("%H:%M")
+        today = now.strftime("%Y-%m-%d")
+        due_schedules: List[Dict[str, Any]] = []
+        with self._per_user_state_lock:
+            if self._per_user_fired_date != today:
+                # 跨天清理触发记录，避免集合无限增长。
+                self._per_user_fired_keys.clear()
+                self._per_user_fired_date = today
+            for schedule in schedules:
+                if current_hm not in self._normalize_user_schedule_times(schedule.get("times")):
+                    continue
+                fired_key = f"{today}|{current_hm}|{schedule.get('user_id')}"
+                if fired_key in self._per_user_fired_keys:
+                    continue
+                self._per_user_fired_keys.add(fired_key)
+                due_schedules.append(schedule)
+        if not due_schedules:
+            return
+        logger.info(
+            "[PerUserScheduler] %s 命中 %d 个用户的定时排程，开始错峰分发",
+            current_hm,
+            len(due_schedules),
+        )
+        self._run_in_background_thread(
+            partial(self._dispatch_due_user_schedules, due_schedules)
+        )
+
+    def _dispatch_due_user_schedules(self, due_schedules: List[Dict[str, Any]]) -> None:
+        """依次分发命中的用户；第 N 个用户延迟 N*120 秒，避免同时挤兑分析资源。"""
+        for index, schedule in enumerate(due_schedules):
+            delay_seconds = index * PER_USER_SCHEDULE_STAGGER_SECONDS
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
+            user_id = schedule.get("user_id")
+            try:
+                self._run_user_scheduled_analysis(schedule)
+            except Exception as exc:  # noqa: BLE001 - 单用户失败不影响其他用户。
+                logger.error("[PerUserScheduler] 用户 %s 定时分发失败: %s", user_id, exc)
+
+    def _run_user_scheduled_analysis(
+        self,
+        schedule: Dict[str, Any],
+        *,
+        allow_retry: bool = True,
+    ) -> None:
+        """为单个用户触发一次限定其自选股、归属其名下的定时分析子进程。"""
+        user_id = schedule.get("user_id")
+        stock_codes = [
+            str(code)
+            for code in (schedule.get("stock_codes") or [])
+            if str(code or "").strip()
+        ]
+        if not stock_codes:
+            logger.warning("[PerUserScheduler] 用户 %s 自选股为空，跳过本次定时分析", user_id)
+            return
+        started = self._start_analysis_watchdog(
+            stock_codes,
+            owner_user_id=user_id,
+            start_gate=self._build_user_quota_gate(int(user_id)),
+        )
+        if started:
+            logger.info(
+                "[PerUserScheduler] 已触发用户 %s 的定时分析（%d 只自选股）",
+                user_id,
+                len(stock_codes),
+            )
+            return
+        # 全局分析锁被占用：记录含用户 id 的 busy-skip，5 分钟后仅重试一次。
+        if not allow_retry:
+            logger.warning(
+                "[PerUserScheduler] 用户 %s 重试仍因已有分析执行被跳过，等待下一次排程",
+                user_id,
+            )
+            return
+        logger.warning(
+            "[PerUserScheduler] 用户 %s 定时分析因已有分析执行被跳过，%d 秒后重试一次",
+            user_id,
+            PER_USER_SCHEDULE_RETRY_SECONDS,
+        )
+        self._run_in_background_thread(
+            partial(self._retry_user_scheduled_analysis, schedule)
+        )
+
+    def _retry_user_scheduled_analysis(self, schedule: Dict[str, Any]) -> None:
+        """锁占用后的唯一一次延迟重试（best-effort，失败即放弃到下一排程）。"""
+        time.sleep(PER_USER_SCHEDULE_RETRY_SECONDS)
+        self._run_user_scheduled_analysis(schedule, allow_retry=False)
 
     def _current_background_tasks(self, config: Config) -> List[Dict[str, Any]]:
         if self._background_tasks_provider is not None:
@@ -557,17 +762,12 @@ class RuntimeSchedulerService:
                 self.stop()
                 return
             config = self._config_provider()
-            if not self._is_schedule_enabled(config):
+            per_user_mode = self._is_multi_user_mode()
+            if not (per_user_mode or self._is_schedule_enabled(config)):
                 self.stop()
                 return
             background_tasks = self._current_background_tasks(config)
             self.stop()
-            with self._analysis_process_lock:
-                generation = self._analysis_generation
-            scheduled_analysis = partial(
-                self._start_analysis_watchdog,
-                generation=generation,
-            )
             times = normalize_schedule_times(
                 getattr(config, "schedule_times", None),
                 fallback_time=getattr(config, "schedule_time", "18:00"),
@@ -578,13 +778,29 @@ class RuntimeSchedulerService:
                 schedule_times_provider=self._current_times,
                 register_signals=False,
             )
-            if run_immediately and self._run_immediately_in_background:
-                scheduler.set_daily_task(scheduled_analysis, run_immediately=False)
-            else:
-                scheduler.set_daily_task(
-                    scheduled_analysis,
-                    run_immediately=run_immediately,
+            if per_user_mode:
+                # 多用户模式：不注册全局每日任务（.env SCHEDULE_* 不触发运行），
+                # 改为周期轮询用户排程并错峰分发，调度循环保持响应。
+                scheduler.add_background_task(
+                    self._per_user_schedule_tick,
+                    interval_seconds=PER_USER_SCHEDULE_TICK_SECONDS,
+                    run_immediately=False,
+                    name=PER_USER_SCHEDULE_TASK_NAME,
                 )
+            else:
+                with self._analysis_process_lock:
+                    generation = self._analysis_generation
+                scheduled_analysis = partial(
+                    self._start_analysis_watchdog,
+                    generation=generation,
+                )
+                if run_immediately and self._run_immediately_in_background:
+                    scheduler.set_daily_task(scheduled_analysis, run_immediately=False)
+                else:
+                    scheduler.set_daily_task(
+                        scheduled_analysis,
+                        run_immediately=run_immediately,
+                    )
             for entry in background_tasks:
                 scheduler.add_background_task(
                     entry["task"],
@@ -592,7 +808,11 @@ class RuntimeSchedulerService:
                     run_immediately=entry.get("run_immediately", False),
                     name=entry.get("name"),
                 )
-            if run_immediately and self._run_immediately_in_background:
+            if (
+                not per_user_mode
+                and run_immediately
+                and self._run_immediately_in_background
+            ):
                 self._run_in_background_thread(scheduled_analysis)
             thread = threading.Thread(
                 target=scheduler.run,
@@ -663,11 +883,18 @@ class RuntimeSchedulerService:
 
     def status(self) -> Dict[str, Any]:
         scheduler = self._scheduler
+        per_user_mode = self._is_multi_user_mode()
         jobs = scheduler.schedule.get_jobs() if scheduler is not None else []
         next_run = None
         if jobs:
             next_run = min(job.next_run for job in jobs).isoformat()
-        if scheduler is not None:
+        per_user_enabled_schedules: Optional[int] = None
+        if per_user_mode:
+            # 多用户模式：排程真源是用户配置，全局 SCHEDULE_* 不再代表执行计划；
+            # 只暴露启用排程的用户数，不泄露任何用户的自选股内容。
+            schedule_times: List[str] = []
+            per_user_enabled_schedules = self._count_enabled_user_schedules()
+        elif scheduler is not None:
             schedule_times = list(getattr(scheduler, "schedule_times", []))
         else:
             try:
@@ -685,4 +912,7 @@ class RuntimeSchedulerService:
             "last_error": self._last_error,
             "last_skipped_at": self._last_skipped_at,
             "last_skip_reason": self._last_skip_reason,
+            # 以下为新增的附加字段，保持既有响应结构向后兼容。
+            "mode": "per_user" if per_user_mode else "global",
+            "per_user_enabled_schedules": per_user_enabled_schedules,
         }

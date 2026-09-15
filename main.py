@@ -771,6 +771,45 @@ def _run_auto_backtest(config: Config) -> None:
         logger.warning(f"自动回测失败（已忽略）: {exc}")
 
 
+def _resolve_scheduler_owner_user_id() -> Optional[str]:
+    """解析定时子进程的归属用户（多用户模式）。
+
+    runtime_scheduler 会在派生的分析子进程环境中注入 DSA_SCHEDULER_USER_ID；
+    本函数只在该变量存在时做归属解析：
+    - 多用户模式未开启 / 变量非法 / 用户不存在或已停用 -> 告警并按无归属运行；
+    - 其余情况返回字符串用户 id，供 StockAnalysisPipeline(owner_user_id=...)
+      把历史、报告与通知归属到该用户。
+    """
+    from src.services.runtime_scheduler import SCHEDULER_USER_ID_ENV
+
+    raw_value = (os.getenv(SCHEDULER_USER_ID_ENV) or "").strip()
+    if not raw_value:
+        return None
+
+    from src.auth import is_multi_user_enabled
+
+    if not is_multi_user_enabled():
+        logger.warning(
+            "检测到 %s=%r 但多用户模式未开启，本轮按无归属运行",
+            SCHEDULER_USER_ID_ENV,
+            raw_value,
+        )
+        return None
+    try:
+        user_id = int(raw_value)
+    except ValueError:
+        logger.warning("%s=%r 不是合法用户 id，本轮按无归属运行", SCHEDULER_USER_ID_ENV, raw_value)
+        return None
+
+    from src.storage import DatabaseManager
+
+    user = DatabaseManager.get_instance().get_user_by_id(user_id)
+    if user is None or not bool(getattr(user, "is_active", True)):
+        logger.warning("定时归属用户 %s 不存在或已停用，本轮按无归属运行", user_id)
+        return None
+    return str(user_id)
+
+
 def run_full_analysis(
     config: Config,
     args: argparse.Namespace,
@@ -931,6 +970,9 @@ def run_full_analysis(
         market_context_summary = ""
         market_context_full_report = ""
         market_context_generated_during_stock = False
+        # 定时子进程归属解析（多用户模式）：仅在 runtime_scheduler 注入的
+        # 归属环境变量存在时才查询用户，解析失败降级为无归属运行。
+        scheduler_owner_user_id = _resolve_scheduler_owner_user_id()
         pipeline = StockAnalysisPipeline(
             config=config,
             max_workers=args.workers,
@@ -939,6 +981,7 @@ def run_full_analysis(
             save_context_snapshot=save_context_snapshot,
             daily_market_context_enabled=should_use_daily_market_context,
             daily_market_context_allow_generate=should_use_daily_market_context,
+            owner_user_id=scheduler_owner_user_id,
         )
         if should_use_daily_market_context:
             # Prompt-side context can reuse historical summaries, while full-merge

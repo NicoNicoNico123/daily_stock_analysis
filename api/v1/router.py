@@ -17,12 +17,14 @@ from api.v1.endpoints import (
     screening,
     analysis,
     auth,
+    admin_users,
     backtest,
     data,
     decision_signals,
     health,
     history,
     intelligence,
+    me,
     portfolio,
     stocks,
     system_config,
@@ -73,6 +75,18 @@ router.include_router(
     system_config.router,
     prefix="/system",
     tags=["SystemConfig"]
+)
+
+router.include_router(
+    admin_users.router,
+    prefix="/admin/users",
+    tags=["AdminUsers"]
+)
+
+router.include_router(
+    me.router,
+    prefix="/me",
+    tags=["Me"]
 )
 
 router.include_router(

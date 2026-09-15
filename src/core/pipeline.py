@@ -226,13 +226,17 @@ def _symbol_scope_lookup_values(code: str, market: str) -> List[str]:
 class StockAnalysisPipeline:
     """
     股票分析主流程调度器
-    
+
     职责：
     1. 管理整个分析流程
     2. 协调数据获取、存储、搜索、分析、通知等模块
     3. 实现并发控制和异常处理
     """
-    
+
+    # 归属用户 id（多用户模式；None = 全局/legacy 运行）。类级默认值兜底
+    # 绕过 __init__ 构造的实例（测试/手工装配路径）。
+    owner_user_id: Optional[str] = None
+
     def __init__(
         self,
         config: Optional[Config] = None,
@@ -248,13 +252,15 @@ class StockAnalysisPipeline:
         portfolio_context: Optional[Dict[str, Any]] = None,
         daily_market_context_enabled: Optional[bool] = None,
         daily_market_context_allow_generate: bool = True,
+        owner_user_id: Optional[str] = None,
     ):
         """
         初始化调度器
-        
+
         Args:
             config: 配置对象（可选，默认使用全局配置）
             max_workers: 最大并发线程数（可选，默认从配置读取）
+            owner_user_id: 归属用户 id（多用户模式；None = 全局/legacy 运行）
         """
         self.config = config or get_config()
         self.max_workers = max_workers or self.config.max_workers
@@ -262,6 +268,7 @@ class StockAnalysisPipeline:
         self.query_id = query_id
         self.trace_id = trace_id or query_id
         self.query_source = self._resolve_query_source(query_source)
+        self.owner_user_id = owner_user_id
         self.save_context_snapshot = (
             self.config.save_context_snapshot if save_context_snapshot is None else save_context_snapshot
         )
@@ -282,7 +289,10 @@ class StockAnalysisPipeline:
         # 不再单独创建 akshare_fetcher，统一使用 fetcher_manager 获取增强数据
         self.trend_analyzer = StockTrendAnalyzer()  # 技术分析器
         self.analyzer = GeminiAnalyzer(config=self.config, skills=self.analysis_skills)
-        self.notifier = NotificationService(source_message=source_message)
+        self.notifier = NotificationService(
+            source_message=source_message,
+            owner_user_id=self.owner_user_id,
+        )
         self.market_structure_service = MarketStructureService(fetcher_manager=self.fetcher_manager)
         self.market_hotspot_service: Optional[MarketHotspotService] = None
         try:
@@ -960,7 +970,8 @@ class StockAnalysisPipeline:
                         report_type=report_type.value,
                         news_content=news_context,
                         context_snapshot=context_snapshot,
-                        save_snapshot=self.save_context_snapshot
+                        save_snapshot=self.save_context_snapshot,
+                        owner_user_id=self.owner_user_id
                     )
                     valid_saved_history_id = (
                         isinstance(saved_history_id, int)
@@ -1883,6 +1894,7 @@ class StockAnalysisPipeline:
                         news_content=None,
                         context_snapshot=agent_context_snapshot,
                         save_snapshot=self.save_context_snapshot,
+                        owner_user_id=self.owner_user_id,
                     )
                     valid_saved_history_id = (
                         isinstance(saved_history_id, int)
@@ -3748,7 +3760,12 @@ class StockAnalysisPipeline:
             return None
 
         try:
-            filepath = self.notifier.save_report_to_file(report)
+            # 多用户模式下按归属写入 reports/users/<owner_user_id>/；
+            # 无归属（单用户/legacy）时不传该参数，保持既有调用签名不变
+            save_kwargs = (
+                {"owner_user_id": self.owner_user_id} if self.owner_user_id else {}
+            )
+            filepath = self.notifier.save_report_to_file(report, **save_kwargs)
             if filepath:
                 filepath = str(filepath)
                 self._last_local_report_path = filepath
@@ -4037,9 +4054,15 @@ class StockAnalysisPipeline:
                         def _send_feishu_report() -> bool:
                             if getattr(self.notifier, "_feishu_send_as_file", False):
                                 date_str = datetime.now().strftime('%Y%m%d')
+                                feishu_save_kwargs = (
+                                    {"owner_user_id": self.owner_user_id}
+                                    if self.owner_user_id
+                                    else {}
+                                )
                                 filepath = self.notifier.save_report_to_file(
                                     strip_hidden_markdown_metadata(report).strip(),
                                     filename=f"dashboard_{date_str}.md",
+                                    **feishu_save_kwargs,
                                 )
                                 return self.notifier.send_feishu_file(filepath)
                             return self.notifier.send_to_feishu(report)

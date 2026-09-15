@@ -13,6 +13,12 @@ A股自选股智能分析系统 - 通知层
    - Telegram Bot
    - 邮件 SMTP
    - Pushover（手机/桌面推送）
+
+多用户按归属推送（静态渠道）：
+- 未归属运行（CLI / GitHub Actions / 系统）与管理员运行使用全局 .env 渠道；
+- 多用户开启时，普通用户运行的静态推送仅使用其个人配置的渠道，
+  未配置渠道则不推送（报告仍会保存）；
+- 机器人会话上下文（send_to_context）优先级不变，命中时跳过静态渠道。
 """
 from __future__ import annotations
 
@@ -288,14 +294,33 @@ class NotificationService(
     注意：所有已配置的渠道都会收到推送
     """
 
-    def __init__(self, source_message: Optional[BotMessage] = None):
+    def __init__(
+        self,
+        source_message: Optional[BotMessage] = None,
+        owner_user_id: Optional[str] = None,
+    ):
         """
         初始化通知服务
 
         检测所有已配置的渠道，推送时会向所有渠道发送
+
+        Args:
+            source_message: 机器人来源消息（存在时会话上下文渠道优先于静态渠道）
+            owner_user_id: 运行归属用户 id（多用户模式）。None 或多用户关闭时使用
+                全局 .env 渠道；普通用户仅使用其个人渠道（无回退）；管理员合并
+                个人 + 全局渠道；用户无法解析/停用/未配置渠道时不做静态推送
         """
         config = get_config()
+        if owner_user_id:
+            # 按归属解析静态渠道配置；fail-closed（None 之外的空配置 = 不静态推送），
+            # 绝不把全局/管理员渠道凭据回退进用户运行的载荷
+            from src.services.user_notification_channels import resolve_owner_channel_config
+
+            owner_channel_config = resolve_owner_channel_config(owner_user_id, config)
+            if owner_channel_config is not None:
+                config = owner_channel_config
         self._config = config
+        self._owner_user_id = owner_user_id
         self._source_message = source_message
         self._context_channels: List[str] = []
 
@@ -2892,7 +2917,8 @@ class NotificationService(
     def save_report_to_file(
         self,
         content: str,
-        filename: Optional[str] = None
+        filename: Optional[str] = None,
+        owner_user_id: Optional[str] = None
     ) -> str:
         """
         保存日报到本地文件
@@ -2900,6 +2926,8 @@ class NotificationService(
         Args:
             content: 日报内容
             filename: 文件名（可选，默认按日期生成）
+            owner_user_id: 归属用户 id（多用户模式）；设置时写入
+                reports/users/<owner_user_id>/，默认保持平铺 reports/ 目录不变
 
         Returns:
             保存的文件路径
@@ -2912,6 +2940,9 @@ class NotificationService(
 
         # 确保 reports 目录存在（使用项目根目录下的 reports）
         reports_dir = Path(__file__).parent.parent / 'reports'
+        if owner_user_id:
+            # 多用户模式：按归属隔离到 reports/users/<owner_user_id>/
+            reports_dir = reports_dir / 'users' / str(owner_user_id)
         reports_dir.mkdir(parents=True, exist_ok=True)
 
         filepath = reports_dir / filename
