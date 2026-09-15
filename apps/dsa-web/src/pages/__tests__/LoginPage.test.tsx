@@ -38,14 +38,14 @@ describe('LoginPage', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByLabelText('管理员密码'), { target: { value: 'passwd6' } });
-    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'passwd7' } });
-    fireEvent.click(screen.getByRole('button', { name: '完成设置并登录' }));
+    fireEvent.change(screen.getByLabelText('管理員密碼'), { target: { value: 'passwd6' } });
+    fireEvent.change(screen.getByLabelText('確認密碼'), { target: { value: 'passwd7' } });
+    fireEvent.click(screen.getByRole('button', { name: '完成設置並登錄' }));
 
-    expect(await screen.findByText('两次输入的密码不一致')).toBeInTheDocument();
+    expect(await screen.findByText('兩次輸入的密碼不一致')).toBeInTheDocument();
     expect(login).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('管理员密码')).toHaveAttribute('data-appearance', 'login');
-    expect(screen.getByLabelText('确认密码')).toHaveAttribute('data-appearance', 'login');
+    expect(screen.getByLabelText('管理員密碼')).toHaveAttribute('data-appearance', 'login');
+    expect(screen.getByLabelText('確認密碼')).toHaveAttribute('data-appearance', 'login');
   });
 
   it('navigates to redirect after a successful login', async () => {
@@ -57,11 +57,11 @@ describe('LoginPage', () => {
 
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByLabelText('登录密码'), { target: { value: 'passwd6' } });
-    fireEvent.click(screen.getByRole('button', { name: '授权进入工作台' }));
+    fireEvent.change(screen.getByLabelText('登錄密碼'), { target: { value: 'passwd6' } });
+    fireEvent.click(screen.getByRole('button', { name: '授權進入工作臺' }));
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/settings', { replace: true }));
-    expect(screen.getByLabelText('登录密码')).toHaveAttribute('data-appearance', 'login');
+    expect(screen.getByLabelText('登錄密碼')).toHaveAttribute('data-appearance', 'login');
   });
 
   it('does not override login theme tokens inline so light mode can take effect', () => {

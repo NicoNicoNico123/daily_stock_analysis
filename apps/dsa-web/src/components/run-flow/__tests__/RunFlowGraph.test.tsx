@@ -5,7 +5,7 @@ import { RunFlowGraph } from '../RunFlowGraph';
 
 const lanes: RunFlowLane[] = [
   { id: 'entry', label: '入口', order: 1 },
-  { id: 'data_source', label: '数据来源', order: 2 },
+  { id: 'data_source', label: '數據源', order: 2 },
   { id: 'analysis', label: '分析引擎', order: 3 },
 ];
 
@@ -14,14 +14,14 @@ const nodes: RunFlowNode[] = [
     id: 'request',
     lane: 'entry',
     kind: 'entry',
-    label: '用户请求',
+    label: '用戶請求',
     status: 'success',
   },
   {
     id: 'news',
     lane: 'data_source',
     kind: 'data_source',
-    label: '新闻舆情',
+    label: '新聞輿情',
     status: 'fallback',
     provider: 'AkShare',
     startedAt: '2026-06-08T10:00:00',
@@ -35,7 +35,7 @@ const edges: RunFlowEdge[] = [
     to: 'news',
     kind: 'fallback',
     status: 'fallback',
-    label: '降级输入',
+    label: '降級輸入',
   },
 ];
 
@@ -72,12 +72,12 @@ describe('RunFlowGraph', () => {
     );
 
     expect(screen.getByText('入口')).toBeInTheDocument();
-    expect(screen.getByText('数据来源')).toBeInTheDocument();
-    expect(screen.getAllByText('降级回退').length).toBeGreaterThan(0);
-    expect(screen.getByText('降级输入')).toBeInTheDocument();
-    expect(screen.getByTestId('run-flow-node-news')).toHaveTextContent('开始');
+    expect(screen.getByText('數據源')).toBeInTheDocument();
+    expect(screen.getAllByText('降級回退').length).toBeGreaterThan(0);
+    expect(screen.getByText('降級輸入')).toBeInTheDocument();
+    expect(screen.getByTestId('run-flow-node-news')).toHaveTextContent('開始');
     expect(screen.getByTestId('run-flow-node-news')).toHaveTextContent('2026');
-    expect(screen.getByRole('button', { name: '新闻舆情 节点，状态 降级回退' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '新聞輿情 節點，狀態 降級回退' })).toBeInTheDocument();
     const marker = container.querySelector('marker');
     expect(marker).toHaveAttribute('markerWidth', '4');
     expect(marker).toHaveAttribute('markerHeight', '4');
@@ -86,7 +86,7 @@ describe('RunFlowGraph', () => {
     fireEvent.mouseEnter(screen.getByTestId('run-flow-node-news'));
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '新闻舆情 节点，状态 降级回退' }));
+    fireEvent.click(screen.getByRole('button', { name: '新聞輿情 節點，狀態 降級回退' }));
 
     expect(onSelectNode).toHaveBeenCalledWith(expect.objectContaining({ id: 'news' }));
   });
@@ -105,7 +105,7 @@ describe('RunFlowGraph', () => {
         id: 'artifact',
         lane: 'analysis',
         kind: 'artifact',
-        label: '报告产物',
+        label: '報告產物',
         status: 'success',
       },
     ];
@@ -116,7 +116,7 @@ describe('RunFlowGraph', () => {
         to: 'news',
         kind: 'control',
         status: 'success',
-        label: '调度输入',
+        label: '調度輸入',
       },
       {
         id: 'llm-artifact',
@@ -124,7 +124,7 @@ describe('RunFlowGraph', () => {
         to: 'artifact',
         kind: 'data',
         status: 'success',
-        label: '报告输出',
+        label: '報告輸出',
       },
       {
         id: 'llm-artifact-fallback',
@@ -132,7 +132,7 @@ describe('RunFlowGraph', () => {
         to: 'artifact',
         kind: 'fallback',
         status: 'fallback',
-        label: '降级输出',
+        label: '降級輸出',
       },
     ];
 
@@ -150,9 +150,9 @@ describe('RunFlowGraph', () => {
     const opacities = paths.map((path) => path.getAttribute('opacity'));
     expect(opacities.filter((opacity) => opacity === '0.82')).toHaveLength(1);
     expect(opacities.filter((opacity) => opacity === '0.18')).toHaveLength(2);
-    expect(screen.getByText('调度输入')).toBeInTheDocument();
-    expect(screen.queryByText('报告输出')).not.toBeInTheDocument();
-    expect(screen.getByText('降级输出')).toBeInTheDocument();
+    expect(screen.getByText('調度輸入')).toBeInTheDocument();
+    expect(screen.queryByText('報告輸出')).not.toBeInTheDocument();
+    expect(screen.getByText('降級輸出')).toBeInTheDocument();
   });
 
   it('distributes fan-out edge anchors instead of routing every line through the node center', () => {
@@ -161,21 +161,21 @@ describe('RunFlowGraph', () => {
         id: 'request',
         lane: 'entry',
         kind: 'entry',
-        label: '用户请求',
+        label: '用戶請求',
         status: 'success',
       },
       {
         id: 'daily',
         lane: 'data_source',
         kind: 'data_source',
-        label: '日线K线',
+        label: '日線K線',
         status: 'success',
       },
       {
         id: 'quote',
         lane: 'data_source',
         kind: 'data_source',
-        label: '实时行情',
+        label: '實時行情',
         status: 'success',
       },
       {
@@ -244,14 +244,14 @@ describe('RunFlowGraph', () => {
             id: 'request',
             lane: 'entry',
             kind: 'entry',
-            label: '用户请求',
+            label: '用戶請求',
             status: 'success',
           },
           {
             id: 'task_queue',
             lane: 'entry',
             kind: 'queue',
-            label: '任务队列',
+            label: '任務隊列',
             status: 'success',
           },
         ]}
@@ -271,14 +271,14 @@ describe('RunFlowGraph', () => {
         id: 'daily',
         lane: 'data_source',
         kind: 'data_source',
-        label: '日线K线',
+        label: '日線K線',
         status: 'success',
       },
       {
         id: 'quote',
         lane: 'data_source',
         kind: 'data_source',
-        label: '实时行情',
+        label: '實時行情',
         status: 'success',
       },
     ];
@@ -289,7 +289,7 @@ describe('RunFlowGraph', () => {
         to: 'quote',
         kind: 'control',
         status: 'success',
-        label: '详情',
+        label: '詳情',
       },
     ];
     const { container } = render(
@@ -316,7 +316,7 @@ describe('RunFlowGraph', () => {
     expect(startY).toBeLessThan(endY);
     expect(startY).toBe(dailyBottom);
     expect(endY).toBe(quoteTop);
-    const label = screen.getByText('详情');
+    const label = screen.getByText('詳情');
     expect(label).toHaveAttribute('text-anchor', 'start');
     expect(parseFloat(label.getAttribute('x') || '0')).toBeGreaterThan(startX);
     expect(parseFloat(label.getAttribute('y') || '0')).toBeGreaterThan((startY + endY) / 2);
@@ -328,7 +328,7 @@ describe('RunFlowGraph', () => {
         id: 'request',
         lane: 'entry',
         kind: 'entry',
-        label: '用户请求',
+        label: '用戶請求',
         status: 'success',
       },
       {
@@ -386,7 +386,7 @@ describe('RunFlowGraph', () => {
         id: 'late-news',
         lane: 'data_source',
         kind: 'data_source',
-        label: '新闻舆情',
+        label: '新聞輿情',
         status: 'success',
         startedAt: '2026-06-08T10:00:05',
       },
@@ -394,7 +394,7 @@ describe('RunFlowGraph', () => {
         id: 'early-quote',
         lane: 'data_source',
         kind: 'data_source',
-        label: '实时行情',
+        label: '實時行情',
         status: 'success',
         startedAt: '2026-06-08T10:00:01',
       },
@@ -402,7 +402,7 @@ describe('RunFlowGraph', () => {
         id: 'middle-daily',
         lane: 'data_source',
         kind: 'data_source',
-        label: '日线K线',
+        label: '日線K線',
         status: 'success',
         endedAt: '2026-06-08T10:00:03',
       },
@@ -430,14 +430,14 @@ describe('RunFlowGraph', () => {
         id: 'request',
         lane: 'entry',
         kind: 'entry',
-        label: '用户请求',
+        label: '用戶請求',
         status: 'success',
       },
       {
         id: 'news',
         lane: 'data_source',
         kind: 'data_source',
-        label: '新闻舆情',
+        label: '新聞輿情',
         status: 'success',
         provider: 'TushareFetcher -> AkshareFetcher -> TushareFetcher -> AkshareFetcher',
       },
@@ -445,7 +445,7 @@ describe('RunFlowGraph', () => {
         id: 'save',
         lane: 'artifact',
         kind: 'artifact',
-        label: '保存报告',
+        label: '保存報告',
         status: 'success',
       },
       {
@@ -460,7 +460,7 @@ describe('RunFlowGraph', () => {
       <RunFlowGraph
         lanes={[
           ...lanes,
-          { id: 'artifact', label: '产物', order: 4 },
+          { id: 'artifact', label: '產物', order: 4 },
         ]}
         nodes={laneWidthNodes}
         edges={[]}
@@ -487,7 +487,7 @@ describe('RunFlowGraph', () => {
             id: 'topology_data_news_search',
             lane: 'data_source',
             kind: 'data_source',
-            label: '新闻舆情',
+            label: '新聞輿情',
             status: 'fallback',
             metadata: { topologyGroup: 'provider_attempts' },
           },
@@ -498,7 +498,7 @@ describe('RunFlowGraph', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '展开 新闻舆情 运行尝试' }));
+    fireEvent.click(screen.getByRole('button', { name: '展開 新聞輿情 運行嘗試' }));
 
     expect(screen.getByTestId('run-flow-node-topology_data_news_search')).toHaveClass('pb-8');
     expect(onToggleExpanded).toHaveBeenCalledWith('topology_data_news_search');
@@ -539,14 +539,14 @@ describe('RunFlowGraph', () => {
             id: 'task_queue',
             lane: 'entry',
             kind: 'queue',
-            label: '任务队列',
+            label: '任務隊列',
             status: 'success',
           },
           {
             id: 'topology_data_realtime_quote',
             lane: 'data_source',
             kind: 'data_source',
-            label: '实时行情',
+            label: '實時行情',
             status: 'fallback',
             metadata: { topologyGroup: 'provider_attempts', data_type: 'realtime_quote', expanded: true },
           },
@@ -554,7 +554,7 @@ describe('RunFlowGraph', () => {
             id: 'provider_realtime_tushare_1',
             lane: 'data_source',
             kind: 'data_source',
-            label: '实时行情 · TushareFetcher',
+            label: '實時行情 · TushareFetcher',
             provider: 'TushareFetcher',
             status: 'success',
             metadata: { data_type: 'realtime_quote' },
@@ -563,7 +563,7 @@ describe('RunFlowGraph', () => {
             id: 'provider_realtime_akshare_2',
             lane: 'data_source',
             kind: 'data_source',
-            label: '实时行情 · AkshareFetcher',
+            label: '實時行情 · AkshareFetcher',
             provider: 'AkshareFetcher',
             status: 'success',
             metadata: { data_type: 'realtime_quote' },
@@ -572,7 +572,7 @@ describe('RunFlowGraph', () => {
             id: 'daily',
             lane: 'data_source',
             kind: 'data_source',
-            label: '日线K线',
+            label: '日線K線',
             status: 'success',
           },
           {
@@ -638,7 +638,7 @@ describe('RunFlowGraph', () => {
             id: 'topology_data_realtime_quote',
             lane: 'data_source',
             kind: 'data_source',
-            label: '实时行情',
+            label: '實時行情',
             status: 'fallback',
             startedAt: '2026-06-08T10:00:00',
             metadata: { topologyGroup: 'provider_attempts', data_type: 'realtime_quote', expanded: true },
@@ -647,7 +647,7 @@ describe('RunFlowGraph', () => {
             id: 'daily',
             lane: 'data_source',
             kind: 'data_source',
-            label: '日线K线',
+            label: '日線K線',
             status: 'success',
             startedAt: '2026-06-08T10:00:01',
           },
@@ -655,7 +655,7 @@ describe('RunFlowGraph', () => {
             id: 'provider_realtime_tushare_1',
             lane: 'data_source',
             kind: 'data_source',
-            label: '实时行情 · TushareFetcher',
+            label: '實時行情 · TushareFetcher',
             provider: 'TushareFetcher',
             status: 'success',
             startedAt: '2026-06-08T10:00:02',
@@ -665,7 +665,7 @@ describe('RunFlowGraph', () => {
             id: 'provider_realtime_akshare_2',
             lane: 'data_source',
             kind: 'data_source',
-            label: '实时行情 · AkshareFetcher',
+            label: '實時行情 · AkshareFetcher',
             provider: 'AkshareFetcher',
             status: 'success',
             startedAt: '2026-06-08T10:00:03',
@@ -730,7 +730,7 @@ describe('RunFlowGraph', () => {
             id: 'topology_data_realtime_quote',
             lane: 'data_source',
             kind: 'data_source',
-            label: '实时行情',
+            label: '實時行情',
             status: 'fallback',
             startedAt: '2026-06-08T10:00:00',
             metadata: {
@@ -744,7 +744,7 @@ describe('RunFlowGraph', () => {
             id: 'topology_data_news_search',
             lane: 'data_source',
             kind: 'data_source',
-            label: '新闻舆情',
+            label: '新聞輿情',
             status: 'fallback',
             startedAt: '2026-06-08T10:00:01',
             metadata: {
@@ -758,7 +758,7 @@ describe('RunFlowGraph', () => {
             id: 'daily',
             lane: 'data_source',
             kind: 'data_source',
-            label: '日线K线',
+            label: '日線K線',
             status: 'success',
             startedAt: '2026-06-08T10:00:02',
           },
@@ -766,7 +766,7 @@ describe('RunFlowGraph', () => {
             id: 'provider_realtime_tushare_1',
             lane: 'data_source',
             kind: 'data_source',
-            label: '实时行情 · TushareFetcher',
+            label: '實時行情 · TushareFetcher',
             status: 'success',
             startedAt: '2026-06-08T10:00:03',
             metadata: {
@@ -780,7 +780,7 @@ describe('RunFlowGraph', () => {
             id: 'provider_news_tavily_1',
             lane: 'data_source',
             kind: 'data_source',
-            label: '新闻舆情 · Tavily',
+            label: '新聞輿情 · Tavily',
             status: 'success',
             startedAt: '2026-06-08T10:00:04',
             metadata: {
@@ -794,7 +794,7 @@ describe('RunFlowGraph', () => {
             id: 'provider_realtime_akshare_2',
             lane: 'data_source',
             kind: 'data_source',
-            label: '实时行情 · AkshareFetcher',
+            label: '實時行情 · AkshareFetcher',
             status: 'success',
             startedAt: '2026-06-08T10:00:05',
             metadata: {
@@ -808,7 +808,7 @@ describe('RunFlowGraph', () => {
             id: 'provider_news_searxng_2',
             lane: 'data_source',
             kind: 'data_source',
-            label: '新闻舆情 · SearXNG',
+            label: '新聞輿情 · SearXNG',
             status: 'failed',
             startedAt: '2026-06-08T10:00:06',
             metadata: {

@@ -6,7 +6,7 @@ import { SidebarNav } from '../SidebarNav';
 const mockLogout = vi.fn().mockResolvedValue(undefined);
 const mockGetScreeningStatus = vi.fn().mockResolvedValue({ enabled: false, available: false });
 const mockThemeToggle = vi.fn(({ collapsed }: { collapsed?: boolean }) => (
-  <button type="button">{collapsed ? '切换主题(折叠)' : '切换主题'}</button>
+  <button type="button">{collapsed ? '切換主題(摺疊)' : '切換主題'}</button>
 ));
 
 const completionBadgeState = { value: true };
@@ -45,7 +45,7 @@ describe('SidebarNav', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole('link', { name: '选股' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '選股' })).not.toBeInTheDocument();
   });
 
   it('shows screening directly after chat when Screening is enabled', async () => {
@@ -57,7 +57,7 @@ describe('SidebarNav', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('link', { name: '选股' })).toHaveAttribute('href', '/screening');
+    expect(await screen.findByRole('link', { name: '選股' })).toHaveAttribute('href', '/screening');
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
     expect(hrefs.slice(0, 5)).toEqual(['/', '/chat', '/screening', '/portfolio', '/decision-signals']);
   });
@@ -73,10 +73,10 @@ describe('SidebarNav', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole('link', { name: '选股' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '選股' })).not.toBeInTheDocument();
     window.dispatchEvent(new Event('screening-config-changed'));
 
-    expect(await screen.findByRole('link', { name: '选股' })).toHaveAttribute('href', '/screening');
+    expect(await screen.findByRole('link', { name: '選股' })).toHaveAttribute('href', '/screening');
     await waitFor(() => expect(mockGetScreeningStatus.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
@@ -90,7 +90,7 @@ describe('SidebarNav', () => {
     );
 
     expect(screen.getByTestId('chat-completion-badge')).toBeInTheDocument();
-    expect(screen.getByLabelText('问股有新消息')).toBeInTheDocument();
+    expect(screen.getByLabelText('問股有新消息')).toBeInTheDocument();
 
     completionBadgeState.value = false;
     rerender(
@@ -112,7 +112,7 @@ describe('SidebarNav', () => {
     expect(mockThemeToggle).toHaveBeenCalledWith(
       expect.objectContaining({ variant: 'nav', collapsed: true }),
     );
-    expect(screen.getByRole('button', { name: '切换主题(折叠)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '切換主題(摺疊)' })).toBeInTheDocument();
   });
 
   it('renders the alerts navigation item and marks it active', () => {
@@ -134,7 +134,7 @@ describe('SidebarNav', () => {
       </MemoryRouter>,
     );
 
-    const signalsLink = screen.getByRole('link', { name: 'AI 建议' });
+    const signalsLink = screen.getByRole('link', { name: 'AI 建議' });
     expect(signalsLink).toHaveAttribute('href', '/decision-signals');
     expect(signalsLink).toHaveClass('font-medium');
   });
@@ -148,8 +148,8 @@ describe('SidebarNav', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '退出' }));
 
-    expect(await screen.findByRole('heading', { name: '退出登录' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '确认退出' }));
+    expect(await screen.findByRole('heading', { name: '退出登錄' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '確認退出' }));
     expect(mockLogout).toHaveBeenCalled();
   });
 });

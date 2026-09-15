@@ -16,7 +16,7 @@ const baseSnapshot: RunFlowSnapshot = {
   },
   lanes: [
     { id: 'entry', label: '入口', order: 1 },
-    { id: 'data_source', label: '数据来源', order: 2 },
+    { id: 'data_source', label: '數據源', order: 2 },
     { id: 'analysis', label: '分析引擎', order: 3 },
   ],
   nodes: [
@@ -24,14 +24,14 @@ const baseSnapshot: RunFlowSnapshot = {
       id: 'task_queue',
       lane: 'entry',
       kind: 'queue',
-      label: '任务队列',
+      label: '任務隊列',
       status: 'success',
     },
     {
       id: 'provider_news_search_tavily_1',
       lane: 'data_source',
       kind: 'data_source',
-      label: '新闻舆情 · Tavily',
+      label: '新聞輿情 · Tavily',
       status: 'failed',
       provider: 'Tavily',
       startedAt: '2026-06-08T10:00:01',
@@ -43,7 +43,7 @@ const baseSnapshot: RunFlowSnapshot = {
       id: 'provider_news_search_searxng_2',
       lane: 'data_source',
       kind: 'data_source',
-      label: '新闻舆情 · SearXNG',
+      label: '新聞輿情 · SearXNG',
       status: 'success',
       provider: 'SearXNG',
       startedAt: '2026-06-08T10:00:03',
@@ -56,7 +56,7 @@ const baseSnapshot: RunFlowSnapshot = {
       id: 'context_block_news',
       lane: 'data_source',
       kind: 'data_source',
-      label: '新闻',
+      label: '新聞',
       status: 'success',
       recordCount: 6,
       metadata: { block_key: 'news' },
@@ -114,7 +114,7 @@ const baseSnapshot: RunFlowSnapshot = {
       severity: 'warning',
       type: 'provider_run',
       nodeId: 'provider_news_search_tavily_1',
-      title: '新闻舆情失败',
+      title: '新聞輿情失敗',
     },
     {
       id: 'evt-block',
@@ -122,7 +122,7 @@ const baseSnapshot: RunFlowSnapshot = {
       severity: 'warning',
       type: 'context_block_status',
       nodeId: 'context_block_fundamental',
-      title: '基本面输入状态',
+      title: '基本面輸入狀態',
     },
   ],
 };
@@ -136,7 +136,7 @@ describe('buildRunFlowTopologyModel', () => {
 
     const newsGroup = model.nodes.find((node) => node.id === 'topology_data_news_search');
     expect(newsGroup).toMatchObject({
-      label: '新闻舆情',
+      label: '新聞輿情',
       status: 'fallback',
       provider: 'Tavily -> SearXNG',
       attempts: 2,
@@ -179,7 +179,7 @@ describe('buildRunFlowTopologyModel', () => {
           id: 'api_normalized_context_news',
           lane: 'data_source',
           kind: 'data_source',
-          label: '新闻',
+          label: '新聞',
           status: 'success',
           recordCount: 3,
           metadata: { blockKey: 'news' },
@@ -215,7 +215,7 @@ describe('buildRunFlowTopologyModel', () => {
           severity: 'warning',
           type: 'provider_run',
           nodeId: 'provider_compatible_alpha_1',
-          title: '兼容行情失败',
+          title: '兼容行情失敗',
         },
         {
           id: 'evt-normalized-block',
@@ -223,7 +223,7 @@ describe('buildRunFlowTopologyModel', () => {
           severity: 'success',
           type: 'context_block_status',
           nodeId: 'api_normalized_context_news',
-          title: '新闻输入状态',
+          title: '新聞輸入狀態',
         },
       ],
     };
@@ -256,7 +256,7 @@ describe('buildRunFlowTopologyModel', () => {
           id: 'provider_realtime_quote_tickflowfetcher_1',
           lane: 'data_source',
           kind: 'data_source',
-          label: '实时行情 · TickFlowFetcher',
+          label: '實時行情 · TickFlowFetcher',
           status: 'failed',
           provider: 'TickFlowFetcher',
           durationMs: 892,
@@ -266,7 +266,7 @@ describe('buildRunFlowTopologyModel', () => {
           id: 'provider_realtime_quote_aksharefetcher_2',
           lane: 'data_source',
           kind: 'data_source',
-          label: '实时行情 · AkshareFetcher',
+          label: '實時行情 · AkshareFetcher',
           status: 'success',
           provider: 'AkshareFetcher',
           durationMs: 8700,
@@ -297,7 +297,7 @@ describe('buildRunFlowTopologyModel', () => {
     const quoteGroup = collapsed.nodes.find((node) => node.id === 'topology_data_realtime_quote');
 
     expect(quoteGroup).toMatchObject({
-      label: '实时行情',
+      label: '實時行情',
       status: 'fallback',
       provider: 'TickFlowFetcher -> AkshareFetcher',
       attempts: 2,
@@ -316,7 +316,7 @@ describe('buildRunFlowTopologyModel', () => {
     expect(expanded.nodes.map((node) => node.id)).toContain('provider_realtime_quote_tickflowfetcher_1');
     expect(expanded.nodes.map((node) => node.id)).toContain('provider_realtime_quote_aksharefetcher_2');
     expect(expanded.nodes.find((node) => node.id === 'provider_realtime_quote_tickflowfetcher_1')).toMatchObject({
-      label: '实时行情 · TickFlowFetcher',
+      label: '實時行情 · TickFlowFetcher',
       provider: 'TickFlowFetcher',
       metadata: expect.objectContaining({
         topologyRole: 'provider_attempt',

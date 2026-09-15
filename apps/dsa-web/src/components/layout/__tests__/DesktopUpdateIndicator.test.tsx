@@ -103,10 +103,10 @@ describe('DesktopUpdateIndicator', () => {
     renderIndicator();
 
     fireEvent.click(await screen.findByRole('button', { name: '桌面端更新' }));
-    expect(await screen.findByText('发现新版本')).toBeInTheDocument();
+    expect(await screen.findByText('發現新版本')).toBeInTheDocument();
     expect(screen.getByTestId('desktop-update-badge')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '前往下载' }));
+    fireEvent.click(screen.getByRole('button', { name: '前往下載' }));
     await waitFor(() => {
       expect(desktopOpenReleasePage).toHaveBeenCalledWith(
         'https://github.com/ZhuLinsen/daily_stock_analysis/releases/tag/v3.31.0',
@@ -126,7 +126,7 @@ describe('DesktopUpdateIndicator', () => {
     renderIndicator();
 
     fireEvent.click(await screen.findByRole('button', { name: '桌面端更新' }));
-    fireEvent.click(await screen.findByRole('button', { name: '重启安装' }));
+    fireEvent.click(await screen.findByRole('button', { name: '重啓安裝' }));
     await waitFor(() => expect(desktopInstallDownloadedUpdate).toHaveBeenCalledTimes(1));
   });
 
@@ -140,7 +140,7 @@ describe('DesktopUpdateIndicator', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '桌面端更新' }));
     expect(desktopCheckForUpdates).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByRole('button', { name: '重新检查' }));
+    fireEvent.click(await screen.findByRole('button', { name: '重新檢查' }));
     await waitFor(() => expect(desktopCheckForUpdates).toHaveBeenCalledTimes(1));
   });
 

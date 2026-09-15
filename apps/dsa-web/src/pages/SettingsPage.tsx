@@ -6,9 +6,11 @@ import { useAuth, useDesktopUpdate, useSystemConfig } from '../hooks';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import { createParsedApiError, getParsedApiError, type ParsedApiError } from '../api/error';
 import { analysisApi } from '../api/analysis';
+import { meApi, type MeIdentity, type MeIdentityRole } from '../api/me';
 import { screeningApi, notifyScreeningConfigChanged, notifySystemConfigChanged } from '../api/screening';
 import { systemConfigApi } from '../api/systemConfig';
 import { ApiErrorAlert, Button, ConfirmDialog, EmptyState } from '../components/common';
+import { PersonalSettingsCard } from '../components/settings/PersonalSettingsCard';
 import {
   AgentBackendStatusPanel,
   AuthSettingsCard,
@@ -677,9 +679,18 @@ const SchedulerSettingsCard: React.FC<SchedulerSettingsCardProps> = ({
 };
 
 const SettingsPage: React.FC = () => {
-  const { authEnabled, passwordChangeable } = useAuth();
+  const {
+    authEnabled,
+    passwordChangeable,
+    multiUser: contextMultiUser,
+    role: contextRole,
+  } = useAuth() as ReturnType<typeof useAuth> & {
+    multiUser?: boolean;
+    role?: MeIdentityRole;
+  };
   const location = useLocation();
   const { language: uiLanguage, t } = useUiLanguage();
+  const [fetchedIdentity, setFetchedIdentity] = useState<MeIdentity | null>(null);
   const [envBackupActionError, setEnvBackupActionError] = useState<ParsedApiError | null>(null);
   const [envBackupActionSuccess, setEnvBackupActionSuccess] = useState<string>('');
   const [screeningActionError, setScreeningActionError] = useState<ParsedApiError | null>(null);
@@ -745,6 +756,20 @@ const SettingsPage: React.FC = () => {
     llmModelProviders,
   } = useSystemConfig();
 
+  // 多用户身份：优先取 AuthContext 提供的同步值，缺失时回退查询 /api/v1/auth/status。
+  const identity = useMemo<MeIdentity | null>(() => {
+    if (typeof contextMultiUser === 'boolean') {
+      return { multiUser: contextMultiUser, role: contextRole };
+    }
+    return fetchedIdentity;
+  }, [contextMultiUser, contextRole, fetchedIdentity]);
+
+  // 多用户模式下的视图分流：管理员沿用全局配置视图；非管理员只见个人设置与修改密码，
+  // 全局配置类目（ai_model / data_source / system / backtest / base / notification / agent）
+  // 后端已对非管理员返回 403，这里在前端同步隐藏。单用户部署（multiUser=false）视图不变。
+  const isMultiUserMode = identity?.multiUser ?? false;
+  const isPersonalOnlySettingsView = isMultiUserMode && identity?.role !== 'admin';
+
   const currentChangedItems = getChangedItems();
   const currentChangedItemsFingerprint = JSON.stringify(currentChangedItems);
   const llmChannelDraftItemsFingerprint = JSON.stringify(llmChannelDraftItems);
@@ -799,8 +824,35 @@ const SettingsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // AuthContext 已提供 multiUser 时不需要额外请求。
+    if (typeof contextMultiUser === 'boolean') {
+      return;
+    }
+    let cancelled = false;
+    meApi.getIdentity()
+      .then((nextIdentity) => {
+        if (!cancelled) {
+          setFetchedIdentity(nextIdentity);
+        }
+      })
+      .catch(() => {
+        // 身份识别失败时按单用户（管理员视图）处理，保持既有页面行为不变。
+        if (!cancelled) {
+          setFetchedIdentity({ multiUser: false });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [contextMultiUser]);
+
+  useEffect(() => {
+    // 非管理员不加载全局配置（后端已 403），个人设置视图自成一体的布局。
+    if (isPersonalOnlySettingsView) {
+      return;
+    }
     void load();
-  }, [load]);
+  }, [isPersonalOnlySettingsView, load]);
 
   useEffect(() => {
     const requestedCategory = new URLSearchParams(location.search).get('category');
@@ -819,8 +871,11 @@ const SettingsPage: React.FC = () => {
   }, [activeCategory, isLoading, location.hash]);
 
   useEffect(() => {
+    if (isPersonalOnlySettingsView) {
+      return;
+    }
     void refreshSetupStatus();
-  }, [refreshSetupStatus]);
+  }, [isPersonalOnlySettingsView, refreshSetupStatus]);
 
   useEffect(() => {
     if (!toast) {
@@ -1130,7 +1185,7 @@ const SettingsPage: React.FC = () => {
   const settingsPanelDiagnosticHint = isDesktopRuntime
     ? uiLanguage === 'en'
       ? <>Check and provide the desktop log <code>desktop.log</code>, plus the release version, Windows version, and trigger path.</>
-      : <>请查看并提供桌面端日志 <code>desktop.log</code>，同时补充 release 版本、Windows 版本和触发入口。</>
+      : <>請查看並提供桌面端日誌 <code>desktop.log</code>，同時補充 release 版本、Windows 版本和觸發入口。</>
     : t('settings.diagnosticHintWeb');
   const activeCategoryTitle = getCategoryTitle(activeCategory as SystemConfigCategory, t('settings.activePanelTitle'), uiLanguage);
   const activeCategoryDescription = getCategoryDescription(activeCategory as SystemConfigCategory, '', uiLanguage);
@@ -1216,39 +1271,41 @@ const SettingsPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="settings-secondary"
-              size="sm"
-              className="px-2.5"
-              onClick={resetDraft}
-              disabled={isLoading || isSaving}
-            >
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              {t('settings.reset')}
-            </Button>
-            <Button
-              type="button"
-              variant="settings-primary"
-              size="sm"
-              className="px-2.5"
-              onClick={() => void handleSaveConfig()}
-              disabled={!effectiveHasDirty || isSaving || isLoading}
-              isLoading={isSaving}
-              loadingText={t('settings.saving')}
-            >
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-              {isSaving
-                ? t('settings.saving')
-                : effectiveDirtyCount
-                  ? t('settings.saveConfigWithCount', { count: effectiveDirtyCount })
-                  : t('settings.saveConfig')}
-            </Button>
-          </div>
+          {!isPersonalOnlySettingsView ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="settings-secondary"
+                size="sm"
+                className="px-2.5"
+                onClick={resetDraft}
+                disabled={isLoading || isSaving}
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                {t('settings.reset')}
+              </Button>
+              <Button
+                type="button"
+                variant="settings-primary"
+                size="sm"
+                className="px-2.5"
+                onClick={() => void handleSaveConfig()}
+                disabled={!effectiveHasDirty || isSaving || isLoading}
+                isLoading={isSaving}
+                loadingText={t('settings.saving')}
+              >
+                <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                {isSaving
+                  ? t('settings.saving')
+                  : effectiveDirtyCount
+                    ? t('settings.saveConfigWithCount', { count: effectiveDirtyCount })
+                    : t('settings.saveConfig')}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
-        {saveError ? (
+        {!isPersonalOnlySettingsView && saveError ? (
           <ApiErrorAlert
             className="mt-3"
             error={saveError}
@@ -1269,6 +1326,11 @@ const SettingsPage: React.FC = () => {
 
       {isLoading ? (
         <SettingsLoading />
+      ) : isPersonalOnlySettingsView ? (
+        <section className="space-y-4">
+          <PersonalSettingsCard />
+          {passwordChangeable ? <ChangePasswordCard /> : null}
+        </section>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="lg:sticky lg:top-4 lg:self-start">
@@ -1340,6 +1402,7 @@ const SettingsPage: React.FC = () => {
                 ) : null}
               </SettingsSectionCard>
             ) : null}
+            {activeCategory === 'system' && isMultiUserMode ? <PersonalSettingsCard /> : null}
             {activeCategory === 'system' ? <AuthSettingsCard /> : null}
             {activeCategory === 'system' ? (
               <SchedulerSettingsCard

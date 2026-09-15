@@ -6,6 +6,27 @@ export type AuthStatusResponse = {
   passwordSet?: boolean;
   passwordChangeable?: boolean;
   setupState: 'enabled' | 'password_retained' | 'no_password';
+  /** Multi-user mode is active (absent on single-user deployments). */
+  multiUser?: boolean;
+  /** Self-service registration is open (multi-user mode only). */
+  registrationEnabled?: boolean;
+  /** Current session username (multi-user mode only). */
+  username?: string;
+  /** Current session role (multi-user mode only). */
+  role?: 'admin' | 'user';
+};
+
+export type LoginRequest = {
+  password: string;
+  /** Required when the backend runs in multi-user mode. */
+  username?: string;
+  passwordConfirm?: string;
+};
+
+export type AuthSessionResponse = {
+  ok?: boolean;
+  username?: string;
+  role?: 'admin' | 'user';
 };
 
 export const authApi = {
@@ -39,12 +60,24 @@ export const authApi = {
     return data;
   },
 
-  async login(password: string, passwordConfirm?: string): Promise<void> {
-    const body: { password: string; passwordConfirm?: string } = { password };
-    if (passwordConfirm !== undefined) {
-      body.passwordConfirm = passwordConfirm;
+  async login(request: LoginRequest): Promise<void> {
+    const body: LoginRequest = { password: request.password };
+    if (request.username !== undefined) {
+      body.username = request.username;
+    }
+    if (request.passwordConfirm !== undefined) {
+      body.passwordConfirm = request.passwordConfirm;
     }
     await apiClient.post('/api/v1/auth/login', body);
+  },
+
+  /** Multi-user self-service registration; the backend establishes the session on success. */
+  async register(username: string, password: string): Promise<AuthSessionResponse> {
+    const { data } = await apiClient.post<AuthSessionResponse>('/api/v1/auth/register', {
+      username,
+      password,
+    });
+    return data;
   },
 
   async changePassword(

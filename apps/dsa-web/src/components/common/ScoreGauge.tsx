@@ -1,16 +1,16 @@
 import type React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useTheme } from 'next-themes';
-import { getSentimentLabel, type ReportLanguage } from '../../types/analysis';
+import { getSentimentLabel } from '../../types/analysis';
 import { cn } from '../../utils/cn';
-import { normalizeReportLanguage, getReportText } from '../../utils/reportLanguage';
+import { getReportText } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 
 interface ScoreGaugeProps {
   score: number;
   size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
   className?: string;
-  language?: ReportLanguage;
 }
 
 type SentimentKey = 'greed' | 'neutral' | 'fear';
@@ -32,7 +32,6 @@ export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
   size = 'md',
   showLabel = true,
   className = '',
-  language = 'zh',
 }) => {
   // Animated score state.
   const [animatedScore, setAnimatedScore] = useState(0);
@@ -76,9 +75,10 @@ export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
     };
   }, [score]);
 
-  const reportLanguage = normalizeReportLanguage(language);
-  const text = getReportText(reportLanguage);
-  const label = getSentimentLabel(score, reportLanguage);
+  // 表盘标签跟随界面语言，而不是报告内容语言。
+  const { language } = useUiLanguage();
+  const text = getReportText(language);
+  const label = getSentimentLabel(score, language);
 
   // Size configuration for each gauge variant.
   const sizeConfig = {

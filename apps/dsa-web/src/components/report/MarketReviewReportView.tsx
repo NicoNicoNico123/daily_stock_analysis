@@ -10,7 +10,8 @@ import type {
   ReportLanguage,
 } from '../../types/analysis';
 import { markdownToPlainText } from '../../utils/markdown';
-import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
+import { getReportText } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { Card } from '../common';
 import { Tooltip } from '../common/Tooltip';
 import { ReportMarkdownBody } from './ReportMarkdownBody';
@@ -21,7 +22,6 @@ interface MarketReviewReportViewProps {
   recordId?: number;
   content?: string;
   payload?: MarketReviewPayload | null;
-  reportLanguage?: ReportLanguage;
   className?: string;
   onOpenRunFlow?: (recordId: number) => void;
 }
@@ -69,10 +69,10 @@ const stripTopHeading = (markdown: string, title?: string): string => {
   const reportTitle = normalizeHeading(title || '');
   const genericTitles = new Set([
     'market review',
-    '大盘复盘',
-    '大盘复盘详情',
-    'a股市场复盘',
-    'a 股市场复盘',
+    '大盤覆盤',
+    '大盤覆盤詳情',
+    'a股市場覆盤',
+    'a 股市場覆盤',
   ]);
 
   if (heading === reportTitle || genericTitles.has(heading)) {
@@ -102,12 +102,12 @@ const getSectionIcon = (title: string): typeof FileText => {
   return FileText;
 };
 
-const splitMarketReviewSections = (markdown: string): MarketReviewSection[] => {
+const splitMarketReviewSections = (markdown: string, language: ReportLanguage): MarketReviewSection[] => {
   const matches = Array.from(markdown.matchAll(SECTION_HEADING_PATTERN));
   if (matches.length === 0) {
     return [{
       id: 'full-review',
-      title: '复盘正文',
+      title: MARKET_REVIEW_TEXT[language].reviewBody,
       content: markdown,
       icon: FileText,
     }];
@@ -117,7 +117,7 @@ const splitMarketReviewSections = (markdown: string): MarketReviewSection[] => {
   const sections: MarketReviewSection[] = intro
     ? [{
         id: 'overview',
-        title: '复盘概览',
+        title: MARKET_REVIEW_TEXT[language].reviewOverview,
         content: intro,
         icon: FileText,
       }]
@@ -279,29 +279,33 @@ const MARKET_REVIEW_TEXT: Record<ReportLanguage, {
   conceptBoards: string;
   leading: string;
   lagging: string;
+  reviewBody: string;
+  reviewOverview: string;
 }> = {
   zh: {
-    reviewSummary: '复盘摘要',
-    noReviewSummary: '暂无摘要',
-    noSentimentScore: '暂无评分',
-    rotationAndFunds: '轮动与资金',
-    noRotationView: '暂无轮动观点',
-    riskAndWatch: '风险与观察',
-    noRiskWatch: '暂无观察重点',
-    structuredMarketData: '结构化大盘数据',
-    noBreadthData: '暂无数据',
-    advancers: '上涨家数',
-    decliners: '下跌家数',
-    limitUpDown: '涨停/跌停',
-    turnover: '成交额',
-    index: '指数',
+    reviewSummary: '覆盤摘要',
+    noReviewSummary: '暫無摘要',
+    noSentimentScore: '暫無評分',
+    rotationAndFunds: '輪動與資金',
+    noRotationView: '暫無輪動觀點',
+    riskAndWatch: '風險與觀察',
+    noRiskWatch: '暫無觀察重點',
+    structuredMarketData: '結構化大盤數據',
+    noBreadthData: '暫無數據',
+    advancers: '上漲家數',
+    decliners: '下跌家數',
+    limitUpDown: '漲停/跌停',
+    turnover: '成交額',
+    index: '指數',
     last: '最新',
-    change: '涨跌幅',
+    change: '漲跌幅',
     highLow: '高/低',
-    industryBoards: '行业板块',
-    conceptBoards: '概念板块',
-    leading: '领涨',
-    lagging: '领跌',
+    industryBoards: '行業板塊',
+    conceptBoards: '概念板塊',
+    leading: '領漲',
+    lagging: '領跌',
+    reviewBody: '覆盤正文',
+    reviewOverview: '覆盤概覽',
   },
   en: {
     reviewSummary: 'Review Summary',
@@ -325,8 +329,11 @@ const MARKET_REVIEW_TEXT: Record<ReportLanguage, {
     conceptBoards: 'Concept Themes',
     leading: 'Leading',
     lagging: 'Lagging',
+    reviewBody: 'Review Body',
+    reviewOverview: 'Review Overview',
   },
   ko: {
+    // 註明：ko 目前無可用翻譯，以下沿用英文文案。
     reviewSummary: '리뷰 요약',
     noReviewSummary: '요약 없음',
     noSentimentScore: '점수 없음',
@@ -348,6 +355,8 @@ const MARKET_REVIEW_TEXT: Record<ReportLanguage, {
     conceptBoards: '테마 섹터',
     leading: '강세',
     lagging: '약세',
+    reviewBody: 'Review Body',
+    reviewOverview: 'Review Overview',
   },
 };
 
@@ -365,14 +374,14 @@ export const MarketReviewReportView: React.FC<MarketReviewReportViewProps> = ({
   recordId,
   content: providedContent,
   payload: providedPayload,
-  reportLanguage = 'zh',
   className = '',
   onOpenRunFlow,
 }) => {
-  const normalizedReportLanguage = normalizeReportLanguage(reportLanguage);
-  const text = getReportText(normalizedReportLanguage);
-  const runFlowText = UI_TEXT[normalizedReportLanguage === 'ko' ? 'en' : normalizedReportLanguage];
-  const marketReviewText = MARKET_REVIEW_TEXT[normalizedReportLanguage];
+  // 大盘复盘页签与操作标签跟随界面语言，而不是报告内容语言。
+  const { language: uiLanguage } = useUiLanguage();
+  const text = getReportText(uiLanguage);
+  const runFlowText = UI_TEXT[uiLanguage];
+  const marketReviewText = MARKET_REVIEW_TEXT[uiLanguage];
   const [loadedMarkdown, setLoadedMarkdown] = useState<LoadedMarkdown | null>(null);
   const [loadError, setLoadError] = useState<LoadError | null>(null);
   const [copiedType, setCopiedType] = useState<CopyType | null>(null);
@@ -393,9 +402,11 @@ export const MarketReviewReportView: React.FC<MarketReviewReportViewProps> = ({
   const sections = useMemo(
     () => {
       const payloadSections = getPayloadSections(marketReviewPayload);
-      return payloadSections.length > 0 ? payloadSections : splitMarketReviewSections(structuredContent);
+      return payloadSections.length > 0
+        ? payloadSections
+        : splitMarketReviewSections(structuredContent, uiLanguage);
     },
-    [marketReviewPayload, structuredContent],
+    [marketReviewPayload, structuredContent, uiLanguage],
   );
   const structuredMarketData = useMemo(
     () => getStructuredMarketData(marketReviewPayload),
@@ -495,7 +506,6 @@ export const MarketReviewReportView: React.FC<MarketReviewReportViewProps> = ({
             <ShareImageButton
               recordId={recordId}
               reportTitle={displayTitle}
-              reportLanguage={reportLanguage}
             />
             {canOpenRunFlow ? (
               <Tooltip content={runFlowText['runFlow.open']}>

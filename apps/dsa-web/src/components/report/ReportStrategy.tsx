@@ -1,12 +1,12 @@
 import type React from 'react';
-import type { ReportLanguage, ReportStrategy as ReportStrategyType } from '../../types/analysis';
+import type { ReportStrategy as ReportStrategyType } from '../../types/analysis';
 import { Card } from '../common';
 import { DashboardPanelHeader } from '../dashboard';
-import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
+import { getReportText } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 
 interface ReportStrategyProps {
   strategy?: ReportStrategyType;
-  language?: ReportLanguage;
 }
 
 interface StrategyItemProps {
@@ -37,13 +37,14 @@ const StrategyItem: React.FC<StrategyItemProps> = ({
 /**
  * 策略点位区组件 - 终端风格
  */
-export const ReportStrategy: React.FC<ReportStrategyProps> = ({ strategy, language = 'zh' }) => {
+export const ReportStrategy: React.FC<ReportStrategyProps> = ({ strategy }) => {
+  // 区块标签跟随界面语言，而不是报告内容语言。
+  const { language: uiLanguage } = useUiLanguage();
   if (!strategy) {
     return null;
   }
 
-  const reportLanguage = normalizeReportLanguage(language);
-  const text = getReportText(reportLanguage);
+  const text = getReportText(uiLanguage);
 
   const strategyItems = [
     {

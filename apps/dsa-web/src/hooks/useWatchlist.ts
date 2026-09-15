@@ -1,6 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { extractResponseErrorCode } from '../api/me';
 import { systemConfigApi } from '../api/systemConfig';
+import { useUiLanguage } from '../contexts/UiLanguageContext';
+import type { UiTextKey } from '../i18n/uiText';
 import { findMatchingStockCode, includesStockCode } from '../utils/stockCode';
+
+/**
+ * 把自选股写接口的失败映射为用户可读文案。
+ * 多用户模式下服务端返回 403 {detail:{error:'watchlist_cap'}} 与
+ * 429 {error:'quota_exceeded'}，其余失败沿用原有提示。
+ */
+function getWatchlistActionError(error: unknown, translate: (key: UiTextKey) => string): string {
+  const response = (error as { response?: { status?: number; data?: unknown } } | undefined)?.response;
+  const status = response?.status;
+  const errorCode = extractResponseErrorCode(response?.data);
+  if (status === 403 && errorCode === 'watchlist_cap') {
+    return translate('errors.watchlistCap');
+  }
+  if (status === 429 && errorCode === 'quota_exceeded') {
+    return translate('errors.quotaExceeded');
+  }
+  return translate('watchlist.actionFailed');
+}
 
 export interface UseWatchlistReturn {
   watchlistCodes: string[];
@@ -15,6 +36,7 @@ export interface UseWatchlistReturn {
 }
 
 export function useWatchlist(): UseWatchlistReturn {
+  const { t } = useUiLanguage();
   const [codes, setCodes] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isActioning, setIsActioning] = useState(false);
@@ -76,14 +98,14 @@ export function useWatchlist(): UseWatchlistReturn {
       const result = await systemConfigApi.addToWatchlist(stockCode);
       if (mountedRef.current) {
         setCodes(result);
-        showMessage(`已加入自选 ${stockCode}`);
+        showMessage(t('watchlist.added').replace('{code}', stockCode));
       }
-    } catch {
-      if (mountedRef.current) showMessage('操作失败');
+    } catch (error: unknown) {
+      if (mountedRef.current) showMessage(getWatchlistActionError(error, t));
     } finally {
       if (mountedRef.current) setIsActioning(false);
     }
-  }, [isActioning, showMessage]);
+  }, [isActioning, showMessage, t]);
 
   const removeFromWatchlist = useCallback(async (stockCode: string) => {
     if (!stockCode || isActioning) return;
@@ -92,14 +114,14 @@ export function useWatchlist(): UseWatchlistReturn {
       const result = await systemConfigApi.removeFromWatchlist(stockCode);
       if (mountedRef.current) {
         setCodes(result);
-        showMessage(`已从自选移除 ${stockCode}`);
+        showMessage(t('watchlist.removed').replace('{code}', stockCode));
       }
-    } catch {
-      if (mountedRef.current) showMessage('操作失败');
+    } catch (error: unknown) {
+      if (mountedRef.current) showMessage(getWatchlistActionError(error, t));
     } finally {
       if (mountedRef.current) setIsActioning(false);
     }
-  }, [isActioning, showMessage]);
+  }, [isActioning, showMessage, t]);
 
   const toggleWatchlist = useCallback(async (stockCode: string) => {
     const existingStockCode = findMatchingStockCode(codes, stockCode);

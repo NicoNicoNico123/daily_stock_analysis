@@ -47,14 +47,14 @@ describe('getDecisionProfile', () => {
 
   it('maps profile display values through UI labels', () => {
     const labels = {
-      'decisionSignals.profile.aggressive': '进取',
+      'decisionSignals.profile.aggressive': '進取',
       'decisionSignals.profile.balanced': '均衡',
       'decisionSignals.profile.conservative': '保守',
       'decisionSignals.profile.unknown': '未知',
     } as const;
     const t = (key: string) => labels[key as keyof typeof labels] ?? key;
 
-    expect(getDecisionProfileLabel('aggressive', t)).toBe('进取');
+    expect(getDecisionProfileLabel('aggressive', t)).toBe('進取');
     expect(getDecisionProfileLabel('unknown', t)).toBe('未知');
   });
 });

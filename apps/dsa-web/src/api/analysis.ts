@@ -118,7 +118,7 @@ export const analysisApi = {
       const message = detail && typeof detail === 'object' && 'message' in detail
         ? String((detail as { message?: unknown }).message || '')
         : String(response.data?.message || '');
-      throw new Error(message || '大盘复盘正在执行中，请稍后再试');
+      throw new Error(message || '大盤覆盤正在執行中，請稍後再試');
     }
 
     return toCamelCase<MarketReviewAccepted>(response.data);

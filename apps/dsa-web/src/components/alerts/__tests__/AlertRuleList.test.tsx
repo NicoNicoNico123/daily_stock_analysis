@@ -9,7 +9,7 @@ import { UI_LANGUAGE_STORAGE_KEY } from '../../../utils/uiLanguage';
 const rules: AlertRuleItem[] = [
   {
     id: 1,
-    name: '茅台价格突破',
+    name: '茅臺價格突破',
     targetScope: 'single_symbol',
     target: '600519',
     alertType: 'price_cross',
@@ -111,17 +111,17 @@ describe('AlertRuleList', () => {
   it('renders rules, filters, and pagination', () => {
     renderList();
 
-    expect(screen.getByText('茅台价格突破')).toBeInTheDocument();
+    expect(screen.getByText('茅臺價格突破')).toBeInTheDocument();
     expect(screen.getByText('600519')).toBeInTheDocument();
-    expect(screen.getAllByText('价格突破').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('價格突破').length).toBeGreaterThan(0);
     expect(screen.getByText('上破 1800')).toBeInTheDocument();
     expect(screen.getAllByText('MACD 金叉/死叉').length).toBeGreaterThan(0);
     expect(screen.getByText('MACD(12,26,9) 金叉')).toBeInTheDocument();
     expect(screen.getByText('KDJ(9,3,3) 死叉')).toBeInTheDocument();
-    expect(screen.getByText('冷却中')).toBeInTheDocument();
+    expect(screen.getByText('冷卻中')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('启停状态'), { target: { value: 'enabled' } });
-    fireEvent.change(screen.getByLabelText('规则类型'), { target: { value: 'price_cross' } });
+    fireEvent.change(screen.getByLabelText('啓停狀態'), { target: { value: 'enabled' } });
+    fireEvent.change(screen.getByLabelText('規則類型'), { target: { value: 'price_cross' } });
     fireEvent.click(screen.getByRole('button', { name: '2' }));
 
     expect(onEnabledFilterChange).toHaveBeenCalledWith('enabled');
@@ -140,7 +140,7 @@ describe('AlertRuleList', () => {
       ],
     });
 
-    expect(screen.getByText('未冷却')).toBeInTheDocument();
+    expect(screen.getByText('未冷卻')).toBeInTheDocument();
   });
 
   it('renders portfolio scope labels and child-target cooldown hint', () => {
@@ -148,7 +148,7 @@ describe('AlertRuleList', () => {
       rules: [
         {
           id: 4,
-          name: '持仓 RSI',
+          name: '持倉 RSI',
           targetScope: 'portfolio_holdings',
           target: 'all',
           alertType: 'rsi_threshold',
@@ -160,7 +160,7 @@ describe('AlertRuleList', () => {
         },
         {
           id: 5,
-          name: '组合止损',
+          name: '組合止損',
           targetScope: 'portfolio_account',
           target: '9',
           alertType: 'portfolio_stop_loss',
@@ -173,11 +173,11 @@ describe('AlertRuleList', () => {
       ],
     });
 
-    expect(screen.getByText('持仓标的')).toBeInTheDocument();
-    expect(screen.getByText('子目标见触发历史')).toBeInTheDocument();
-    expect(screen.getByText('账户 9')).toBeInTheDocument();
-    expect(screen.getAllByText('组合止损').length).toBeGreaterThan(0);
-    expect(screen.getByText('已触发止损')).toBeInTheDocument();
+    expect(screen.getByText('持倉標的')).toBeInTheDocument();
+    expect(screen.getByText('子目標見觸發歷史')).toBeInTheDocument();
+    expect(screen.getByText('賬戶 9')).toBeInTheDocument();
+    expect(screen.getAllByText('組合止損').length).toBeGreaterThan(0);
+    expect(screen.getByText('已觸發止損')).toBeInTheDocument();
   });
 
   it('renders portfolio drawdown alert labels in English UI mode', () => {
@@ -204,7 +204,7 @@ describe('AlertRuleList', () => {
     expect(screen.getByText('Portfolio account')).toBeInTheDocument();
     expect(screen.getAllByText('Enabled').length).toBeGreaterThan(0);
     expect(screen.getByText('Warning')).toBeInTheDocument();
-    expect(screen.queryByText('组合回撤')).not.toBeInTheDocument();
+    expect(screen.queryByText('組合回撤')).not.toBeInTheDocument();
   });
 
   it('renders market scope labels, filters, and parameters', () => {
@@ -212,7 +212,7 @@ describe('AlertRuleList', () => {
       rules: [
         {
           id: 6,
-          name: 'A 股红黄灯',
+          name: 'A 股紅黃燈',
           targetScope: 'market',
           target: 'cn',
           alertType: 'market_light_status',
@@ -224,7 +224,7 @@ describe('AlertRuleList', () => {
         },
         {
           id: 7,
-          name: '美股分数下降',
+          name: '美股分數下降',
           targetScope: 'market',
           target: 'us',
           alertType: 'market_light_score_drop',
@@ -239,12 +239,12 @@ describe('AlertRuleList', () => {
 
     expect(screen.getByText('A 股')).toBeInTheDocument();
     expect(screen.getByText('美股')).toBeInTheDocument();
-    expect(screen.getAllByText('大盘市场').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('大盘红绿灯状态').length).toBeGreaterThan(0);
-    expect(screen.getByText('红灯 / 黄灯')).toBeInTheDocument();
+    expect(screen.getAllByText('大盤市場').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('大盤紅綠燈狀態').length).toBeGreaterThan(0);
+    expect(screen.getByText('紅燈 / 黃燈')).toBeInTheDocument();
     expect(screen.getByText('Score 下降 >= 15')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('规则类型'), { target: { value: 'market_light_score_drop' } });
+    fireEvent.change(screen.getByLabelText('規則類型'), { target: { value: 'market_light_score_drop' } });
 
     expect(onAlertTypeFilterChange).toHaveBeenCalledWith('market_light_score_drop');
   });
@@ -252,7 +252,7 @@ describe('AlertRuleList', () => {
   it('runs test and toggles enabled state', () => {
     renderList();
 
-    fireEvent.click(screen.getAllByRole('button', { name: '测试' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '測試' })[0]);
     fireEvent.click(screen.getAllByRole('button', { name: '停用' })[0]);
 
     expect(onTest).toHaveBeenCalledWith(rules[0]);
@@ -262,17 +262,17 @@ describe('AlertRuleList', () => {
   it('shows loading text only for the active rule operation', () => {
     renderList({ busyRule: { id: 1, action: 'toggle' } });
 
-    expect(screen.getAllByRole('button', { name: '测试' })[0]).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: '測試' })[0]).toBeDisabled();
     expect(screen.getByRole('button', { name: '停用中' })).toHaveAttribute('aria-busy', 'true');
-    expect(screen.queryByRole('button', { name: '测试中' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '測試中' })).not.toBeInTheDocument();
   });
 
   it('confirms deletion before calling onDelete', async () => {
     renderList();
 
-    fireEvent.click(screen.getByLabelText('删除 茅台价格突破'));
-    expect(await screen.findByRole('heading', { name: '删除告警规则' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByLabelText('刪除 茅臺價格突破'));
+    expect(await screen.findByRole('heading', { name: '刪除告警規則' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '刪除' }));
 
     expect(onDelete).toHaveBeenCalledWith(rules[0]);
   });
@@ -280,6 +280,6 @@ describe('AlertRuleList', () => {
   it('shows an empty state for no rules', () => {
     renderList({ rules: [], total: 0 });
 
-    expect(screen.getByText('暂无告警规则')).toBeInTheDocument();
+    expect(screen.getByText('暫無告警規則')).toBeInTheDocument();
   });
 });

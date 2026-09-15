@@ -79,9 +79,14 @@ function makeAuthState(overrides: Partial<AuthState> = {}): AuthState {
     passwordSet: false,
     passwordChangeable: false,
     setupState: 'no_password',
+    multiUser: false,
+    registrationEnabled: false,
+    username: null,
+    role: null,
     isLoading: false,
     loadError: null,
     login: vi.fn().mockResolvedValue({ success: true }),
+    register: vi.fn().mockResolvedValue({ success: true }),
     changePassword: vi.fn().mockResolvedValue({ success: true }),
     logout: vi.fn().mockResolvedValue(undefined),
     refreshStatus: vi.fn().mockResolvedValue(undefined),
@@ -174,16 +179,16 @@ describe('App routing behavior', () => {
     try {
       render(<App />);
 
-      expect(await screen.findByRole('heading', { name: '页面加载失败' })).toBeInTheDocument();
-      expect(screen.getByRole('navigation', { name: '主导航' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: '重新加载页面' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: '返回首页' })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: '頁面加載失敗' })).toBeInTheDocument();
+      expect(screen.getByRole('navigation', { name: '主導航' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '重新加載頁面' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '返回首頁' })).toBeInTheDocument();
 
       chatPageShouldThrow.value = false;
-      fireEvent.click(screen.getByRole('link', { name: '持仓' }));
+      fireEvent.click(screen.getByRole('link', { name: '持倉' }));
 
       expect(await screen.findByTestId('portfolio-page')).toBeInTheDocument();
-      expect(screen.queryByRole('heading', { name: '页面加载失败' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: '頁面加載失敗' })).not.toBeInTheDocument();
     } finally {
       consoleError.mockRestore();
     }

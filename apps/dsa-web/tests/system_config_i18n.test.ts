@@ -106,7 +106,7 @@ describe('systemConfigI18n required key coverage', () => {
   it('uses a Chinese primary title for SearXNG base URLs', () => {
     const title = getFieldTitleZh('SEARXNG_BASE_URLS', 'SEARXNG_BASE_URLS');
 
-    expect(title).toBe('SearXNG 自建实例地址');
+    expect(title).toBe('SearXNG 自建實例地址');
     expect(title).not.toBe('SearXNG Base URLs');
   });
 
@@ -137,43 +137,43 @@ describe('systemConfigI18n required key coverage', () => {
 
 describe('systemConfigI18n option label localization', () => {
   const realSelectOptionCases = [
-    ['NEWS_STRATEGY_PROFILE', 'ultra_short', undefined, '超短线（1天）'],
+    ['NEWS_STRATEGY_PROFILE', 'ultra_short', undefined, '超短線（1天）'],
     ['NEWS_STRATEGY_PROFILE', 'short', undefined, '短期（3天）'],
     ['NEWS_STRATEGY_PROFILE', 'medium', undefined, '中期（7天）'],
-    ['NEWS_STRATEGY_PROFILE', 'long', undefined, '长期（30天）'],
-    ['REPORT_TYPE', 'simple', undefined, '简洁'],
+    ['NEWS_STRATEGY_PROFILE', 'long', undefined, '長期（30天）'],
+    ['REPORT_TYPE', 'simple', undefined, '簡潔'],
     ['REPORT_TYPE', 'full', undefined, '完整'],
-    ['REPORT_TYPE', 'brief', undefined, '简报'],
+    ['REPORT_TYPE', 'brief', undefined, '演示文稿'],
     ['REPORT_LANGUAGE', 'zh', 'Chinese', '中文'],
     ['REPORT_LANGUAGE', 'en', 'English', '英文'],
-    ['REPORT_LANGUAGE', 'ko', 'Korean', '韩文'],
-    ['NOTIFICATION_MIN_SEVERITY', '', 'Not set', '未设置'],
+    ['REPORT_LANGUAGE', 'ko', 'Korean', '韓文'],
+    ['NOTIFICATION_MIN_SEVERITY', '', 'Not set', '未設置'],
     ['NOTIFICATION_MIN_SEVERITY', 'info', 'info', '信息'],
     ['NOTIFICATION_MIN_SEVERITY', 'warning', 'warning', '警告'],
-    ['NOTIFICATION_MIN_SEVERITY', 'error', 'error', '错误'],
-    ['NOTIFICATION_MIN_SEVERITY', 'critical', 'critical', '严重'],
-    ['LOG_LEVEL', 'DEBUG', undefined, '调试'],
+    ['NOTIFICATION_MIN_SEVERITY', 'error', 'error', '錯誤'],
+    ['NOTIFICATION_MIN_SEVERITY', 'critical', 'critical', '嚴重'],
+    ['LOG_LEVEL', 'DEBUG', undefined, '調試'],
     ['LOG_LEVEL', 'INFO', undefined, '信息'],
     ['LOG_LEVEL', 'WARNING', undefined, '警告'],
-    ['LOG_LEVEL', 'ERROR', undefined, '错误'],
-    ['LOG_LEVEL', 'CRITICAL', undefined, '严重'],
-    ['LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL', 'off', undefined, '关闭'],
-    ['LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL', 'basic', undefined, '基础'],
-    ['LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL', 'debug', undefined, '调试'],
-    ['MARKET_REVIEW_COLOR_SCHEME', 'green_up', 'Green Up / Red Down', '绿涨红跌'],
-    ['MARKET_REVIEW_COLOR_SCHEME', 'red_up', 'Red Up / Green Down', '红涨绿跌'],
-    ['GENERATION_BACKEND', 'litellm', undefined, '默认模型配置'],
-    ['GENERATION_FALLBACK_BACKEND', 'litellm', undefined, '默认模型配置'],
-    ['AGENT_GENERATION_BACKEND', 'auto', 'Auto', '自动'],
-    ['AGENT_GENERATION_BACKEND', 'litellm', undefined, '默认模型配置'],
-    ['AGENT_ARCH', 'single', 'Single Agent', '单 Agent'],
-    ['AGENT_ARCH', 'multi', 'Multi Agent (Orchestrator)', '多 Agent（编排）'],
+    ['LOG_LEVEL', 'ERROR', undefined, '錯誤'],
+    ['LOG_LEVEL', 'CRITICAL', undefined, '嚴重'],
+    ['LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL', 'off', undefined, '關閉'],
+    ['LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL', 'basic', undefined, '基礎'],
+    ['LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL', 'debug', undefined, '調試'],
+    ['MARKET_REVIEW_COLOR_SCHEME', 'green_up', 'Green Up / Red Down', '綠漲紅跌'],
+    ['MARKET_REVIEW_COLOR_SCHEME', 'red_up', 'Red Up / Green Down', '紅漲綠跌'],
+    ['GENERATION_BACKEND', 'litellm', undefined, '缺省模型配置'],
+    ['GENERATION_FALLBACK_BACKEND', 'litellm', undefined, '缺省模型配置'],
+    ['AGENT_GENERATION_BACKEND', 'auto', 'Auto', '自動'],
+    ['AGENT_GENERATION_BACKEND', 'litellm', undefined, '缺省模型配置'],
+    ['AGENT_ARCH', 'single', 'Single Agent', '單 Agent'],
+    ['AGENT_ARCH', 'multi', 'Multi Agent (Orchestrator)', '多 Agent（編排）'],
     ['AGENT_ORCHESTRATOR_MODE', 'quick', 'Quick', '快速'],
-    ['AGENT_ORCHESTRATOR_MODE', 'standard', 'Standard', '标准'],
+    ['AGENT_ORCHESTRATOR_MODE', 'standard', 'Standard', '標準'],
     ['AGENT_ORCHESTRATOR_MODE', 'full', 'Full', '完整'],
-    ['AGENT_ORCHESTRATOR_MODE', 'specialist', 'Specialist', '专家'],
-    ['AGENT_SKILL_ROUTING', 'auto', 'Auto (Regime-based)', '自动（按市场状态）'],
-    ['AGENT_SKILL_ROUTING', 'manual', 'Manual (Use AGENT_SKILLS)', '手动（使用 AGENT_SKILLS）'],
+    ['AGENT_ORCHESTRATOR_MODE', 'specialist', 'Specialist', '專家'],
+    ['AGENT_SKILL_ROUTING', 'auto', 'Auto (Regime-based)', '自動（按市場狀態）'],
+    ['AGENT_SKILL_ROUTING', 'manual', 'Manual (Use AGENT_SKILLS)', '手動（使用 AGENT_SKILLS）'],
   ] as const;
 
   it('localizes all select options currently exposed by system config schema', () => {
@@ -205,9 +205,9 @@ describe('SAVE_CONTEXT_SNAPSHOT settings help contract', () => {
       ...(help?.notes ?? []),
     ].join('\n');
 
-    expect(text).toContain('新历史记录');
-    expect(text).toContain('不关闭当次 AnalysisContextPack 构建');
-    expect(text).toContain('不关闭 LLM Prompt');
+    expect(text).toContain('新歷史記錄');
+    expect(text).toContain('不關閉當次 AnalysisContextPack 構建');
+    expect(text).toContain('不關閉 LLM Prompt');
     expect(text).not.toContain('旧记录');
   });
 });
@@ -278,29 +278,29 @@ describe('generation backend settings help contract', () => {
     ].join('\n');
 
     expect(zhBackend?.title).toBe('分析生成方式');
-    expect(zhFallback?.title).toBe('备用生成方式');
-    expect(zhAgent?.title).toBe('问股生成方式');
-    expect(getFieldTitleZh('GENERATION_BACKEND_TIMEOUT_SECONDS', '')).toBe('生成超时（秒）');
-    expect(getFieldTitleZh('GENERATION_BACKEND_MAX_OUTPUT_BYTES', '')).toBe('最大输出大小（字节）');
-    expect(getFieldTitleZh('GENERATION_BACKEND_MAX_CONCURRENCY', '')).toBe('模型生成最大并发');
-    expect(getFieldTitleZh('LOCAL_CLI_BACKEND_MAX_CONCURRENCY', '')).toBe('本地命令行最大并发');
+    expect(zhFallback?.title).toBe('備用生成方式');
+    expect(zhAgent?.title).toBe('問股生成方式');
+    expect(getFieldTitleZh('GENERATION_BACKEND_TIMEOUT_SECONDS', '')).toBe('生成超時（秒）');
+    expect(getFieldTitleZh('GENERATION_BACKEND_MAX_OUTPUT_BYTES', '')).toBe('最大輸出大小（字節）');
+    expect(getFieldTitleZh('GENERATION_BACKEND_MAX_CONCURRENCY', '')).toBe('模型生成最大併發');
+    expect(getFieldTitleZh('LOCAL_CLI_BACKEND_MAX_CONCURRENCY', '')).toBe('本地命令行最大併發');
     expect(zhBackend?.showFieldKey).toBe(false);
     expect(zhFallback?.showFieldKey).toBe(false);
     expect(zhAgent?.showFieldKey).toBe(false);
     expect(zhBackend?.examples).toEqual([]);
     expect(zhFallback?.examples).toEqual([]);
     expect(zhAgent?.examples).toEqual([]);
-    expect(zhInlineText).toContain('个股分析');
-    expect(zhInlineText).toContain('问股助手');
-    expect(zhInlineText).toContain('当前可用的方式');
+    expect(zhInlineText).toContain('個股分析');
+    expect(zhInlineText).toContain('問股助手');
+    expect(zhInlineText).toContain('當前可用的方式');
     expect(zhInlineText).not.toContain('沿用当前可用的模型通道');
-    expect(zhText).toContain('个股分析');
-    expect(zhText).toContain('大盘复盘');
-    expect(zhText).toContain('自动');
-    expect(zhBackend?.usage).toContain('默认模型配置');
-    expect(zhFallback?.usage).toContain('默认模型配置');
-    expect(zhAgent?.usage).toContain('当前可用的方式');
-    expect(zhAgent?.valueNotes).toContain('如果不确定，选择“自动”即可。');
+    expect(zhText).toContain('個股分析');
+    expect(zhText).toContain('大盤覆盤');
+    expect(zhText).toContain('自動');
+    expect(zhBackend?.usage).toContain('缺省模型配置');
+    expect(zhFallback?.usage).toContain('缺省模型配置');
+    expect(zhAgent?.usage).toContain('當前可用的方式');
+    expect(zhAgent?.valueNotes).toContain('如果不確定，選擇“自動”即可。');
     expect(zhText).not.toContain('优先选择当前可用');
     expect(zhText).not.toContain('unsupported_tool_calling');
     expect(zhText).not.toContain('run_agent_loop');
@@ -347,12 +347,12 @@ describe('generation backend settings help contract', () => {
 
 describe('generation backend status panel i18n contract', () => {
   it('keeps the new status panel copy localized in both UI languages', () => {
-    expect(UI_TEXT.zh['settings.generationBackendStatus']).toBe('生成后端状态');
-    expect(UI_TEXT.zh['settings.generationBackendSmokeTest']).toBe('JSON 冒烟测试');
-    expect(UI_TEXT.zh['settings.generationBackendPrimary']).toBe('主后端');
-    expect(UI_TEXT.zh['settings.generationBackendFallback']).toBe('备用后端');
-    expect(UI_TEXT.zh['settings.generationBackendGenerationOnly']).toBe('仅生成');
-    expect(UI_TEXT.zh['settings.generationBackendStatusDescription']).toContain('快速检查');
+    expect(UI_TEXT.zh['settings.generationBackendStatus']).toBe('生成後端狀態');
+    expect(UI_TEXT.zh['settings.generationBackendSmokeTest']).toBe('JSON 冒煙測試');
+    expect(UI_TEXT.zh['settings.generationBackendPrimary']).toBe('主後端');
+    expect(UI_TEXT.zh['settings.generationBackendFallback']).toBe('備用後端');
+    expect(UI_TEXT.zh['settings.generationBackendGenerationOnly']).toBe('僅生成');
+    expect(UI_TEXT.zh['settings.generationBackendStatusDescription']).toContain('快速檢查');
     expect(UI_TEXT.zh['settings.generationBackendStatusDescription']).not.toContain('cheap check');
     expect(UI_TEXT.zh['settings.generationBackendSmokePassed']).not.toContain('Smoke test');
 

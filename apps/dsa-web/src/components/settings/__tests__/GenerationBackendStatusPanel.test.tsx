@@ -50,7 +50,7 @@ const localCliStatus: GenerationBackendStatusResponse = {
 const smokePassed: TestGenerationBackendResponse = {
   success: true,
   mode: 'json',
-  message: '生成后端冒烟测试通过',
+  message: '生成後端冒煙測試通過',
   status: localCliStatus.primary,
 };
 
@@ -98,8 +98,8 @@ describe('GenerationBackendStatusPanel', () => {
     });
     expect(previewGenerationBackendStatus).not.toHaveBeenCalled();
     expect(await screen.findByText('codex_cli')).toBeInTheDocument();
-    expect(screen.getByText('仅生成')).toBeInTheDocument();
-    expect(screen.getByText(/本地 CLI 只用于报告和文本生成/)).toBeInTheDocument();
+    expect(screen.getByText('僅生成')).toBeInTheDocument();
+    expect(screen.getByText(/本地 CLI 只用於報告和文本生成/)).toBeInTheDocument();
   });
 
   it('previews unsaved draft generation backend status', async () => {
@@ -127,7 +127,7 @@ describe('GenerationBackendStatusPanel', () => {
       />,
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: /JSON 冒烟测试/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /JSON 冒煙測試/ }));
 
     await waitFor(() => {
       expect(testGenerationBackend).toHaveBeenCalledWith({
@@ -136,7 +136,7 @@ describe('GenerationBackendStatusPanel', () => {
         maskToken: '******',
       });
     });
-    expect(await screen.findByText('冒烟测试通过')).toBeInTheDocument();
+    expect(await screen.findByText('冒煙測試通過')).toBeInTheDocument();
   });
 
   it('clears stale smoke result when draft items change', async () => {
@@ -147,8 +147,8 @@ describe('GenerationBackendStatusPanel', () => {
       />,
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: /JSON 冒烟测试/ }));
-    expect(await screen.findByText('冒烟测试通过')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /JSON 冒煙測試/ }));
+    expect(await screen.findByText('冒煙測試通過')).toBeInTheDocument();
 
     rerender(
       <GenerationBackendStatusPanel
@@ -158,7 +158,7 @@ describe('GenerationBackendStatusPanel', () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText('冒烟测试通过')).not.toBeInTheDocument();
+      expect(screen.queryByText('冒煙測試通過')).not.toBeInTheDocument();
     });
   });
 
@@ -222,9 +222,9 @@ describe('GenerationBackendStatusPanel', () => {
 
     render(<GenerationBackendStatusPanel items={[]} maskToken="******" />);
 
-    fireEvent.click(screen.getByRole('button', { name: /JSON 冒烟测试/ }));
+    fireEvent.click(screen.getByRole('button', { name: /JSON 冒煙測試/ }));
 
-    expect(await screen.findByText('冒烟测试通过')).toBeInTheDocument();
+    expect(await screen.findByText('冒煙測試通過')).toBeInTheDocument();
     expect(await screen.findByText('codex_cli')).toBeInTheDocument();
   });
 

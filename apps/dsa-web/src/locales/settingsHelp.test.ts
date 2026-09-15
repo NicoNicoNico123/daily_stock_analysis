@@ -15,9 +15,9 @@ describe('SearXNG settings help', () => {
   it('describes public SearXNG discovery as opt-in in Chinese', () => {
     const description = getFieldDescriptionZh('SEARXNG_PUBLIC_INSTANCES_ENABLED');
 
-    expect(description).toContain('默认关闭');
-    expect(description).toContain('设为 true');
-    expect(description).not.toContain('设为 false 可禁用该默认行为');
+    expect(description).toContain('缺省關閉');
+    expect(description).toContain('設爲 true');
+    expect(description).not.toContain('設爲 false 可禁用該缺省行爲');
   });
 });
 
@@ -33,8 +33,8 @@ describe('Skill Outcome auto-weight settings help', () => {
     expect(visibleCopy).toContain('Outcome');
     expect(visibleCopy).toContain('30');
     expect(visibleCopy).toContain('1.0');
-    expect(visibleCopy).toContain('不使用全局回测胜率');
-    expect(visibleCopy).not.toContain('依赖回测');
+    expect(visibleCopy).toContain('不使用全局回測勝率');
+    expect(visibleCopy).not.toContain('依賴回測');
     expect(getFieldDescriptionZh('AGENT_SKILL_AUTOWEIGHT')).toContain('Outcome');
   });
 

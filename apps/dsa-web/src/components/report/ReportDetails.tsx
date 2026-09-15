@@ -1,14 +1,14 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { ReportDetails as ReportDetailsType, ReportLanguage } from '../../types/analysis';
+import type { ReportDetails as ReportDetailsType } from '../../types/analysis';
 import { Card } from '../common';
 import { DashboardPanelHeader } from '../dashboard';
-import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
+import { getReportText } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 
 interface ReportDetailsProps {
   details?: ReportDetailsType;
-  recordId?: number;  // 分析历史记录主键 ID
-  language?: ReportLanguage;
+  recordId?: number;  // 分析歷史記錄主鍵 ID
 }
 
 /**
@@ -17,13 +17,13 @@ interface ReportDetailsProps {
 export const ReportDetails: React.FC<ReportDetailsProps> = ({
   details,
   recordId,
-  language = 'zh',
 }) => {
   type JsonPanel = 'raw' | 'snapshot';
   type CopiedPanelState = Record<JsonPanel, boolean>;
 
-  const reportLanguage = normalizeReportLanguage(language);
-  const text = getReportText(reportLanguage);
+  // 透明度区标签跟随界面语言，而不是报告内容语言。
+  const { language: uiLanguage } = useUiLanguage();
+  const text = getReportText(uiLanguage);
   const [showRaw, setShowRaw] = useState(false);
   const [showSnapshot, setShowSnapshot] = useState(false);
   const [copiedPanels, setCopiedPanels] = useState<CopiedPanelState>({
@@ -109,9 +109,9 @@ export const ReportDetails: React.FC<ReportDetailsProps> = ({
         </div>
       )}
 
-      {/* 折叠区域 */}
+      {/* 摺疊區域 */}
       <div className="space-y-2">
-        {/* 原始分析结果 */}
+        {/* 原始分析結果 */}
         {details?.rawResult && (
           <div>
             <button

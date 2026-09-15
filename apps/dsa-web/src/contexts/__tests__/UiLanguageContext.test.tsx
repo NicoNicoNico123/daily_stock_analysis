@@ -111,8 +111,8 @@ describe('UiLanguageContext', () => {
       </UiLanguageProvider>
     );
 
-    const toggle = screen.getByRole('button', { name: '切换界面语言' });
-    expect(screen.getByText('界面语言')).toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: '切換接口語言' });
+    expect(screen.getByText('接口語言')).toBeInTheDocument();
 
     fireEvent.click(toggle);
 

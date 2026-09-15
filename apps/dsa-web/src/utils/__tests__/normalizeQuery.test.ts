@@ -21,7 +21,7 @@ describe('normalizeQuery', () => {
   describe('normalizeQuery - Query normalization', () => {
     test('removes leading and trailing spaces', () => {
       expect(normalizeQuery('  600519  ')).toBe('600519');
-      expect(normalizeQuery('  茅台  ')).toBe('茅台');
+      expect(normalizeQuery('  茅臺  ')).toBe('茅臺');
     });
 
     test('converts to lowercase', () => {
@@ -39,7 +39,7 @@ describe('normalizeQuery', () => {
     });
 
     test('normalizes full-width latin characters to ASCII', () => {
-      expect(normalizeQuery('万科Ａ')).toBe('万科a');
+      expect(normalizeQuery('萬科Ａ')).toBe('萬科a');
       expect(normalizeQuery('wkＡ')).toBe('wka');
     });
 
@@ -57,7 +57,7 @@ describe('normalizeQuery', () => {
   describe('isChineseChar - Chinese character detection', () => {
     test('identifies Chinese characters', () => {
       expect(isChineseChar('茅')).toBe(true);
-      expect(isChineseChar('台')).toBe(true);
+      expect(isChineseChar('臺')).toBe(true);
       expect(isChineseChar('股')).toBe(true);
     });
 
@@ -80,13 +80,13 @@ describe('normalizeQuery', () => {
 
   describe('containsChinese - Contains Chinese detection', () => {
     test('pure Chinese strings', () => {
-      expect(containsChinese('贵州茅台')).toBe(true);
-      expect(containsChinese('腾讯')).toBe(true);
+      expect(containsChinese('貴州茅臺')).toBe(true);
+      expect(containsChinese('騰訊')).toBe(true);
     });
 
     test('mixed Chinese-English strings', () => {
-      expect(containsChinese('600519贵州茅台')).toBe(true);
-      expect(containsChinese('AAPL苹果')).toBe(true);
+      expect(containsChinese('600519貴州茅臺')).toBe(true);
+      expect(containsChinese('AAPL蘋果')).toBe(true);
     });
 
     test('pure English strings', () => {
@@ -202,8 +202,8 @@ describe('normalizeQuery', () => {
     });
 
     test('rejects Chinese names', () => {
-      expect(isStockCodeLike('贵州茅台')).toBe(false);
-      expect(isStockCodeLike('腾讯')).toBe(false);
+      expect(isStockCodeLike('貴州茅臺')).toBe(false);
+      expect(isStockCodeLike('騰訊')).toBe(false);
     });
 
     test('rejects pinyin', () => {
@@ -222,9 +222,9 @@ describe('normalizeQuery', () => {
 
   describe('isStockNameLike - Check if looks like stock name', () => {
     test('identifies Chinese names', () => {
-      expect(isStockNameLike('贵州茅台')).toBe(true);
-      expect(isStockNameLike('腾讯控股')).toBe(true);
-      expect(isStockNameLike('平安银行')).toBe(true);
+      expect(isStockNameLike('貴州茅臺')).toBe(true);
+      expect(isStockNameLike('騰訊控股')).toBe(true);
+      expect(isStockNameLike('平安銀行')).toBe(true);
     });
 
     test('rejects English codes', () => {
@@ -238,8 +238,8 @@ describe('normalizeQuery', () => {
     });
 
     test('identifies mixed Chinese-English', () => {
-      expect(isStockNameLike('贵州茅台600519')).toBe(true);
-      expect(isStockNameLike('AAPL苹果')).toBe(true);
+      expect(isStockNameLike('貴州茅臺600519')).toBe(true);
+      expect(isStockNameLike('AAPL蘋果')).toBe(true);
     });
 
     test('handles empty strings', () => {
@@ -271,8 +271,8 @@ describe('normalizeQuery', () => {
     });
 
     test('rejects Chinese characters', () => {
-      expect(isPinyinLike('茅台maotai')).toBe(false);
-      expect(isPinyinLike('贵州')).toBe(false);
+      expect(isPinyinLike('茅臺maotai')).toBe(false);
+      expect(isPinyinLike('貴州')).toBe(false);
     });
 
     test('handles empty strings', () => {

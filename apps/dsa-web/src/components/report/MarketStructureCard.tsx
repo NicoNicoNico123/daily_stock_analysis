@@ -6,15 +6,13 @@ import type {
   MarketStructureThemePhase,
   MarketStructureStockRole,
   RankedThemeItem,
-  ReportLanguage,
 } from '../../types/analysis';
-import { normalizeReportLanguage } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { Badge, Card } from '../common';
 import { DashboardPanelHeader } from '../dashboard';
 
 interface MarketStructureCardProps {
   context?: MarketStructureContext | null;
-  language?: ReportLanguage;
 }
 
 type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>['variant']>;
@@ -28,20 +26,20 @@ const STATUS_VARIANT: Record<MarketStructureStatus, BadgeVariant> = {
 
 const TEXT = {
   zh: {
-    eyebrow: '市场位置',
-    title: '题材主线与个股位置',
-    marketLayer: '大盘题材层',
-    stockLayer: '个股位置层',
-    activeThemes: '活跃题材',
-    leadingConcepts: '领涨概念',
-    leadingIndustries: '领涨行业',
-    primaryTheme: '主关联题材',
-    themePhase: '题材阶段',
-    stockRole: '个股位置',
-    riskTags: '风险标签',
-    dataQuality: '数据质量',
-    missingFields: '缺失证据',
-    empty: '暂无',
+    eyebrow: '市場位置',
+    title: '題材主線與個股位置',
+    marketLayer: '大盤題材層',
+    stockLayer: '個股位置層',
+    activeThemes: '活躍題材',
+    leadingConcepts: '領漲概念',
+    leadingIndustries: '領漲行業',
+    primaryTheme: '主關聯題材',
+    themePhase: '題材階段',
+    stockRole: '個股位置',
+    riskTags: '風險標籤',
+    dataQuality: '數據質量',
+    missingFields: '缺失證據',
+    empty: '暫無',
     status: {
       ok: '可用',
       partial: '部分可用',
@@ -49,15 +47,15 @@ const TEXT = {
       not_supported: '不支持',
     },
     phase: {
-      warming: '升温',
+      warming: '升溫',
       accelerating: '加速',
-      cooling: '降温',
+      cooling: '降溫',
       unknown: '未知',
     },
     role: {
-      leader: '龙头',
-      follower: '跟随',
-      edge: '边缘关联',
+      leader: '龍頭',
+      follower: '跟隨',
+      edge: '邊緣關聯',
       unknown: '未知',
     },
   },
@@ -133,9 +131,9 @@ const TEXT = {
 
 const RISK_TAG_TEXT = {
   zh: {
-    theme_data_partial: '题材主线数据不完整',
-    stock_theme_evidence_partial: '个股板块未匹配到市场题材榜单，个股位置按降级证据处理',
-    board_membership_missing: '缺少个股所属板块证据，无法判断题材位置',
+    theme_data_partial: '題材主線數據不完整',
+    stock_theme_evidence_partial: '個股板塊未匹配到市場題材榜單，個股位置按降級證據處理',
+    board_membership_missing: '缺少個股所屬板塊證據，無法判斷題材位置',
   },
   en: {
     theme_data_partial: 'Market theme data is incomplete',
@@ -170,17 +168,14 @@ const valueList = (items?: string[], limit = 4): string[] => {
   return items.filter(Boolean).slice(0, limit);
 };
 
-export const MarketStructureCard: React.FC<MarketStructureCardProps> = ({ context, language }) => {
+export const MarketStructureCard: React.FC<MarketStructureCardProps> = ({ context }) => {
+  // 市场位置标签跟随界面语言，而不是报告内容语言。
+  const { language } = useUiLanguage();
   if (!context || context.schemaVersion !== 'market-structure-v1' || context.status === 'not_supported') {
     return null;
   }
 
-  const reportLanguage = normalizeReportLanguage(language);
-  const text = reportLanguage === 'en'
-    ? TEXT.en
-    : reportLanguage === 'ko'
-      ? TEXT.ko
-      : TEXT.zh;
+  const text = TEXT[language];
   const marketTheme = context.marketThemeContext;
   const stockPosition = context.stockMarketPosition;
   if (!marketTheme || !stockPosition) {
@@ -198,7 +193,7 @@ export const MarketStructureCard: React.FC<MarketStructureCardProps> = ({ contex
   const riskTags = valueList(
     stockPosition.riskTags?.map(
       (tag) =>
-        (RISK_TAG_TEXT[reportLanguage] as Record<string, string>)[tag.code]
+        (RISK_TAG_TEXT[language] as Record<string, string>)[tag.code]
         || tag.message
         || tag.code,
     ),

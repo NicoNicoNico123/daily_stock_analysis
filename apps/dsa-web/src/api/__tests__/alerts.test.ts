@@ -263,7 +263,7 @@ describe('alertsApi', () => {
           target_results: [
             {
               target: '600519',
-              display_target: '自选股 - 600519',
+              display_target: '自選股 - 600519',
               status: 'triggered',
               record_status: 'triggered',
               triggered: true,
@@ -298,7 +298,7 @@ describe('alertsApi', () => {
     expect(created.parameters.mode).toBe('breach');
     expect(dryRun.evaluatedCount).toBe(2);
     expect(dryRun.degradedCount).toBe(1);
-    expect(dryRun.targetResults?.[0].displayTarget).toBe('自选股 - 600519');
+    expect(dryRun.targetResults?.[0].displayTarget).toBe('自選股 - 600519');
   });
 
   it('deletes, toggles, tests, and lists history endpoints', async () => {

@@ -1,6 +1,5 @@
 import type React from 'react';
 import { useCallback, useState } from 'react';
-import type { ReportLanguage } from '../../types/analysis';
 import { Drawer } from '../common/Drawer';
 import { ReportMarkdownPanel } from './ReportMarkdownPanel';
 
@@ -9,7 +8,6 @@ export interface ReportMarkdownProps {
   stockName: string;
   stockCode: string;
   onClose: () => void;
-  reportLanguage?: ReportLanguage;
 }
 
 /**
@@ -21,7 +19,6 @@ export const ReportMarkdown: React.FC<ReportMarkdownProps> = ({
   stockName,
   stockCode,
   onClose,
-  reportLanguage = 'zh',
 }) => {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -42,7 +39,6 @@ export const ReportMarkdown: React.FC<ReportMarkdownProps> = ({
         recordId={recordId}
         stockName={stockName}
         stockCode={stockCode}
-        reportLanguage={reportLanguage}
         onRequestClose={handleClose}
       />
     </Drawer>

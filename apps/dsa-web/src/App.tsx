@@ -23,10 +23,12 @@ const DecisionSignalsPage = lazy(() => import('./pages/DecisionSignalsPage'));
 const AlertsPage = lazy(() => import('./pages/AlertsPage'));
 const TokenUsagePage = lazy(() => import('./pages/TokenUsagePage'));
 const StockScreeningPage = lazy(() => import('./pages/StockScreeningPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
 
 const AppContent: React.FC = () => {
   const location = useLocation();
-  const { authEnabled, loggedIn, isLoading, loadError, refreshStatus } = useAuth();
+  const { authEnabled, loggedIn, isLoading, loadError, refreshStatus, registrationEnabled } = useAuth();
   const { t } = useUiLanguage();
 
   useEffect(() => {
@@ -55,6 +57,17 @@ const AppContent: React.FC = () => {
   }
 
   if (authEnabled && !loggedIn) {
+    // /register 在开放注册开启时未登录可达；否则与其它未登录路径一样跳登录页
+    if (location.pathname === '/register') {
+      if (registrationEnabled) {
+        return (
+          <StandaloneRouteBoundary>
+            <RegisterPage />
+          </StandaloneRouteBoundary>
+        );
+      }
+      return <Navigate to="/login" replace />;
+    }
     if (location.pathname === '/login') {
       return (
         <StandaloneRouteBoundary>
@@ -66,7 +79,7 @@ const AppContent: React.FC = () => {
     return <Navigate to={`/login?redirect=${redirect}`} replace />;
   }
 
-  if (location.pathname === '/login') {
+  if (location.pathname === '/login' || location.pathname === '/register') {
     return <Navigate to="/" replace />;
   }
 
@@ -88,6 +101,7 @@ const AppContent: React.FC = () => {
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/usage" element={<TokenUsagePage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/users" element={<UsersPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

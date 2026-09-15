@@ -35,7 +35,7 @@ const snapshot: RunFlowSnapshot = {
   taskId: 'task-1',
   traceId: 'trace-1',
   stockCode: '600519',
-  stockName: '贵州茅台',
+  stockName: '貴州茅臺',
   status: 'running',
   generatedAt: '2026-06-08T08:00:00Z',
   summary: {
@@ -48,14 +48,14 @@ const snapshot: RunFlowSnapshot = {
   },
   lanes: [
     { id: 'entry', label: '入口', order: 1 },
-    { id: 'data_source', label: '数据来源', order: 2 },
+    { id: 'data_source', label: '數據源', order: 2 },
   ],
   nodes: [
     {
       id: 'task_queue',
       lane: 'entry',
       kind: 'queue',
-      label: '任务队列',
+      label: '任務隊列',
       status: 'running',
     },
   ],
@@ -67,7 +67,7 @@ const snapshot: RunFlowSnapshot = {
       severity: 'info',
       type: 'task_started',
       nodeId: 'task_queue',
-      title: '任务开始执行',
+      title: '任務開始運行',
     },
   ],
 };
@@ -114,14 +114,14 @@ describe('useRunFlowSnapshot', () => {
           severity: 'success',
           type: 'provider_run',
           nodeId: 'provider_daily_1',
-          title: '日线K线成功',
+          title: '日線K線成功',
           metadata: {
             provider: 'DailyFetcher',
             node: {
               id: 'provider_daily_1',
               lane: 'data_source',
               kind: 'data_source',
-              label: '日线K线',
+              label: '日線K線',
               status: 'success',
             },
           },
@@ -166,7 +166,7 @@ describe('useRunFlowSnapshot', () => {
           severity: 'info',
           type: 'provider_run_started',
           nodeId: 'provider_daily_data_dailyfetcher_1',
-          title: '日线K线开始',
+          title: '日線K線開始',
           metadata: {
             provider: 'DailyFetcher',
             dataType: 'daily_data',
@@ -174,7 +174,7 @@ describe('useRunFlowSnapshot', () => {
               id: 'provider_daily_data_dailyfetcher_1',
               lane: 'data_source',
               kind: 'data_source',
-              label: '日线K线 · DailyFetcher',
+              label: '日線K線 · DailyFetcher',
               status: 'running',
               provider: 'DailyFetcher',
               metadata: { dataType: 'daily_data' },
@@ -197,7 +197,7 @@ describe('useRunFlowSnapshot', () => {
           severity: 'success',
           type: 'provider_run',
           nodeId: 'provider_daily_data_dailyfetcher_1',
-          title: '日线K线成功',
+          title: '日線K線成功',
           metadata: {
             provider: 'DailyFetcher',
             dataType: 'daily_data',
@@ -205,7 +205,7 @@ describe('useRunFlowSnapshot', () => {
               id: 'provider_daily_data_dailyfetcher_1',
               lane: 'data_source',
               kind: 'data_source',
-              label: '日线K线 · DailyFetcher',
+              label: '日線K線 · DailyFetcher',
               status: 'success',
               provider: 'DailyFetcher',
               recordCount: 30,
@@ -264,7 +264,7 @@ describe('useRunFlowSnapshot', () => {
           severity: 'danger',
           type: 'provider_run',
           nodeId: 'provider_daily_data_primary_1',
-          title: '日线K线失败',
+          title: '日線K線失敗',
           metadata: {
             provider: 'PrimaryDaily',
             dataType: 'daily_data',
@@ -272,7 +272,7 @@ describe('useRunFlowSnapshot', () => {
               id: 'provider_daily_data_primary_1',
               lane: 'data_source',
               kind: 'data_source',
-              label: '日线K线 · PrimaryDaily',
+              label: '日線K線 · PrimaryDaily',
               status: 'failed',
               provider: 'PrimaryDaily',
               durationMs: 120,
@@ -296,7 +296,7 @@ describe('useRunFlowSnapshot', () => {
           severity: 'success',
           type: 'provider_run',
           nodeId: 'provider_daily_data_backup_2',
-          title: '日线K线成功',
+          title: '日線K線成功',
           metadata: {
             provider: 'BackupDaily',
             dataType: 'daily_data',
@@ -305,7 +305,7 @@ describe('useRunFlowSnapshot', () => {
               id: 'provider_daily_data_backup_2',
               lane: 'data_source',
               kind: 'data_source',
-              label: '日线K线 · BackupDaily',
+              label: '日線K線 · BackupDaily',
               status: 'success',
               provider: 'BackupDaily',
               durationMs: 80,
@@ -324,7 +324,7 @@ describe('useRunFlowSnapshot', () => {
     ));
 
     expect(fallbackEdge).toBeDefined();
-    expect(fallbackEdge?.label).toBe('降级');
+    expect(fallbackEdge?.label).toBe('降級');
     expect(result.current.snapshot?.summary).toEqual(expect.objectContaining({
       failedAttempts: 1,
       fallbackCount: 1,
@@ -360,7 +360,7 @@ describe('useRunFlowSnapshot', () => {
           severity: 'danger',
           type: 'provider_run',
           nodeId: 'provider_daily_data_primary_1',
-          title: '日线K线失败',
+          title: '日線K線失敗',
           metadata: {
             provider: 'PrimaryDaily',
             dataType: 'daily_data',
@@ -368,7 +368,7 @@ describe('useRunFlowSnapshot', () => {
               id: 'provider_daily_data_primary_1',
               lane: 'data_source',
               kind: 'data_source',
-              label: '日线K线 · PrimaryDaily',
+              label: '日線K線 · PrimaryDaily',
               status: 'failed',
               provider: 'PrimaryDaily',
               metadata: { dataType: 'daily_data' },
@@ -391,7 +391,7 @@ describe('useRunFlowSnapshot', () => {
           severity: 'success',
           type: 'provider_run',
           nodeId: 'provider_news_search_primary_1',
-          title: '新闻检索成功',
+          title: '新聞檢索成功',
           metadata: {
             provider: 'NewsFetcher',
             dataType: 'news_search',
@@ -399,7 +399,7 @@ describe('useRunFlowSnapshot', () => {
               id: 'provider_news_search_primary_1',
               lane: 'data_source',
               kind: 'data_source',
-              label: '新闻舆情 · NewsFetcher',
+              label: '新聞輿情 · NewsFetcher',
               status: 'success',
               provider: 'NewsFetcher',
               metadata: { dataType: 'news_search' },
@@ -423,7 +423,7 @@ describe('useRunFlowSnapshot', () => {
       id: 'provider_daily_data_primary_1',
       lane: 'data_source',
       kind: 'data_source',
-      label: '日线K线 · PrimaryDaily',
+      label: '日線K線 · PrimaryDaily',
       status: 'failed',
       provider: 'PrimaryDaily',
       metadata: { dataType: 'daily_data' },
@@ -432,7 +432,7 @@ describe('useRunFlowSnapshot', () => {
       id: 'provider_daily_data_backup_2',
       lane: 'data_source',
       kind: 'data_source',
-      label: '日线K线 · BackupDaily',
+      label: '日線K線 · BackupDaily',
       status: 'success',
       provider: 'BackupDaily',
       metadata: { dataType: 'daily_data' },
@@ -443,7 +443,7 @@ describe('useRunFlowSnapshot', () => {
       severity: 'danger',
       type: 'provider_run',
       nodeId: primaryNode.id,
-      title: '日线K线失败',
+      title: '日線K線失敗',
       metadata: {
         provider: 'PrimaryDaily',
         dataType: 'daily_data',
@@ -456,7 +456,7 @@ describe('useRunFlowSnapshot', () => {
       severity: 'success',
       type: 'provider_run',
       nodeId: backupNode.id,
-      title: '日线K线成功',
+      title: '日線K線成功',
       metadata: {
         provider: 'BackupDaily',
         dataType: 'daily_data',
@@ -527,7 +527,7 @@ describe('useRunFlowSnapshot', () => {
             to: primaryNode.id,
             kind: 'control',
             status: 'failed',
-            label: '调用',
+            label: '調用',
           },
           {
             id: 'provider_daily_data_primary_1_to_provider_daily_data_backup_2_fallback',
@@ -535,7 +535,7 @@ describe('useRunFlowSnapshot', () => {
             to: backupNode.id,
             kind: 'fallback',
             status: 'success',
-            label: '降级',
+            label: '降級',
           },
         ],
         events: [
@@ -619,14 +619,14 @@ describe('useRunFlowSnapshot', () => {
           severity: 'success',
           type: 'provider_run',
           nodeId: 'provider_news_1',
-          title: '新闻检索成功',
+          title: '新聞檢索成功',
           metadata: {
             provider: 'NewsFetcher',
             node: {
               id: 'provider_news_1',
               lane: 'data_source',
               kind: 'data_source',
-              label: '新闻 · NewsFetcher',
+              label: '新聞 · NewsFetcher',
               status: 'success',
             },
           },
@@ -676,7 +676,7 @@ describe('useRunFlowSnapshot', () => {
       severity: 'warning' as const,
       type: 'notification_run' as const,
       nodeId: 'notification_report_1',
-      title: '通知跳过',
+      title: '通知跳過',
       metadata: {
         channel: 'report',
         node: {
@@ -735,7 +735,7 @@ describe('useRunFlowSnapshot', () => {
             severity: 'warning',
             type: 'notification_run',
             nodeId: 'notification_report_1',
-            title: '通知跳过',
+            title: '通知跳過',
           },
         ],
       });

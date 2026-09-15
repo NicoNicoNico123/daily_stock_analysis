@@ -298,13 +298,13 @@ export function parseApiError(error: unknown): ParsedApiError {
   const causeMessage = getCauseMessage(error);
   const code = getErrorCode(error);
   const rawMessage = pickString(payloadText, response?.statusText, errorMessage, causeMessage, code)
-    ?? '请求未成功完成，请稍后重试。';
+    ?? '請求未成功完成，請稍後重試。';
   const matchText = buildMatchText([rawMessage, errorMessage, causeMessage, code, errorCode, response?.statusText]);
 
   if (includesAny(matchText, ['agent mode is not enabled', 'agent_mode'])) {
     return createParsedApiError({
-      title: 'Agent 模式未开启',
-      message: '当前功能依赖 Agent 模式，请先开启后再重试。',
+      title: 'Agent 模式未開啓',
+      message: '當前功能依賴 Agent 模式，請先開啓後再重試。',
       rawMessage,
       status,
       category: 'agent_disabled',
@@ -315,8 +315,8 @@ export function parseApiError(error: unknown): ParsedApiError {
   const hasMissingParamText = includesAny(matchText, ['必须提供 stock_code 或 stock_codes', 'missing', 'required']);
   if (hasStockCodeField && hasMissingParamText) {
     return createParsedApiError({
-      title: '请求缺少必要参数',
-      message: '请先补充股票代码或必要输入后再试。',
+      title: '請求缺少必要參數',
+      message: '請先補充股票代碼或必要輸入後再試。',
       rawMessage,
       status,
       category: 'missing_params',
@@ -325,8 +325,8 @@ export function parseApiError(error: unknown): ParsedApiError {
 
   if (errorCode === 'portfolio_oversell' || includesAny(matchText, ['oversell detected'])) {
     return createParsedApiError({
-      title: '卖出数量超过可用持仓',
-      message: '卖出数量超过当前可用持仓，请删除或修正对应卖出流水后重试。',
+      title: '賣出數量超過可用持倉',
+      message: '賣出數量超過當前可用持倉，請刪除或修正對應賣出流水後重試。',
       rawMessage,
       status,
       category: 'portfolio_oversell',
@@ -335,8 +335,8 @@ export function parseApiError(error: unknown): ParsedApiError {
 
   if (errorCode === 'portfolio_busy' || includesAny(matchText, ['portfolio ledger is busy'])) {
     return createParsedApiError({
-      title: '持仓账本正忙',
-      message: '持仓账本正在处理另一笔变更，请稍后重试。',
+      title: '持倉賬本正忙',
+      message: '持倉賬本正在處理另一筆變更，請稍後重試。',
       rawMessage,
       status,
       category: 'portfolio_busy',
@@ -345,8 +345,8 @@ export function parseApiError(error: unknown): ParsedApiError {
 
   if (errorCode === 'screening_unavailable' || includesAny(matchText, ['内建选股引擎初始化失败', '选股功能初始化失败'])) {
     return createParsedApiError({
-      title: '选股功能未就绪',
-      message: '选股功能暂不可用，请检查策略配置、数据依赖和服务日志。',
+      title: '選股功能未就緒',
+      message: '選股功能暫不可用，請檢查策略配置、數據依賴和服務日誌。',
       rawMessage,
       status,
       category: 'http_error',
@@ -355,8 +355,8 @@ export function parseApiError(error: unknown): ParsedApiError {
 
   if (errorCode === 'screening_screen_task_not_found') {
     return createParsedApiError({
-      title: '选股任务不可恢复',
-      message: '服务端没有找到这次选股任务，可能后端已重启或任务记录已清理，请重新运行选股。',
+      title: '選股任務不可恢復',
+      message: '服務端沒有找到這次選股任務，可能後端已重啓或任務記錄已清理，請重新運行選股。',
       rawMessage,
       status,
       category: 'http_error',
@@ -365,8 +365,8 @@ export function parseApiError(error: unknown): ParsedApiError {
 
   if (errorCode === 'screening_screen_failed') {
     return createParsedApiError({
-      title: '选股失败',
-      message: '选股访问行情、快照或模型服务失败，请稍后重试，或检查网络与代理设置。',
+      title: '選股失敗',
+      message: '選股訪問行情、快照或模型服務失敗，請稍後重試，或檢查網絡與代理設置。',
       rawMessage,
       status,
       category: 'upstream_network',
@@ -383,8 +383,8 @@ export function parseApiError(error: unknown): ParsedApiError {
   ]);
   if (noConfiguredLlm) {
     return createParsedApiError({
-      title: '系统没有配置可用的 LLM 模型',
-      message: '请先在系统设置中配置主模型、可用渠道或相关 API Key 后再重试。',
+      title: '系統沒有配置可用的 LLM 模型',
+      message: '請先在系統設置中配置主模型、可用渠道或相關 API Key 後再重試。',
       rawMessage,
       status,
       category: 'llm_not_configured',
@@ -399,8 +399,8 @@ export function parseApiError(error: unknown): ParsedApiError {
     'reasoning',
   ])) {
     return createParsedApiError({
-      title: '当前模型不兼容工具调用',
-      message: '当前模型不适合 Agent / 工具调用场景，请更换支持工具调用的模型后重试。',
+      title: '當前模型不兼容工具調用',
+      message: '當前模型不適合 Agent / 工具調用場景，請更換支持工具調用的模型後重試。',
       rawMessage,
       status,
       category: 'model_tool_incompatible',
@@ -415,8 +415,8 @@ export function parseApiError(error: unknown): ParsedApiError {
     'invalid function call',
   ])) {
     return createParsedApiError({
-      title: '上游模型返回的数据结构不完整',
-      message: '上游模型返回的工具调用结构不符合要求，请更换模型或关闭相关推理模式后重试。',
+      title: '上游模型返回的數據結構不完整',
+      message: '上游模型返回的工具調用結構不符合要求，請更換模型或關閉相關推理模式後重試。',
       rawMessage,
       status,
       category: 'invalid_tool_call',
@@ -425,8 +425,8 @@ export function parseApiError(error: unknown): ParsedApiError {
 
   if (includesAny(matchText, ['timeout', 'timed out', 'read timeout', 'connect timeout']) || code === 'ECONNABORTED') {
     return createParsedApiError({
-      title: '连接上游服务超时',
-      message: '服务端访问外部依赖时超时，请稍后重试，或检查当前网络与代理设置。',
+      title: '連接上游服務超時',
+      message: '服務端訪問外部依賴時超時，請稍後重試，或檢查當前網絡與代理設置。',
       rawMessage,
       status,
       category: 'upstream_timeout',
@@ -448,8 +448,8 @@ export function parseApiError(error: unknown): ParsedApiError {
     ])
   ) {
     return createParsedApiError({
-      title: '服务端无法访问外部依赖',
-      message: '页面已连接到本地服务，但本地服务访问外部模型或数据接口失败，请检查代理、DNS 或出网配置。',
+      title: '服務端無法訪問外部依賴',
+      message: '頁面已連接到本地服務，但本地服務訪問外部模型或數據接口失敗，請檢查代理、DNS 或出網配置。',
       rawMessage,
       status,
       category: 'upstream_network',
@@ -464,8 +464,8 @@ export function parseApiError(error: unknown): ParsedApiError {
   ]);
   if (status === 400 && hasLlmProviderHint) {
     return createParsedApiError({
-      title: '上游模型接口拒绝了当前请求',
-      message: '本地服务正常，但上游模型接口拒绝了请求，请检查模型名称、参数格式或工具调用兼容性。',
+      title: '上游模型接口拒絕了當前請求',
+      message: '本地服務正常，但上游模型接口拒絕了請求，請檢查模型名稱、參數格式或工具調用兼容性。',
       rawMessage,
       status,
       category: 'upstream_llm_400',
@@ -479,8 +479,8 @@ export function parseApiError(error: unknown): ParsedApiError {
   );
   if (localConnectionFailed) {
     return createParsedApiError({
-      title: '无法连接到本地服务',
-      message: '浏览器当前无法连接到本地 Web 服务，请检查服务是否启动、监听地址是否正确、端口是否开放。',
+      title: '無法連接到本地服務',
+      message: '瀏覽器當前無法連接到本地 Web 服務，請檢查服務是否啓動、監聽地址是否正確、端口是否開放。',
       rawMessage,
       status,
       category: 'local_connection_failed',
@@ -489,8 +489,8 @@ export function parseApiError(error: unknown): ParsedApiError {
 
   if (payloadText || status) {
     return createParsedApiError({
-      title: '请求失败',
-      message: payloadText ?? `请求未成功完成（HTTP ${status}）。`,
+      title: '請求失敗',
+      message: payloadText ?? `請求未成功完成（HTTP ${status}）。`,
       rawMessage,
       status,
       category: 'http_error',
@@ -498,7 +498,7 @@ export function parseApiError(error: unknown): ParsedApiError {
   }
 
   return createParsedApiError({
-    title: '请求失败',
+    title: '請求失敗',
     message: rawMessage,
     rawMessage,
     status,
@@ -506,7 +506,7 @@ export function parseApiError(error: unknown): ParsedApiError {
   });
 }
 
-export function toApiErrorMessage(error: unknown, fallback = '请求未成功完成，请稍后重试。'): string {
+export function toApiErrorMessage(error: unknown, fallback = '請求未成功完成，請稍後重試。'): string {
   const parsed = getParsedApiError(error);
   const message = formatParsedApiError(parsed);
   return message.trim() || fallback;

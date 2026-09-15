@@ -112,34 +112,34 @@ describe('DecisionSignalProfileCalibration', () => {
   it('keeps profile and child sample gates independent and distinguishes zero from no result', () => {
     renderCalibration();
 
-    expect(screen.getByRole('heading', { name: '决策风格历史表现' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '決策風格歷史表現' })).toBeInTheDocument();
     const balancedButton = screen.getByRole('button', { name: /均衡.*已完成 30/ });
     expect(balancedButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getAllByText('0%').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('暂无可计算结果').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('另有 2 条历史样本缺少决策风格标记，未计入三类风格。')).toBeInTheDocument();
+    expect(screen.getAllByText('暫無可計算結果').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('另有 2 條歷史樣本缺少決策風格標記，未計入三類風格。')).toBeInTheDocument();
 
     const horizonCard = screen.getByRole('heading', { name: '3 日' }).closest('article');
     expect(horizonCard).not.toBeNull();
-    expect(within(horizonCard as HTMLElement).getByText('样本不足，仅供观察。')).toBeInTheDocument();
+    expect(within(horizonCard as HTMLElement).getByText('樣本不足，僅供觀察。')).toBeInTheDocument();
     expect(within(horizonCard as HTMLElement).queryByText('命中率')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /保守.*已完成 29/ }));
     expect(screen.getByRole('button', { name: /保守.*已完成 29/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('样本不足，仅供观察。')).toBeInTheDocument();
-    expect(screen.getByText('暂无可观察的细分样本。')).toBeInTheDocument();
+    expect(screen.getByText('樣本不足，僅供觀察。')).toBeInTheDocument();
+    expect(screen.getByText('暫無可觀察的細分樣本。')).toBeInTheDocument();
   });
 
   it('switches only between the two frozen user-facing breakdown views', () => {
     renderCalibration();
 
-    const breakdownControls = screen.getByLabelText('细分统计方式');
+    const breakdownControls = screen.getByLabelText('細分統計方式');
     expect(within(breakdownControls).getAllByRole('button')).toHaveLength(2);
-    const actionButton = within(breakdownControls).getByRole('button', { name: '按建议动作' });
+    const actionButton = within(breakdownControls).getByRole('button', { name: '按建議動作' });
     fireEvent.click(actionButton);
 
     expect(actionButton).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('heading', { name: '买入' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '買入' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '3 日' })).not.toBeInTheDocument();
   });
 

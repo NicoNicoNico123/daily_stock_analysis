@@ -10,16 +10,16 @@ const report: AnalysisReport = {
     id: 1,
     queryId: 'q-1',
     stockCode: '600519',
-    stockName: '贵州茅台',
+    stockName: '貴州茅臺',
     reportType: 'detailed',
     createdAt: '2026-03-20T08:00:00Z',
   },
   summary: {
-    analysisSummary: '等待确认',
-    operationAdvice: '买入',
+    analysisSummary: '等待確認',
+    operationAdvice: '買入',
     action: 'avoid',
-    actionLabel: '回避',
-    trendPrediction: '震荡',
+    actionLabel: '迴避',
+    trendPrediction: '震盪',
     sentimentScore: 35,
   },
 };
@@ -29,12 +29,12 @@ const items: HistoryItem[] = [
     id: 1,
     queryId: 'q-1',
     stockCode: '600519',
-    stockName: '贵州茅台',
+    stockName: '貴州茅臺',
     sentimentScore: 35,
-    operationAdvice: '买入',
+    operationAdvice: '買入',
     action: 'avoid',
-    actionLabel: '回避',
-    trendPrediction: '震荡',
+    actionLabel: '迴避',
+    trendPrediction: '震盪',
     createdAt: '2026-03-20T08:00:00Z',
   },
 ];
@@ -62,8 +62,8 @@ describe('StockHistoryTrendDrawer', () => {
       />,
     );
 
-    expect(screen.getAllByText('回避').length).toBeGreaterThanOrEqual(2);
-    expect(screen.queryByText('买入')).not.toBeInTheDocument();
+    expect(screen.getAllByText('迴避').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('買入')).not.toBeInTheDocument();
   });
 
   it('keeps full legacy operation advice when structured action is absent', () => {
@@ -73,7 +73,7 @@ describe('StockHistoryTrendDrawer', () => {
           ...report,
           summary: {
             ...report.summary,
-            operationAdvice: '继续持有，等待突破',
+            operationAdvice: '繼續持有，等待突破',
             action: null,
             actionLabel: null,
           },
@@ -81,7 +81,7 @@ describe('StockHistoryTrendDrawer', () => {
         items={[
           {
             ...items[0],
-            operationAdvice: '继续持有，等待突破',
+            operationAdvice: '繼續持有，等待突破',
             action: null,
             actionLabel: null,
           },
@@ -99,7 +99,7 @@ describe('StockHistoryTrendDrawer', () => {
       />,
     );
 
-    expect(screen.getAllByText('继续持有，等待突破').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('繼續持有，等待突破').length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('持有')).not.toBeInTheDocument();
   });
 
@@ -137,8 +137,8 @@ describe('StockHistoryTrendDrawer', () => {
     );
 
     expect(screen.getAllByText('risk alert, avoid buying').length).toBeGreaterThanOrEqual(2);
-    expect(screen.queryByText('回避')).not.toBeInTheDocument();
-    expect(screen.queryByText('预警')).not.toBeInTheDocument();
+    expect(screen.queryByText('迴避')).not.toBeInTheDocument();
+    expect(screen.queryByText('預警')).not.toBeInTheDocument();
   });
 
   it('uses localized taxonomy labels before server labels in English UI mode', () => {
@@ -152,14 +152,14 @@ describe('StockHistoryTrendDrawer', () => {
             summary: {
               ...report.summary,
               action: 'sell',
-              actionLabel: '买入',
+              actionLabel: '買入',
             },
           }}
           items={[
             {
               ...items[0],
               action: 'sell',
-              actionLabel: '买入',
+              actionLabel: '買入',
             },
           ]}
           total={1}
@@ -177,6 +177,6 @@ describe('StockHistoryTrendDrawer', () => {
     );
 
     expect(screen.getAllByText('Sell').length).toBeGreaterThanOrEqual(2);
-    expect(screen.queryByText('买入')).not.toBeInTheDocument();
+    expect(screen.queryByText('買入')).not.toBeInTheDocument();
   });
 });

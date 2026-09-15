@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { historyApi } from '../../../api/history';
+import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
+import { UI_LANGUAGE_STORAGE_KEY } from '../../../utils/uiLanguage';
 import { ReportNews } from '../ReportNews';
 
 vi.mock('../../../api/history', () => ({
@@ -19,8 +21,8 @@ describe('ReportNews', () => {
       total: 1,
       items: [
         {
-          title: '茅台发布最新经营数据',
-          snippet: '公司披露季度经营情况，市场关注度提升。',
+          title: '茅臺發佈最新經營數據',
+          snippet: '公司披露季度經營情況，市場關注度提升。',
           url: 'https://example.com/news',
         },
       ],
@@ -28,10 +30,10 @@ describe('ReportNews', () => {
 
     const { container } = render(<ReportNews recordId={1} />);
 
-    expect(await screen.findByText('茅台发布最新经营数据')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '跳转' })).toHaveAttribute('href', 'https://example.com/news');
-    expect(screen.getByText('相关资讯/后续检索')).toBeVisible();
-    expect(screen.getByText('来源：报告页补充资讯；是否用于分析以输入数据块为准。')).toBeVisible();
+    expect(await screen.findByText('茅臺發佈最新經營數據')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '跳轉' })).toHaveAttribute('href', 'https://example.com/news');
+    expect(screen.getByText('相關資訊/後續檢索')).toBeVisible();
+    expect(screen.getByText('來源：報告頁補充資訊；是否用於分析以輸入數據塊爲準。')).toBeVisible();
     expect(container.querySelector('.home-panel-card')).toBeTruthy();
     expect(container.querySelector('.home-subpanel')).toBeTruthy();
 
@@ -50,17 +52,22 @@ describe('ReportNews', () => {
 
     render(<ReportNews recordId={1} />);
 
-    expect(await screen.findByText('暂无相关资讯')).toBeInTheDocument();
-    expect(screen.getByText('可稍后刷新以获取最新资讯。')).toBeInTheDocument();
+    expect(await screen.findByText('暫無相關資訊')).toBeInTheDocument();
+    expect(screen.getByText('可稍後刷新以獲取最新資訊。')).toBeInTheDocument();
   });
 
-  it('localizes the empty state description for english reports', async () => {
+  it('localizes labels for an english interface even when the report content stays chinese', async () => {
     vi.mocked(historyApi.getNews).mockResolvedValue({
       total: 0,
       items: [],
     });
 
-    render(<ReportNews recordId={1} language="en" />);
+    window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, 'en');
+    render(
+      <UiLanguageProvider>
+        <ReportNews recordId={1} />
+      </UiLanguageProvider>,
+    );
 
     expect(await screen.findByText('No related news')).toBeInTheDocument();
     expect(screen.getByText('Refresh later to check for the latest updates.')).toBeInTheDocument();
@@ -74,8 +81,8 @@ describe('ReportNews', () => {
         total: 1,
         items: [
           {
-            title: '重试成功',
-            snippet: '第二次请求成功返回。',
+            title: '重試成功',
+            snippet: '第二次請求成功返回。',
             url: 'https://example.com/retry',
           },
         ],
@@ -85,8 +92,8 @@ describe('ReportNews', () => {
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    fireEvent.click(screen.getByRole('button', { name: '重試' }));
 
-    expect(await screen.findByText('重试成功')).toBeInTheDocument();
+    expect(await screen.findByText('重試成功')).toBeInTheDocument();
   });
 });

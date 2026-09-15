@@ -7,7 +7,7 @@ import type {
 import { Badge, Button, Card, ScoreGauge } from '../common';
 import { formatDateTime } from '../../utils/format';
 import { getMarketPhaseSummaryLabel, getPartialBarLabel } from '../../utils/marketPhase';
-import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
+import { getReportText } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { ShareImageButton } from './ShareImageButton';
 
@@ -168,12 +168,12 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
   details,
   watchlist,
 }) => {
-  const { t } = useUiLanguage();
-  const reportLanguage = normalizeReportLanguage(meta.reportLanguage);
-  const text = getReportText(reportLanguage);
-  const marketPhaseLabel = getMarketPhaseSummaryLabel(meta.marketPhaseSummary, reportLanguage);
+  // 报告区块标签跟随界面语言，而不是报告内容语言（报告正文仍按其内容语言展示）。
+  const { language: uiLanguage, t } = useUiLanguage();
+  const text = getReportText(uiLanguage);
+  const marketPhaseLabel = getMarketPhaseSummaryLabel(meta.marketPhaseSummary, uiLanguage);
   const partialBarLabel = meta.marketPhaseSummary?.isPartialBar === true
-    ? getPartialBarLabel(reportLanguage)
+    ? getPartialBarLabel(uiLanguage)
     : null;
   const relatedBoards = (Array.isArray(details?.belongBoards) ? details.belongBoards : [])
     .filter((board) => normalizeBoardName(board?.name).length > 0);
@@ -294,7 +294,6 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
               <ShareImageButton
                 recordId={meta.id}
                 reportTitle={`${meta.stockName || meta.stockCode}-${meta.stockCode}`}
-                reportLanguage={reportLanguage}
               />
             </div>
 
@@ -404,7 +403,7 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
           <Card variant="bordered" padding="md" className="home-panel-card home-rail-card !overflow-visible">
             <div className="text-center">
               <h3 className="mb-5 text-sm font-medium tracking-wide text-foreground">{text.marketSentiment}</h3>
-              <ScoreGauge score={summary.sentimentScore} size="lg" language={reportLanguage} />
+              <ScoreGauge score={summary.sentimentScore} size="lg" />
             </div>
           </Card>
         </div>

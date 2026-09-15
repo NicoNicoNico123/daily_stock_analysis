@@ -49,7 +49,7 @@ vi.mock('recharts', () => ({
 const baseSignal: DecisionSignalItem = {
   id: 1,
   stockCode: '600519',
-  stockName: '贵州茅台',
+  stockName: '貴州茅臺',
   market: 'cn',
   sourceType: 'analysis',
   sourceReportId: 3001,
@@ -143,7 +143,7 @@ describe('DecisionSignalTimeline', () => {
   it('shows truncated warning and opens a selected point', () => {
     const { onSelect } = renderTimeline({ truncated: true });
 
-    expect(screen.getByText('仅展示最近 100 条信号，请缩小时间范围。')).toBeInTheDocument();
+    expect(screen.getByText('僅展示最近 100 條信號，請縮小時間範圍。')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('timeline-click-1'));
 
     expect(onSelect).toHaveBeenCalledWith(baseSignal);
@@ -156,7 +156,7 @@ describe('DecisionSignalTimeline', () => {
       </UiLanguageProvider>,
     );
 
-    expect(screen.getByText('暂无时间线信号')).toBeInTheDocument();
+    expect(screen.getByText('暫無時間線信號')).toBeInTheDocument();
 
     rerender(
       <UiLanguageProvider>
@@ -186,7 +186,7 @@ describe('DecisionSignalTimeline', () => {
       </UiLanguageProvider>,
     );
 
-    expect(screen.getByText('风格: 进取')).toBeInTheDocument();
+    expect(screen.getByText('風格: 進取')).toBeInTheDocument();
   });
 
   it('renders explicit null profile as unknown instead of falling back to metadata', () => {
@@ -208,6 +208,6 @@ describe('DecisionSignalTimeline', () => {
       </UiLanguageProvider>,
     );
 
-    expect(screen.getByText('风格: 未知')).toBeInTheDocument();
+    expect(screen.getByText('風格: 未知')).toBeInTheDocument();
   });
 });

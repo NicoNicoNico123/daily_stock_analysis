@@ -1,7 +1,7 @@
 import type React from 'react';
 import { Component, lazy, Suspense, useCallback, useMemo, useState } from 'react';
-import type { ReportLanguage } from '../../types/analysis';
-import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
+import { getReportText } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { Drawer } from '../common/Drawer';
 
 interface ReportMarkdownDrawerProps {
@@ -9,7 +9,6 @@ interface ReportMarkdownDrawerProps {
   stockName: string;
   stockCode: string;
   onClose: () => void;
-  reportLanguage?: ReportLanguage;
 }
 
 interface ReportMarkdownDrawerErrorBoundaryProps {
@@ -87,10 +86,11 @@ export const ReportMarkdownDrawer: React.FC<ReportMarkdownDrawerProps> = ({
   stockName,
   stockCode,
   onClose,
-  reportLanguage = 'zh',
 }) => {
   const [isOpen, setIsOpen] = useState(true);
-  const text = getReportText(normalizeReportLanguage(reportLanguage));
+  // 抽屉文案跟随界面语言，而不是报告内容语言。
+  const { language: uiLanguage } = useUiLanguage();
+  const text = getReportText(uiLanguage);
   const LazyReportMarkdownPanel = useMemo(
     () => lazy(() => import('./ReportMarkdownPanel').then((m) => ({ default: m.ReportMarkdownPanel }))),
     [],
@@ -124,7 +124,6 @@ export const ReportMarkdownDrawer: React.FC<ReportMarkdownDrawerProps> = ({
             recordId={recordId}
             stockName={stockName}
             stockCode={stockCode}
-            reportLanguage={reportLanguage}
             onRequestClose={handleClose}
           />
         </Suspense>

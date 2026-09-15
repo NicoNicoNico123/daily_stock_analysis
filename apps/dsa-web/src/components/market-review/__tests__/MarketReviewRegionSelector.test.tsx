@@ -23,12 +23,12 @@ describe('MarketReviewRegionSelector', () => {
       </UiLanguageProvider>,
     );
 
-    expect(screen.getByRole('button', { name: '选择大盘复盘市场' })).toHaveTextContent(
-      '服务器默认',
+    expect(screen.getByRole('button', { name: '選擇大盤覆盤市場' })).toHaveTextContent(
+      '服務器缺省',
     );
-    expect(screen.getByRole('button', { name: '选择大盘复盘市场' })).not.toHaveTextContent('A 股');
-    fireEvent.click(screen.getByRole('button', { name: '选择大盘复盘市场' }));
-    expect(screen.getByText('由服务器在提交时决定')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '選擇大盤覆盤市場' })).not.toHaveTextContent('A 股');
+    fireEvent.click(screen.getByRole('button', { name: '選擇大盤覆盤市場' }));
+    expect(screen.getByText('由服務器在提交時決定')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: /A 股/ })).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: /美股/ })).not.toBeChecked();
 
@@ -47,11 +47,11 @@ describe('MarketReviewRegionSelector', () => {
       </UiLanguageProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '选择大盘复盘市场' }));
-    fireEvent.click(screen.getByRole('button', { name: '全部市场' }));
+    fireEvent.click(screen.getByRole('button', { name: '選擇大盤覆盤市場' }));
+    fireEvent.click(screen.getByRole('button', { name: '全部市場' }));
     expect(onChange).toHaveBeenLastCalledWith(['cn', 'hk', 'us', 'jp', 'kr']);
 
-    fireEvent.click(screen.getByRole('button', { name: /服务器默认/ }));
+    fireEvent.click(screen.getByRole('button', { name: /服務器缺省/ }));
     expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
 
@@ -63,7 +63,7 @@ describe('MarketReviewRegionSelector', () => {
       </UiLanguageProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '选择大盘复盘市场' }));
+    fireEvent.click(screen.getByRole('button', { name: '選擇大盤覆盤市場' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /美股/ }));
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -76,7 +76,7 @@ describe('MarketReviewRegionSelector', () => {
       </UiLanguageProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '选择大盘复盘市场' }));
+    fireEvent.click(screen.getByRole('button', { name: '選擇大盤覆盤市場' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     const cnCheckbox = screen.getByRole('checkbox', { name: /A 股/ });
 
@@ -87,7 +87,7 @@ describe('MarketReviewRegionSelector', () => {
     );
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择大盘复盘市场' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '選擇大盤覆盤市場' })).toBeDisabled();
     fireEvent.click(cnCheckbox);
     expect(onChange).not.toHaveBeenCalled();
   });

@@ -65,7 +65,7 @@ describe('agentApi', () => {
       data: {
         session_id: 'legacy-session',
         messages: [
-          { id: '1', role: 'user', content: '继续分析', created_at: null },
+          { id: '1', role: 'user', content: '繼續分析', created_at: null },
         ],
         session_state: {
           selected_skill_ids: null,

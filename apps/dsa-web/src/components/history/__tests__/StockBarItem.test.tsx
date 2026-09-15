@@ -6,7 +6,7 @@ import type { StockBarItem } from '../../../types/analysis';
 const issue1600Item: StockBarItem = {
   id: 1,
   stockCode: '600519',
-  stockName: '贵州茅台股票股份有限公司',
+  stockName: '貴州茅臺股票股份有限公司',
   sentimentScore: 62,
   operationAdvice: '观望',
   analysisCount: 2,
@@ -32,15 +32,15 @@ describe('StockBarItemComponent', () => {
     const actions = screen.getByTestId('history-card-actions');
     const meta = screen.getByTestId('history-card-meta');
 
-    expect(within(actions).getByText('观望 62')).toBeInTheDocument();
-    expect(within(actions).getByRole('button', { name: /删除 贵州茅台股票股份有限公司 历史记录/ })).toBeInTheDocument();
+    expect(within(actions).getByText('觀望 62')).toBeInTheDocument();
+    expect(within(actions).getByRole('button', { name: /刪除 貴州茅臺股票股份有限公司 歷史記錄/ })).toBeInTheDocument();
     expect(within(actions).queryByText('CN · 非交易日')).not.toBeInTheDocument();
     expect(within(meta).getByText('CN · 非交易日')).toBeVisible();
 
-    expect(screen.getByText('贵州茅台股票股份.')).toBeVisible();
+    expect(screen.getByText('貴州茅臺股票股份.')).toBeVisible();
     expect(
       screen.getByRole('button', {
-        name: /^贵州茅台股票股份有限公司 600519 历史记录$/,
+        name: /^貴州茅臺股票股份有限公司 600519 歷史記錄$/,
       }),
     ).toBeInTheDocument();
   });
@@ -51,8 +51,8 @@ describe('StockBarItemComponent', () => {
         item={{
           ...issue1600Item,
           action: 'avoid',
-          actionLabel: '回避',
-          operationAdvice: '买入',
+          actionLabel: '迴避',
+          operationAdvice: '買入',
           sentimentScore: 35,
         }}
         isViewing={false}
@@ -61,8 +61,8 @@ describe('StockBarItemComponent', () => {
     );
 
     const actions = screen.getByTestId('history-card-actions');
-    expect(within(actions).getByText('回避 35')).toBeInTheDocument();
-    expect(within(actions).queryByText('买入 35')).not.toBeInTheDocument();
+    expect(within(actions).getByText('迴避 35')).toBeInTheDocument();
+    expect(within(actions).queryByText('買入 35')).not.toBeInTheDocument();
   });
 
   it('uses the unified legacy fallback for negated buy advice without structured action', () => {
@@ -81,8 +81,8 @@ describe('StockBarItemComponent', () => {
     );
 
     const actions = screen.getByTestId('history-card-actions');
-    expect(within(actions).getByText('回避 28')).toBeInTheDocument();
-    expect(within(actions).queryByText('买入 28')).not.toBeInTheDocument();
+    expect(within(actions).getByText('迴避 28')).toBeInTheDocument();
+    expect(within(actions).queryByText('買入 28')).not.toBeInTheDocument();
   });
 
   it('uses the unified legacy fallback for backend-aligned hold advice without structured action', () => {
@@ -158,7 +158,7 @@ describe('StockBarItemComponent', () => {
     );
 
     actions = screen.getByTestId('history-card-actions');
-    expect(within(actions).queryByText('卖出 31')).not.toBeInTheDocument();
+    expect(within(actions).queryByText('賣出 31')).not.toBeInTheDocument();
     expect(within(actions).getByText(/31/)).toBeInTheDocument();
   });
 
@@ -169,7 +169,7 @@ describe('StockBarItemComponent', () => {
           ...issue1600Item,
           action: null,
           actionLabel: null,
-          operationAdvice: '买盘增强，继续观察',
+          operationAdvice: '買盤增強，繼續觀察',
           sentimentScore: 32,
         }}
         isViewing={false}
@@ -178,7 +178,7 @@ describe('StockBarItemComponent', () => {
     );
 
     let actions = screen.getByTestId('history-card-actions');
-    expect(within(actions).queryByText('买入 32')).not.toBeInTheDocument();
+    expect(within(actions).queryByText('買入 32')).not.toBeInTheDocument();
     expect(within(actions).getByText(/32/)).toBeInTheDocument();
 
     rerender(
@@ -187,7 +187,7 @@ describe('StockBarItemComponent', () => {
           ...issue1600Item,
           action: null,
           actionLabel: null,
-          operationAdvice: '卖压缓解，继续观察',
+          operationAdvice: '賣壓緩解，繼續觀察',
           sentimentScore: 34,
         }}
         isViewing={false}
@@ -196,7 +196,7 @@ describe('StockBarItemComponent', () => {
     );
 
     actions = screen.getByTestId('history-card-actions');
-    expect(within(actions).queryByText('卖出 34')).not.toBeInTheDocument();
+    expect(within(actions).queryByText('賣出 34')).not.toBeInTheDocument();
     expect(within(actions).getByText(/34/)).toBeInTheDocument();
   });
 
@@ -216,8 +216,8 @@ describe('StockBarItemComponent', () => {
     );
 
     const actions = screen.getByTestId('history-card-actions');
-    expect(within(actions).queryByText('回避 28')).not.toBeInTheDocument();
-    expect(within(actions).queryByText('预警 28')).not.toBeInTheDocument();
+    expect(within(actions).queryByText('迴避 28')).not.toBeInTheDocument();
+    expect(within(actions).queryByText('預警 28')).not.toBeInTheDocument();
     expect(within(actions).getByText(/28/)).toBeInTheDocument();
   });
 });

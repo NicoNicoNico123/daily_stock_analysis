@@ -10,7 +10,7 @@ const events: RunFlowEvent[] = [
     severity: 'info',
     type: 'task_created',
     nodeId: 'request',
-    title: '任务创建',
+    title: '任務創建',
   },
   {
     id: 'evt-2',
@@ -18,8 +18,8 @@ const events: RunFlowEvent[] = [
     severity: 'warning',
     type: 'provider_fallback',
     nodeId: 'daily_data',
-    title: '日线降级',
-    message: 'Tushare 失败后切换 AkShare',
+    title: '日線降級',
+    message: 'Tushare 失敗後切換 AkShare',
   },
   {
     id: 'evt-3',
@@ -27,7 +27,7 @@ const events: RunFlowEvent[] = [
     severity: 'danger',
     type: 'task_cancelled',
     nodeId: 'queue',
-    title: '任务取消',
+    title: '任務取消',
   },
 ];
 
@@ -35,28 +35,28 @@ describe('RunFlowEventList', () => {
   it('filters fallback and cancellation events with visible text labels', () => {
     render(<RunFlowEventList events={events} />);
 
-    expect(screen.getByText('任务创建')).toBeInTheDocument();
-    expect(screen.getByText('日线降级')).toBeInTheDocument();
-    expect(screen.getByText('任务取消')).toBeInTheDocument();
+    expect(screen.getByText('任務創建')).toBeInTheDocument();
+    expect(screen.getByText('日線降級')).toBeInTheDocument();
+    expect(screen.getByText('任務取消')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '降级回退/重试' }));
+    fireEvent.click(screen.getByRole('button', { name: '降級回退/重試' }));
 
-    expect(screen.getByText('日线降级')).toBeInTheDocument();
-    expect(screen.queryByText('任务创建')).not.toBeInTheDocument();
-    expect(screen.queryByText('任务取消')).not.toBeInTheDocument();
+    expect(screen.getByText('日線降級')).toBeInTheDocument();
+    expect(screen.queryByText('任務創建')).not.toBeInTheDocument();
+    expect(screen.queryByText('任務取消')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(screen.getByText('任务取消')).toBeInTheDocument();
-    expect(screen.queryByText('日线降级')).not.toBeInTheDocument();
-    expect(screen.getByText('危险')).toBeInTheDocument();
+    expect(screen.getByText('任務取消')).toBeInTheDocument();
+    expect(screen.queryByText('日線降級')).not.toBeInTheDocument();
+    expect(screen.getByText('危險')).toBeInTheDocument();
   });
 
   it('selects the event node when an event row is clicked', () => {
     const onSelectNode = vi.fn();
     render(<RunFlowEventList events={events} onSelectNode={onSelectNode} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '查看事件 日线降级 关联节点' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看事件 日線降級 關聯節點' }));
 
     expect(onSelectNode).toHaveBeenCalledWith('daily_data');
   });

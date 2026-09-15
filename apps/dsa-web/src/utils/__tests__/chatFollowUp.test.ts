@@ -9,7 +9,7 @@ describe('chat follow-up context', () => {
       meta: {
         queryId: 'q-123',
         stockCode: '600519',
-        stockName: '贵州茅台',
+        stockName: '貴州茅臺',
         reportType: 'full',
         createdAt: '2026-07-05T00:00:00Z',
       },
@@ -47,11 +47,11 @@ describe('chat follow-up context', () => {
       },
     } as AnalysisReport;
 
-    const context = buildChatFollowUpContext('600519', '贵州茅台', report);
+    const context = buildChatFollowUpContext('600519', '貴州茅臺', report);
 
     expect(context).toMatchObject({
       stock_code: '600519',
-      stock_name: '贵州茅台',
+      stock_name: '貴州茅臺',
       market_structure_context: expect.objectContaining({
         schema_version: 'market-structure-v1',
         market: 'A股',
@@ -84,7 +84,7 @@ describe('chat follow-up context', () => {
       meta: {
         queryId: 'q-456',
         stockCode: '600519',
-        stockName: '贵州茅台',
+        stockName: '貴州茅臺',
         reportType: 'full',
         createdAt: '2026-07-05T00:00:00Z',
       },
@@ -97,7 +97,7 @@ describe('chat follow-up context', () => {
       details: {},
     } as AnalysisReport;
 
-    const context = buildChatFollowUpContext('600519', '贵州茅台', report);
+    const context = buildChatFollowUpContext('600519', '貴州茅臺', report);
 
     expect(context).not.toHaveProperty('market_structure_context');
   });

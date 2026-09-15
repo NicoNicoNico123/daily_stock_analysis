@@ -85,7 +85,7 @@ describe('screeningApi', () => {
       },
     });
 
-    await expect(screeningApi.enable()).rejects.toThrow('选股功能不可用');
+    await expect(screeningApi.enable()).rejects.toThrow('選股功能不可用');
 
     expect(updateConfig).toHaveBeenNthCalledWith(1, {
       configVersion: 'v1',
@@ -140,7 +140,7 @@ describe('screeningApi', () => {
             heat_score: 88,
             trend_score: 12,
             sample_stock_count: 8,
-            leaders: ['中际旭创'],
+            leaders: ['中際旭創'],
           },
         ],
         hotspot_count: 1,
@@ -148,8 +148,8 @@ describe('screeningApi', () => {
           AI绠楀姏: {
             enabled: true,
             provider: 'akshare',
-            topic: 'AI绠楀姏',
-            route: [{ title: '盘中发酵', description: '事件摘要' }],
+            topic: 'AI綆楀姏',
+            route: [{ title: '盤中發酵', description: '事件摘要' }],
             stocks: [],
             stock_count: 0,
           },
@@ -210,10 +210,10 @@ describe('screeningApi', () => {
         enabled: true,
         provider: 'akshare',
         topic: '玻璃基板',
-        summary: '玻璃基板盘中发酵',
-        route: [{ title: '盘中发酵', description: '出现大笔买入' }],
-        stocks: [{ code: '920438', name: '戈碧迦', role: '异动核心' }],
-        leader_stocks: [{ code: '920438', name: '戈碧迦', role: '异动核心' }],
+        summary: '玻璃基板盤中發酵',
+        route: [{ title: '盤中發酵', description: '出現大筆買入' }],
+        stocks: [{ code: '920438', name: '戈碧迦', role: '異動內核' }],
+        leader_stocks: [{ code: '920438', name: '戈碧迦', role: '異動內核' }],
         stock_count: 1,
       },
     });
@@ -279,7 +279,7 @@ describe('screeningApi', () => {
         task_id: 'screen-task-1',
         trace_id: 'screen-task-1',
         status: 'pending',
-        message: 'Screening 选股任务已提交',
+        message: 'Screening 選股任務已提交',
         strategy: 'dual_low',
         market: 'cn',
         max_results: 3,
@@ -326,7 +326,7 @@ describe('screeningApi', () => {
           task_id: 'screen-task-storage-disabled',
           trace_id: 'screen-task-storage-disabled',
           status: 'pending',
-          message: '选股任务已提交',
+          message: '選股任務已提交',
           strategy: 'dual_low',
           market: 'cn',
           max_results: 3,
@@ -357,7 +357,7 @@ describe('screeningApi', () => {
         trace_id: 'screen-task-1',
         status: 'completed',
         progress: 100,
-        message: '任务执行完成',
+        message: '任務運行完成',
         result: {
           enabled: true,
           candidates: [],

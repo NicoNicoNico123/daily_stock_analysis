@@ -14,17 +14,17 @@ import { SettingsSectionCard } from './SettingsSectionCard';
 
 function getChannelOptions(language: 'zh' | 'en'): Array<{ value: NotificationTestChannel; label: string }> {
   return [
-    { value: 'wechat', label: language === 'en' ? 'WeCom' : '企业微信' },
-    { value: 'feishu', label: language === 'en' ? 'Feishu Webhook' : '飞书 Webhook' },
-    { value: 'dingtalk', label: language === 'en' ? 'DingTalk' : '钉钉' },
+    { value: 'wechat', label: language === 'en' ? 'WeCom' : '企業微信' },
+    { value: 'feishu', label: language === 'en' ? 'Feishu Webhook' : '飛書 Webhook' },
+    { value: 'dingtalk', label: language === 'en' ? 'DingTalk' : '釘釘' },
     { value: 'telegram', label: 'Telegram' },
-    { value: 'email', label: language === 'en' ? 'Email' : '邮件' },
+    { value: 'email', label: language === 'en' ? 'Email' : '郵件' },
     { value: 'pushover', label: 'Pushover' },
     { value: 'ntfy', label: 'ntfy' },
     { value: 'gotify', label: 'Gotify' },
     { value: 'pushplus', label: 'PushPlus' },
     { value: 'serverchan3', label: 'ServerChan3' },
-    { value: 'custom', label: language === 'en' ? 'Custom Webhook' : '自定义 Webhook' },
+    { value: 'custom', label: language === 'en' ? 'Custom Webhook' : '自定義 Webhook' },
     { value: 'discord', label: 'Discord' },
     { value: 'slack', label: 'Slack' },
     { value: 'astrbot', label: 'AstrBot' },

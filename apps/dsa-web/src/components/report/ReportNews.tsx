@@ -5,19 +5,19 @@ import { getParsedApiError } from '../../api/error';
 import { ApiErrorAlert, Card } from '../common';
 import { DashboardPanelHeader, DashboardStateBlock } from '../dashboard';
 import { historyApi } from '../../api/history';
-import type { NewsIntelItem, ReportLanguage } from '../../types/analysis';
-import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
+import type { NewsIntelItem } from '../../types/analysis';
+import { getReportText } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 
 interface ReportNewsProps {
-  recordId?: number;  // 分析历史记录主键 ID
+  recordId?: number;  // 分析歷史記錄主鍵 ID
   limit?: number;
-  language?: ReportLanguage;
 }
 
 const NEWS_SOURCE_TEXT = {
   zh: {
-    sourceLabel: '相关资讯/后续检索',
-    sourceHint: '来源：报告页补充资讯；是否用于分析以输入数据块为准。',
+    sourceLabel: '相關資訊/後續檢索',
+    sourceHint: '來源：報告頁補充資訊；是否用於分析以輸入數據塊爲準。',
   },
   en: {
     sourceLabel: 'Related news / follow-up retrieval',
@@ -32,10 +32,11 @@ const NEWS_SOURCE_TEXT = {
 /**
  * 资讯区组件 - 终端风格
  */
-export const ReportNews: React.FC<ReportNewsProps> = ({ recordId, limit = 8, language = 'zh' }) => {
-  const reportLanguage = normalizeReportLanguage(language);
-  const text = getReportText(reportLanguage);
-  const sourceText = NEWS_SOURCE_TEXT[reportLanguage];
+export const ReportNews: React.FC<ReportNewsProps> = ({ recordId, limit = 8 }) => {
+  // 资讯区标签跟随界面语言，而不是报告内容语言。
+  const { language: uiLanguage } = useUiLanguage();
+  const text = getReportText(uiLanguage);
+  const sourceText = NEWS_SOURCE_TEXT[uiLanguage];
   const [isLoading, setIsLoading] = useState(false);
   const [items, setItems] = useState<NewsIntelItem[]>([]);
   const [error, setError] = useState<ParsedApiError | null>(null);

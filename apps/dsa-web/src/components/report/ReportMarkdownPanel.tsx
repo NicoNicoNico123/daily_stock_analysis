@@ -1,9 +1,9 @@
 import type React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { historyApi } from '../../api/history';
-import type { ReportLanguage } from '../../types/analysis';
 import { markdownToPlainText } from '../../utils/markdown';
-import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
+import { getReportText } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { Tooltip } from '../common/Tooltip';
 import { ReportMarkdownBody } from './ReportMarkdownBody';
 import { ShareImageButton } from './ShareImageButton';
@@ -13,7 +13,6 @@ export interface ReportMarkdownPanelProps {
   stockName: string;
   stockCode: string;
   onRequestClose: () => void;
-  reportLanguage?: ReportLanguage;
 }
 
 export const ReportMarkdownPanel: React.FC<ReportMarkdownPanelProps> = ({
@@ -21,9 +20,10 @@ export const ReportMarkdownPanel: React.FC<ReportMarkdownPanelProps> = ({
   stockName,
   stockCode,
   onRequestClose,
-  reportLanguage = 'zh',
 }) => {
-  const text = getReportText(normalizeReportLanguage(reportLanguage));
+  // 报告面板文案跟随界面语言，而不是报告内容语言。
+  const { language: uiLanguage } = useUiLanguage();
+  const text = getReportText(uiLanguage);
   const loadReportFailedText = text.loadReportFailed;
   const [content, setContent] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
@@ -101,7 +101,6 @@ export const ReportMarkdownPanel: React.FC<ReportMarkdownPanelProps> = ({
           <ShareImageButton
             recordId={recordId}
             reportTitle={`${stockName || stockCode}-${stockCode}`}
-            reportLanguage={reportLanguage}
           />
           <Tooltip content={text.copyMarkdownSource}>
             <span className="inline-flex">

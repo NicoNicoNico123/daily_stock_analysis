@@ -3,9 +3,10 @@ import { normalizeStockCode, resolveRegisteredIndexCanonical } from './stockCode
 import type { StockIndexItem } from '../types/stockIndex';
 
 const EXCHANGE_PREFIXES = new Set(['SH', 'SZ', 'BJ', 'HK', 'US', 'SS']);
-const LOWERCASE_TICKER_CONTEXT_RE = /换成|改看|分析|看看|研究|诊断|比较|对比|\bvs\b|和[^，。,.!?！？]{0,40}比|差异(?!化)|区别|不同|相比|对照|比一比|哪个|哪只|哪一个|谁更|更值得|更适合|怎么选|选哪|二选一/i;
+// 上下文识别同时覆盖简体与繁体输入（UI 文案已切换为繁体）。
+const LOWERCASE_TICKER_CONTEXT_RE = /换成|換成|改看|分析|看看|研究|诊断|診斷|比较|比較|对比|對比|\bvs\b|和[^，。,.!?！？]{0,40}比|差异(?!化)|差異(?!化)|区别|區別|不同|相比|对照|對照|比一比|哪个|哪個|哪只|哪隻|哪一个|哪一個|谁更|誰更|更值得|更适合|更適合|怎么选|怎麼選|选哪|選哪|二选一|二選一/i;
 const CONTEXTUAL_INDICATOR_TOKENS = new Set(['MA']);
-const INDICATOR_CONTEXT_RE = /指标|均线|移动平均|排列|多头|空头|金叉|死叉|支撑|压力|MA\d|SMA|EMA/i;
+const INDICATOR_CONTEXT_RE = /指标|指標|指針|均线|均線|移动平均|移動平均|排列|多头|多頭|空头|空頭|金叉|死叉|支撑|支撐|压力|壓力|MA\d|SMA|EMA/i;
 
 // Mirrors backend _COMMON_WORDS for #1596 free-text extraction only.
 // Explicit validation via validateStockCode() intentionally keeps its original contract.

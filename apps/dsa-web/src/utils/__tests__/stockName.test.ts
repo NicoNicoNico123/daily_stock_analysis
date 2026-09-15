@@ -25,30 +25,30 @@ describe('truncateStockName', () => {
 
   describe('Chinese strings', () => {
     test('returns unchanged when at or below 8 chars', () => {
-      expect(truncateStockName('贵州茅台')).toBe('贵州茅台');
-      expect(truncateStockName('腾讯控股')).toBe('腾讯控股');
+      expect(truncateStockName('貴州茅臺')).toBe('貴州茅臺');
+      expect(truncateStockName('騰訊控股')).toBe('騰訊控股');
     });
 
     test('truncates to 8 chars with trailing dot', () => {
       // 贵州茅台股票有限公司: 10 Chinese chars -> slice(0,8) + dot = 8 ch + dot
-      expect(truncateStockName('贵州茅台股票有限公司')).toBe('贵州茅台股票有限.');
-      // 中华人民共和国ABCD: mixed, 11 chars > 10 → truncate to '中华人民共和国ABC.'
-      expect(truncateStockName('中华人民共和国ABCD')).toBe('中华人民共和国ABC.');
+      expect(truncateStockName('貴州茅臺股票有限公司')).toBe('貴州茅臺股票有限.');
+      // 中华人民共和国ABCD: mixed, 11 chars > 10 → truncate to '中華人民共和國ABC.'
+      expect(truncateStockName('中華人民共和國ABCD')).toBe('中華人民共和國ABC.');
     });
   });
 
   describe('Mixed Chinese and English strings', () => {
     test('returns unchanged when at or below 10 chars', () => {
-      expect(truncateStockName('茅台A')).toBe('茅台A');
-      expect(truncateStockName('腾讯控股HK')).toBe('腾讯控股HK');
+      expect(truncateStockName('茅臺A')).toBe('茅臺A');
+      expect(truncateStockName('騰訊控股HK')).toBe('騰訊控股HK');
     });
 
     test('truncates to 10 chars with trailing dot', () => {
       // 贵州茅台股票有限公司AB: 10 Chinese + 2 English = 12 mixed -> slice(0,10) + dot
       // First 10: 贵 州 茅 台 股 票 有 限 公 司 = 8 ch + 2 en
-      expect(truncateStockName('贵州茅台股票有限公司AB')).toBe('贵州茅台股票有限公司.');
+      expect(truncateStockName('貴州茅臺股票有限公司AB')).toBe('貴州茅臺股票有限公司.');
       // 腾讯控股00700H: 4 Chinese + 6 English = 10 mixed -> no truncation (10 <= 10)
-      expect(truncateStockName('腾讯控股00700H')).toBe('腾讯控股00700H');
+      expect(truncateStockName('騰訊控股00700H')).toBe('騰訊控股00700H');
     });
   });
 
@@ -86,8 +86,8 @@ describe('truncateStockName', () => {
 
     test('returns false for names at or below max length', () => {
       expect(isStockNameTruncated('Apple')).toBe(false);
-      expect(isStockNameTruncated('贵州茅台')).toBe(false);
-      expect(isStockNameTruncated('茅台A')).toBe(false);
+      expect(isStockNameTruncated('貴州茅臺')).toBe(false);
+      expect(isStockNameTruncated('茅臺A')).toBe(false);
     });
 
     test('returns true for English names exceeding 15 chars', () => {
@@ -96,11 +96,11 @@ describe('truncateStockName', () => {
     });
 
     test('returns true for Chinese names exceeding 8 chars', () => {
-      expect(isStockNameTruncated('贵州茅台股票股份有限公司')).toBe(true);
+      expect(isStockNameTruncated('貴州茅臺股票股份有限公司')).toBe(true);
     });
 
     test('returns true for mixed names exceeding 10 chars', () => {
-      expect(isStockNameTruncated('贵州茅台股票有限公司AB')).toBe(true);
+      expect(isStockNameTruncated('貴州茅臺股票有限公司AB')).toBe(true);
     });
 
     test('returns false for stock codes at boundary', () => {

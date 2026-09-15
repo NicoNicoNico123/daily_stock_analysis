@@ -7,7 +7,8 @@ import { ReportDetails } from './ReportDetails';
 import { ReportDiagnostics } from './ReportDiagnostics';
 import { AnalysisContextSummary } from './AnalysisContextSummary';
 import { MarketReviewReportView } from './MarketReviewReportView';
-import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
+import { getReportText } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 
 interface ReportSummaryProps {
   data: AnalysisResult | AnalysisReport;
@@ -39,8 +40,9 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
   const diagnosticSummary = 'diagnosticSummary' in data ? data.diagnosticSummary : undefined;
 
   const { meta, summary, strategy, details } = report;
-  const reportLanguage = normalizeReportLanguage(meta.reportLanguage);
-  const text = getReportText(reportLanguage);
+  // 区块标签统一跟随界面语言；报告正文内容仍由后端按报告语言生成。
+  const { language: uiLanguage } = useUiLanguage();
+  const text = getReportText(uiLanguage);
   const modelUsed = (meta.modelUsed || '').trim();
   const shouldShowModel = Boolean(
     modelUsed && !['unknown', 'error', 'none', 'null', 'n/a'].includes(modelUsed.toLowerCase()),
@@ -51,7 +53,6 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
       <MarketReviewReportView
         report={report}
         recordId={recordId}
-        reportLanguage={reportLanguage}
         onOpenRunFlow={onOpenRunFlow}
       />
     );
@@ -59,7 +60,7 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
 
   return (
     <div className="space-y-5 pb-8 animate-fade-in">
-      {/* 概览区（首屏） */}
+      {/* 概覽區（首屏） */}
       <ReportOverview
         meta={meta}
         summary={summary}
@@ -68,30 +69,28 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
         watchlist={watchlist}
       />
 
-      {/* 策略点位区 */}
-      <ReportStrategy strategy={strategy} language={reportLanguage} />
+      {/* 策略點位區 */}
+      <ReportStrategy strategy={strategy} />
 
-      {/* 资讯区 */}
-      <ReportNews recordId={recordId} limit={8} language={reportLanguage} />
+      {/* 資訊區 */}
+      <ReportNews recordId={recordId} limit={8} />
 
-      {/* 输入数据块低敏摘要 */}
+      {/* 輸入數據塊低敏摘要 */}
       <AnalysisContextSummary
         overview={details?.analysisContextPackOverview}
-        language={reportLanguage}
       />
 
-      {/* 运行诊断摘要 */}
+      {/* 運行診斷摘要 */}
       <ReportDiagnostics
         recordId={recordId}
         summary={diagnosticSummary}
-        language={reportLanguage}
         onOpenRunFlow={onOpenRunFlow}
       />
 
-      {/* 透明度与追溯区 */}
-      <ReportDetails details={details} recordId={recordId} language={reportLanguage} />
+      {/* 透明度與追溯區 */}
+      <ReportDetails details={details} recordId={recordId} />
 
-      {/* 分析模型标记（Issue #528）— 报告末尾 */}
+      {/* 分析模型標記（Issue #528）— 報告末尾 */}
       {shouldShowModel && (
         <p className="px-1 text-xs text-muted-text">
           {text.analysisModel}: {modelUsed}

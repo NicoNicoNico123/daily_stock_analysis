@@ -1,7 +1,15 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import type { AnalysisReport, MarketReviewPayload } from '../../../types/analysis';
+import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
+import { UI_LANGUAGE_STORAGE_KEY } from '../../../utils/uiLanguage';
 import { MarketReviewReportView } from '../MarketReviewReportView';
+
+const renderWithUiLanguage = (ui: ReactNode, language: 'zh' | 'en') => {
+  window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, language);
+  return render(<UiLanguageProvider>{ui}</UiLanguageProvider>);
+};
 
 vi.mock('../../../api/history', () => ({
   historyApi: {
@@ -31,48 +39,48 @@ const combinedMarketReviewPayload: MarketReviewPayload = {
   kind: 'market_review',
   region: 'cn,hk',
   language: 'zh',
-  rootTitle: '大盘复盘',
+  rootTitle: '大盤覆盤',
   markets: {
     cn: {
-      title: 'A股市场',
+      title: 'A股市場',
       breadth: {
         upCount: 3120,
         downCount: 1420,
         limitUpCount: 72,
         limitDownCount: 4,
         totalAmount: 9600,
-        turnoverUnit: '亿元',
+        turnoverUnit: '億元',
       },
       indices: [{
         code: '000300',
-        name: '沪深300',
+        name: '滬深300',
         current: 3920.2,
         changePct: 1.2,
         high: 3940.5,
         low: 3860.1,
       }],
       sectors: {
-        top: [{ name: '半导体', changePct: 2.35 }],
+        top: [{ name: '半導體', changePct: 2.35 }],
         bottom: [{ name: '煤炭', changePct: -1.1 }],
       },
       concepts: {
-        top: [{ name: '机器人概念', changePct: 4.2 }],
-        bottom: [{ name: '转基因', changePct: -2.05 }],
+        top: [{ name: '機器人概念', changePct: 4.2 }],
+        bottom: [{ name: '轉基因', changePct: -2.05 }],
       },
     },
     hk: {
-      title: '港股市场',
+      title: '港股市場',
       breadth: {
         upCount: 680,
         downCount: 410,
         limitUpCount: 0,
         limitDownCount: 0,
         totalAmount: 1180,
-        turnoverUnit: '亿港元',
+        turnoverUnit: '億港元',
       },
       indices: [{
         code: 'HSI',
-        name: '恒生指数',
+        name: '恒生指數',
         current: 18920.4,
         changePct: -0.5,
         high: 19050.2,
@@ -106,13 +114,13 @@ const noBreadthMarketReviewPayload: MarketReviewPayload = {
 };
 
 describe('MarketReviewReportView', () => {
-  it('uses localized summary card labels and fallbacks for English reports', () => {
-    render(
+  it('uses localized summary card labels and fallbacks for an english interface', () => {
+    renderWithUiLanguage(
       <MarketReviewReportView
         report={englishMarketReviewReport}
         content="# Market Review"
-        reportLanguage="en"
       />,
+      'en',
     );
 
     expect(screen.getByText('Review Summary')).toBeInTheDocument();
@@ -123,23 +131,22 @@ describe('MarketReviewReportView', () => {
     expect(screen.getByText('No rotation view yet')).toBeInTheDocument();
     expect(screen.getByText('Risks & Watchlist')).toBeInTheDocument();
     expect(screen.getByText('No key observations yet')).toBeInTheDocument();
-    expect(screen.queryByText('复盘摘要')).not.toBeInTheDocument();
-    expect(screen.queryByText('暂无摘要')).not.toBeInTheDocument();
+    expect(screen.queryByText('覆盤摘要')).not.toBeInTheDocument();
+    expect(screen.queryByText('暫無摘要')).not.toBeInTheDocument();
   });
 
   it('renders structured data for every market in a combined market review payload', () => {
     render(
       <MarketReviewReportView
         payload={combinedMarketReviewPayload}
-        content="# 大盘复盘"
-        reportLanguage="zh"
+        content="# 大盤覆盤"
       />,
     );
 
-    expect(screen.getByText('A股市场')).toBeInTheDocument();
-    expect(screen.getByText('港股市场')).toBeInTheDocument();
-    expect(screen.getByText('沪深300')).toBeInTheDocument();
-    expect(screen.getByText('恒生指数')).toBeInTheDocument();
+    expect(screen.getByText('A股市場')).toBeInTheDocument();
+    expect(screen.getByText('港股市場')).toBeInTheDocument();
+    expect(screen.getByText('滬深300')).toBeInTheDocument();
+    expect(screen.getByText('恒生指數')).toBeInTheDocument();
     expect(screen.getByText('3120')).toBeInTheDocument();
     expect(screen.getByText('680')).toBeInTheDocument();
   });
@@ -148,49 +155,65 @@ describe('MarketReviewReportView', () => {
     render(
       <MarketReviewReportView
         payload={combinedMarketReviewPayload}
-        content="# 大盘复盘"
-        reportLanguage="zh"
+        content="# 大盤覆盤"
       />,
     );
 
-    expect(screen.getAllByText('行业板块')).toHaveLength(2);
-    expect(screen.getAllByText('概念板块')).toHaveLength(2);
-    expect(screen.getByText('半导体')).toBeInTheDocument();
-    expect(screen.getByText('机器人概念')).toBeInTheDocument();
+    expect(screen.getAllByText('行業板塊')).toHaveLength(2);
+    expect(screen.getAllByText('概念板塊')).toHaveLength(2);
+    expect(screen.getByText('半導體')).toBeInTheDocument();
+    expect(screen.getByText('機器人概念')).toBeInTheDocument();
     expect(screen.getByText('+4.20%')).toBeInTheDocument();
     expect(screen.getByText('-2.05%')).toBeInTheDocument();
   });
 
-  it('localizes structured market data labels for Chinese reports', () => {
+  it('localizes structured market data labels with the chinese interface', () => {
     render(
       <MarketReviewReportView
         payload={combinedMarketReviewPayload}
-        content="# 大盘复盘"
-        reportLanguage="zh"
+        content="# 大盤覆盤"
       />,
     );
 
-    expect(screen.getByText('结构化大盘数据')).toBeInTheDocument();
-    expect(screen.getAllByText('上涨家数')).toHaveLength(2);
-    expect(screen.getAllByText('下跌家数')).toHaveLength(2);
-    expect(screen.getAllByText('涨停/跌停')).toHaveLength(2);
-    expect(screen.getAllByText('成交额')).toHaveLength(2);
-    expect(screen.getAllByText('指数')).toHaveLength(2);
+    expect(screen.getByText('結構化大盤數據')).toBeInTheDocument();
+    expect(screen.getAllByText('上漲家數')).toHaveLength(2);
+    expect(screen.getAllByText('下跌家數')).toHaveLength(2);
+    expect(screen.getAllByText('漲停/跌停')).toHaveLength(2);
+    expect(screen.getAllByText('成交額')).toHaveLength(2);
+    expect(screen.getAllByText('指數')).toHaveLength(2);
     expect(screen.getAllByText('最新')).toHaveLength(2);
-    expect(screen.getAllByText('涨跌幅')).toHaveLength(2);
+    expect(screen.getAllByText('漲跌幅')).toHaveLength(2);
     expect(screen.getAllByText('高/低')).toHaveLength(2);
     expect(screen.queryByText('Structured Market Data')).not.toBeInTheDocument();
     expect(screen.queryByText('Advancers')).not.toBeInTheDocument();
     expect(screen.queryByText('Index')).not.toBeInTheDocument();
   });
 
-  it('shows "No data" when breadth is not available for a market review payload', () => {
+  it('keeps chinese interface labels even when the review payload is english', () => {
     render(
       <MarketReviewReportView
         payload={noBreadthMarketReviewPayload}
         content="# Market Review"
-        reportLanguage="en"
       />,
+    );
+
+    expect(screen.getByText('結構化大盤數據')).toBeInTheDocument();
+    expect(screen.getByText('暫無數據')).toBeInTheDocument();
+    expect(screen.getByText('S&P 500')).toBeInTheDocument();
+    expect(screen.getAllByText('行業板塊').length).toBeGreaterThan(0);
+    expect(screen.getByText('Technology')).toBeInTheDocument();
+    expect(screen.getByText('Energy')).toBeInTheDocument();
+    expect(screen.queryByText('Structured Market Data')).not.toBeInTheDocument();
+    expect(screen.queryByText('No data')).not.toBeInTheDocument();
+  });
+
+  it('shows "No data" when breadth is not available for a market review payload', () => {
+    renderWithUiLanguage(
+      <MarketReviewReportView
+        payload={noBreadthMarketReviewPayload}
+        content="# Market Review"
+      />,
+      'en',
     );
 
     expect(screen.getByText('Structured Market Data')).toBeInTheDocument();
@@ -233,7 +256,6 @@ describe('MarketReviewReportView', () => {
       <MarketReviewReportView
         payload={payload}
         content="# Market Review"
-        reportLanguage="en"
       />,
     );
 
@@ -275,7 +297,6 @@ describe('MarketReviewReportView', () => {
       <MarketReviewReportView
         payload={payload}
         content="# Market Review"
-        reportLanguage="en"
       />,
     );
 
@@ -293,14 +314,13 @@ describe('MarketReviewReportView', () => {
     render(
       <MarketReviewReportView
         payload={combinedMarketReviewPayload}
-        content="# 大盘复盘"
+        content="# 大盤覆盤"
         recordId={7}
-        reportLanguage="zh"
         onOpenRunFlow={onOpenRunFlow}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '查看历史记录 7 运行流' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看歷史記錄 7 運行流' }));
 
     expect(onOpenRunFlow).toHaveBeenCalledWith(7);
   });

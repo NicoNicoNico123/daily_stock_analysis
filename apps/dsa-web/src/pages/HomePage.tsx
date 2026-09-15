@@ -27,7 +27,6 @@ import { useDashboardLifecycle, useHomeDashboardState } from '../hooks';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import type { SetupStatusResponse } from '../types/systemConfig';
-import { normalizeReportLanguage } from '../utils/reportLanguage';
 import type {
   AnalyzeAsyncResponse,
   HistoryItem,
@@ -511,8 +510,6 @@ const HomePage: React.FC = () => {
     }
   }, [analysisSkills, selectedStrategyId]);
 
-  const reportLanguage = normalizeReportLanguage(selectedReport?.meta.reportLanguage);
-  const liveMarketReviewLanguage = normalizeReportLanguage(marketReviewPayload?.language);
   const isMarketReviewHistoryReport = selectedReport?.meta.reportType === 'market_review';
   const isHistoryTrendUnavailable = !selectedReport || !selectedReport.meta.stockCode;
 
@@ -1749,7 +1746,6 @@ const HomePage: React.FC = () => {
               <MarketReviewReportView
                 content={marketReviewReport}
                 payload={marketReviewPayload}
-                reportLanguage={liveMarketReviewLanguage}
                 className="mb-3"
               />
             ) : null}
@@ -1889,7 +1885,6 @@ const HomePage: React.FC = () => {
           recordId={selectedReport.meta.id}
           stockName={selectedReport.meta.stockName || ''}
           stockCode={selectedReport.meta.stockCode}
-          reportLanguage={reportLanguage}
           onClose={closeMarkdownDrawer}
         />
       ) : null}

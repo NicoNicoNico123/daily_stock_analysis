@@ -49,9 +49,9 @@ describe('NotificationTestPanel', () => {
 
     expect(screen.getByRole('option', { name: 'ntfy' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Gotify' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '钉钉' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '釘釘' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('渠道'), { target: { value: 'custom' } });
-    fireEvent.click(screen.getByRole('button', { name: /发送测试/ }));
+    fireEvent.click(screen.getByRole('button', { name: /發送測試/ }));
 
     await waitFor(() => expect(testNotificationChannel).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'custom',
@@ -59,7 +59,7 @@ describe('NotificationTestPanel', () => {
       maskToken: '******',
       timeoutSeconds: 20,
     })));
-    expect(await screen.findByText('测试成功')).toBeInTheDocument();
+    expect(await screen.findByText('測試成功')).toBeInTheDocument();
     expect(screen.getByText('HTTP 200')).toBeInTheDocument();
     expect(screen.getByText('https://example.com/hook?token=***')).toBeInTheDocument();
   });
@@ -90,11 +90,11 @@ describe('NotificationTestPanel', () => {
       </UiLanguageProvider>
     );
 
-    const titleInput = screen.getByLabelText('标题');
+    const titleInput = screen.getByLabelText('標題');
     const contentInput = screen.getByLabelText('正文');
 
-    expect(titleInput).toHaveValue('DSA 通知测试');
-    expect(contentInput).toHaveValue('这是一条来自 DSA Web 设置页的通知测试消息。');
+    expect(titleInput).toHaveValue('DSA 通知測試');
+    expect(contentInput).toHaveValue('這是一條來自 DSA Web 設置頁的通知測試消息。');
 
     fireEvent.click(screen.getByRole('button', { name: 'switch-en' }));
 
@@ -137,21 +137,21 @@ describe('NotificationTestPanel', () => {
       </UiLanguageProvider>
     );
 
-    const titleInput = screen.getByLabelText('标题');
+    const titleInput = screen.getByLabelText('標題');
     const contentInput = screen.getByLabelText('正文');
 
-    fireEvent.change(titleInput, { target: { value: '自定义标题' } });
-    fireEvent.change(contentInput, { target: { value: '自定义正文' } });
+    fireEvent.change(titleInput, { target: { value: '自定義標題' } });
+    fireEvent.change(contentInput, { target: { value: '自定義正文' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'switch-en' }));
-    expect(titleInput).toHaveValue('自定义标题');
-    expect(contentInput).toHaveValue('自定义正文');
+    expect(titleInput).toHaveValue('自定義標題');
+    expect(contentInput).toHaveValue('自定義正文');
   });
 
   it('renders custom webhook partial failure attempts', async () => {
     testNotificationChannel.mockResolvedValueOnce({
       success: true,
-      message: '自定义 Webhook 通知测试部分成功（1/2）',
+      message: '自定義 Webhook 通知測試部分成功（1/2）',
       errorCode: null,
       stage: 'notification_send',
       retryable: true,
@@ -190,9 +190,9 @@ describe('NotificationTestPanel', () => {
     );
 
     fireEvent.change(screen.getByLabelText('渠道'), { target: { value: 'custom' } });
-    fireEvent.click(screen.getByRole('button', { name: /发送测试/ }));
+    fireEvent.click(screen.getByRole('button', { name: /發送測試/ }));
 
-    expect(await screen.findByText('测试成功')).toBeInTheDocument();
+    expect(await screen.findByText('測試成功')).toBeInTheDocument();
     expect(screen.getByText(/部分成功/)).toBeInTheDocument();
     expect(screen.getAllByText('HTTP 500').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('HTTP 200')).toBeInTheDocument();
@@ -203,7 +203,7 @@ describe('NotificationTestPanel', () => {
   it('renders retryable timeout diagnostics', async () => {
     testNotificationChannel.mockResolvedValueOnce({
       success: false,
-      message: '通知测试异常: timeout',
+      message: '通知測試異常: timeout',
       errorCode: 'timeout',
       stage: 'notification_send',
       retryable: true,
@@ -230,9 +230,9 @@ describe('NotificationTestPanel', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /发送测试/ }));
+    fireEvent.click(screen.getByRole('button', { name: /發送測試/ }));
 
-    expect(await screen.findByText('测试失败')).toBeInTheDocument();
+    expect(await screen.findByText('測試失敗')).toBeInTheDocument();
     const timeoutEntries = screen.getAllByText('timeout');
     expect(timeoutEntries[0]).toBeInTheDocument();
     expect(screen.getByText('https://qyapi.example.com/cgi-bin/webhook/send?key=***')).toBeInTheDocument();

@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
 import { motion, useMotionValue, useTransform, useSpring } from "motion/react";
-import { Lock, Loader2, Cpu, TrendingUp, Network, ShieldCheck } from "lucide-react";
+import { UserPlus, Loader2, Cpu, TrendingUp, Network } from "lucide-react";
 import { Button, Input, ParticleBackground } from '../components/common';
 import { UiLanguageToggle } from '../components/i18n/UiLanguageToggle';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -11,14 +11,18 @@ import { useAuth } from '../hooks';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import { SettingsAlert } from '../components/settings';
 
-const LoginPage: React.FC = () => {
-  const { login, passwordSet, setupState, multiUser, registrationEnabled } = useAuth();
+// 与后端注册校验保持一致：3-32 位字母、数字、下划线或连字符
+const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,32}$/;
+const MIN_PASSWORD_LENGTH = 6;
+
+const RegisterPage: React.FC = () => {
+  const { register } = useAuth();
   const { t } = useUiLanguage();
   const navigate = useNavigate();
 
   // Set page title
   useEffect(() => {
-    document.title = t('login.pageTitle');
+    document.title = t('register.pageTitle');
   }, [t]);
   const [searchParams] = useSearchParams();
   const rawRedirect = searchParams.get('redirect') ?? '';
@@ -30,10 +34,6 @@ const LoginPage: React.FC = () => {
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | ParsedApiError | null>(null);
-
-  // 多用户模式下走用户名登录，首跑设密流程由后端拒绝，需整体隐藏
-  const isMultiUser = multiUser;
-  const isFirstTime = !isMultiUser && (setupState === 'no_password' || !passwordSet);
 
   // 3D Tilt effect values
   const mouseX = useMotionValue(0);
@@ -54,33 +54,61 @@ const LoginPage: React.FC = () => {
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [mouseX, mouseY]);
 
-  const registerLinkTo =
-    redirect === '/' ? '/register' : `/register?redirect=${encodeURIComponent(redirect)}`;
+  const loginLinkTo =
+    redirect === '/' ? '/login' : `/login?redirect=${encodeURIComponent(redirect)}`;
+
+  // 将后端错误码映射为对应的 i18n 文案
+  const describeRegisterError = (registerError: ParsedApiError): string => {
+    const raw = registerError.rawMessage;
+    if (registerError.status === 403 && raw.includes('quota_exceeded')) {
+      return t('register.quotaExceeded');
+    }
+    if (registerError.status === 403 && (raw.includes('registration_disabled') || raw.includes('multi_user_disabled'))) {
+      return t('register.registrationDisabled');
+    }
+    if (registerError.status === 409 && raw.includes('username_taken')) {
+      return t('register.usernameTaken');
+    }
+    if (registerError.status === 400) {
+      if (raw.includes('invalid_username')) {
+        return t('register.usernameInvalid');
+      }
+      if (raw.includes('invalid_password')) {
+        return t('register.passwordInvalid');
+      }
+      if (raw.includes('password_mismatch')) {
+        return t('login.passwordMismatch');
+      }
+    }
+    if (registerError.status === 429) {
+      return t('register.failed');
+    }
+    return registerError.message || t('register.failed');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (isFirstTime && password !== passwordConfirm) {
+    const trimmedUsername = username.trim();
+    if (!USERNAME_PATTERN.test(trimmedUsername)) {
+      setError(t('register.usernameInvalid'));
+      return;
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(t('register.passwordInvalid'));
+      return;
+    }
+    if (password !== passwordConfirm) {
       setError(t('login.passwordMismatch'));
       return;
     }
     setIsSubmitting(true);
     try {
-      const result = await login(password, isFirstTime ? passwordConfirm : undefined, username.trim());
+      const result = await register(trimmedUsername, password);
       if (result.success) {
         navigate(redirect, { replace: true });
       } else {
-        const loginError = result.error;
-        if (
-          isMultiUser
-          && loginError
-          && loginError.status === 401
-          && loginError.rawMessage.includes('invalid_credentials')
-        ) {
-          setError(t('login.invalidCredentials'));
-        } else {
-          setError(loginError ?? t('login.loginFailed'));
-        }
+        setError(result.error ? describeRegisterError(result.error) : t('register.failed'));
       }
     } finally {
       setIsSubmitting(false);
@@ -147,7 +175,7 @@ const LoginPage: React.FC = () => {
             </h3>
           </div>
 
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
@@ -174,42 +202,29 @@ const LoginPage: React.FC = () => {
 
             <div className="mb-8">
               <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-[var(--login-text-primary)]">
-                {isFirstTime ? (
-                  <>
-                    <ShieldCheck className="h-6 w-6 text-emerald-400" />
-                    <span>{t('login.setupTitle')}</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock className="h-5 w-5 text-[var(--login-accent-text)]" />
-                    <span>{t('login.adminLogin')}</span>
-                  </>
-                )}
+                <UserPlus className="h-6 w-6 text-emerald-400" />
+                <span>{t('register.title')}</span>
               </h1>
               <p className="mt-2 text-sm text-[var(--login-text-secondary)]">
-                {isFirstTime
-                  ? t('login.setupDescription')
-                  : t('login.loginDescription')}
+                {t('register.description')}
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-4">
-                {isMultiUser && (
-                  <Input
-                    id="username"
-                    type="text"
-                    appearance="login"
-                    label={t('login.username')}
-                    placeholder={t('login.usernamePlaceholder')}
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    disabled={isSubmitting}
-                    autoFocus
-                    autoComplete="username"
-                    required
-                  />
-                )}
+                <Input
+                  id="username"
+                  type="text"
+                  appearance="login"
+                  label={t('register.username')}
+                  placeholder={t('register.usernamePlaceholder')}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  disabled={isSubmitting}
+                  autoFocus
+                  autoComplete="username"
+                  required
+                />
 
                 <Input
                   id="password"
@@ -217,30 +232,29 @@ const LoginPage: React.FC = () => {
                   appearance="login"
                   allowTogglePassword
                   iconType="password"
-                  label={isFirstTime ? t('login.adminPassword') : t('login.loginPassword')}
-                  placeholder={isFirstTime ? t('login.setupPasswordPlaceholder') : t('login.loginPasswordPlaceholder')}
+                  label={t('login.loginPassword')}
+                  placeholder={t('login.setupPasswordPlaceholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isSubmitting}
-                  autoFocus={!isMultiUser}
-                  autoComplete={isFirstTime ? 'new-password' : 'current-password'}
+                  autoComplete="new-password"
+                  required
                 />
 
-                {isFirstTime && (
-                  <Input
-                    id="passwordConfirm"
-                    type="password"
-                    appearance="login"
-                    allowTogglePassword
-                    iconType="password"
-                    label={t('login.confirmPassword')}
-                    placeholder={t('login.confirmPasswordPlaceholder')}
-                    value={passwordConfirm}
-                    onChange={(e) => setPasswordConfirm(e.target.value)}
-                    disabled={isSubmitting}
-                    autoComplete="new-password"
-                  />
-                )}
+                <Input
+                  id="passwordConfirm"
+                  type="password"
+                  appearance="login"
+                  allowTogglePassword
+                  iconType="password"
+                  label={t('register.confirmPassword')}
+                  placeholder={t('register.confirmPasswordPlaceholder')}
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  disabled={isSubmitting}
+                  autoComplete="new-password"
+                  required
+                />
               </div>
 
               {error && (
@@ -250,7 +264,7 @@ const LoginPage: React.FC = () => {
                   className="overflow-hidden"
                 >
                   <SettingsAlert
-                    title={isFirstTime ? t('login.setupFailed') : t('login.validationFailed')}
+                    title={t('register.failed')}
                     message={isParsedApiError(error) ? error.message : error}
                     variant="error"
                     className="!border-[var(--login-error-border)] !bg-[var(--login-error-bg)] !text-[var(--login-error-text)]"
@@ -269,31 +283,29 @@ const LoginPage: React.FC = () => {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>{isFirstTime ? t('login.setupSubmitting') : t('login.loginSubmitting')}</span>
+                      <span>{t('register.submitting')}</span>
                     </>
                   ) : (
-                    <span>{isFirstTime ? t('login.setupSubmit') : t('login.loginSubmit')}</span>
+                    <span>{t('register.submit')}</span>
                   )}
                 </div>
                 <div className="absolute inset-0 z-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] pointer-events-none" />
               </Button>
 
-              {isMultiUser && registrationEnabled && (
-                <p className="text-center text-sm text-[var(--login-text-muted)]">
-                  <Link
-                    to={registerLinkTo}
-                    className="font-medium text-[var(--login-accent-text)] transition-colors hover:text-[var(--login-text-primary)] hover:underline"
-                  >
-                    {t('login.registerLink')}
-                  </Link>
-                </p>
-              )}
+              <p className="text-center text-sm text-[var(--login-text-muted)]">
+                <Link
+                  to={loginLinkTo}
+                  className="font-medium text-[var(--login-accent-text)] transition-colors hover:text-[var(--login-text-primary)] hover:underline"
+                >
+                  {t('register.loginLink')}
+                </Link>
+              </p>
             </form>
           </div>
         </motion.div>
 
         {/* Footer info */}
-        <motion.p 
+        <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.6 }}
@@ -314,4 +326,4 @@ const LoginPage: React.FC = () => {
   );
 };
 
-export default LoginPage;
+export default RegisterPage;

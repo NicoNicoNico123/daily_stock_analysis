@@ -20,7 +20,7 @@ const items: HistoryItem[] = [
     id: 1,
     queryId: 'q-1',
     stockCode: '600519',
-    stockName: '贵州茅台',
+    stockName: '貴州茅臺',
     sentimentScore: 82,
     operationAdvice: '买入',
     createdAt: '2026-03-15T08:00:00Z',
@@ -31,7 +31,7 @@ const longChineseNameItem: HistoryItem = {
   id: 2,
   queryId: 'q-2',
   stockCode: '600519',
-  stockName: '贵州茅台股票股份有限公司',
+  stockName: '貴州茅臺股票股份有限公司',
   sentimentScore: 75,
   operationAdvice: '持有',
   createdAt: '2026-03-16T08:00:00Z',
@@ -46,9 +46,9 @@ describe('HistoryList', () => {
   it('shows the empty state copy when no history exists', () => {
     const { container } = render(<HistoryList {...baseProps} items={[]} />);
 
-    expect(screen.getByText('暂无历史分析记录')).toBeInTheDocument();
-    expect(screen.getByText('完成首次分析后，这里会保留最近结果。')).toBeInTheDocument();
-    expect(screen.getByText('历史分析')).toBeInTheDocument();
+    expect(screen.getByText('暫無歷史分析記錄')).toBeInTheDocument();
+    expect(screen.getByText('完成首次分析後，這裏會保留最近結果。')).toBeInTheDocument();
+    expect(screen.getByText('歷史分析')).toBeInTheDocument();
     expect(container.querySelector('.glass-card')).toBeTruthy();
   });
 
@@ -67,10 +67,10 @@ describe('HistoryList', () => {
       />,
     );
 
-    expect(screen.getByText('已选 1')).toBeInTheDocument();
-    expect(screen.getByText('买入 82')).toBeInTheDocument();
+    expect(screen.getByText('已選 1')).toBeInTheDocument();
+    expect(screen.getByText('買入 82')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /贵州茅台/i }));
+    fireEvent.click(screen.getByRole('button', { name: /貴州茅臺/i }));
     expect(onItemClick).toHaveBeenCalledWith(1);
 
     fireEvent.click(screen.getAllByRole('checkbox')[1]);
@@ -85,16 +85,16 @@ describe('HistoryList', () => {
           {
             ...items[0],
             action: 'avoid',
-            actionLabel: '回避',
-            operationAdvice: '买入',
+            actionLabel: '迴避',
+            operationAdvice: '買入',
             sentimentScore: 35,
           },
         ]}
       />,
     );
 
-    expect(screen.getByText('回避 35')).toBeInTheDocument();
-    expect(screen.queryByText('买入 35')).not.toBeInTheDocument();
+    expect(screen.getByText('迴避 35')).toBeInTheDocument();
+    expect(screen.queryByText('買入 35')).not.toBeInTheDocument();
   });
 
   it('uses the unified legacy fallback for negated buy advice without structured action', () => {
@@ -113,8 +113,8 @@ describe('HistoryList', () => {
       />,
     );
 
-    expect(screen.getByText('回避 28')).toBeInTheDocument();
-    expect(screen.queryByText('买入 28')).not.toBeInTheDocument();
+    expect(screen.getByText('迴避 28')).toBeInTheDocument();
+    expect(screen.queryByText('買入 28')).not.toBeInTheDocument();
   });
 
   it('uses the unified legacy fallback for backend-aligned hold advice without structured action', () => {
@@ -134,7 +134,7 @@ describe('HistoryList', () => {
     );
 
     expect(screen.getByText('持有 48')).toBeInTheDocument();
-    expect(screen.queryByText('情绪 48')).not.toBeInTheDocument();
+    expect(screen.queryByText('情緒 48')).not.toBeInTheDocument();
   });
 
   it('does not render ambiguous English legacy advice as a buy action', () => {
@@ -153,7 +153,7 @@ describe('HistoryList', () => {
       />,
     );
 
-    expect(screen.getByText('情绪 28')).toBeInTheDocument();
+    expect(screen.getByText('情緒 28')).toBeInTheDocument();
     expect(screen.queryByText('buy 28')).not.toBeInTheDocument();
   });
 
@@ -191,12 +191,12 @@ describe('HistoryList', () => {
       />,
     );
 
-    expect(screen.getByText('情绪 28')).toBeInTheDocument();
-    expect(screen.getByText('情绪 31')).toBeInTheDocument();
-    expect(screen.getByText('情绪 33')).toBeInTheDocument();
-    expect(screen.queryByText('回避 28')).not.toBeInTheDocument();
+    expect(screen.getByText('情緒 28')).toBeInTheDocument();
+    expect(screen.getByText('情緒 31')).toBeInTheDocument();
+    expect(screen.getByText('情緒 33')).toBeInTheDocument();
+    expect(screen.queryByText('迴避 28')).not.toBeInTheDocument();
     expect(screen.queryByText('持有 31')).not.toBeInTheDocument();
-    expect(screen.queryByText('卖出 33')).not.toBeInTheDocument();
+    expect(screen.queryByText('賣出 33')).not.toBeInTheDocument();
   });
 
   it('does not render Chinese financial context legacy advice as an action badge', () => {
@@ -208,7 +208,7 @@ describe('HistoryList', () => {
             ...items[0],
             action: null,
             actionLabel: null,
-            operationAdvice: '买盘增强，继续观察',
+            operationAdvice: '買盤增強，繼續觀察',
             sentimentScore: 32,
           },
           {
@@ -217,17 +217,17 @@ describe('HistoryList', () => {
             queryId: 'q-2',
             action: null,
             actionLabel: null,
-            operationAdvice: '卖压缓解，继续观察',
+            operationAdvice: '賣壓緩解，繼續觀察',
             sentimentScore: 34,
           },
         ]}
       />,
     );
 
-    expect(screen.getByText('情绪 32')).toBeInTheDocument();
-    expect(screen.getByText('情绪 34')).toBeInTheDocument();
-    expect(screen.queryByText('买入 32')).not.toBeInTheDocument();
-    expect(screen.queryByText('卖出 34')).not.toBeInTheDocument();
+    expect(screen.getByText('情緒 32')).toBeInTheDocument();
+    expect(screen.getByText('情緒 34')).toBeInTheDocument();
+    expect(screen.queryByText('買入 32')).not.toBeInTheDocument();
+    expect(screen.queryByText('賣出 34')).not.toBeInTheDocument();
   });
 
   it('does not render multi-guard legacy advice as an avoid or alert action', () => {
@@ -246,9 +246,9 @@ describe('HistoryList', () => {
       />,
     );
 
-    expect(screen.getByText('情绪 28')).toBeInTheDocument();
-    expect(screen.queryByText('回避 28')).not.toBeInTheDocument();
-    expect(screen.queryByText('预警 28')).not.toBeInTheDocument();
+    expect(screen.getByText('情緒 28')).toBeInTheDocument();
+    expect(screen.queryByText('迴避 28')).not.toBeInTheDocument();
+    expect(screen.queryByText('預警 28')).not.toBeInTheDocument();
   });
 
   it('toggles select-all when clicking the label text', () => {
@@ -262,7 +262,7 @@ describe('HistoryList', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('全选当前'));
+    fireEvent.click(screen.getByText('全選當前'));
 
     expect(onToggleSelectAll).toHaveBeenCalledTimes(1);
   });
@@ -270,7 +270,7 @@ describe('HistoryList', () => {
   it('disables delete when nothing is selected', () => {
     render(<HistoryList {...baseProps} items={items} />);
 
-    expect(screen.getByRole('button', { name: '删除' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '刪除' })).toBeDisabled();
   });
 
   it('truncates long stock names with trailing dot', () => {
@@ -281,12 +281,12 @@ describe('HistoryList', () => {
       />,
     );
 
-    // '贵州茅台股票股份有限公司' (12 Chinese chars) should be truncated to '贵州茅台股票股份.' (8 chars + dot)
-    expect(screen.getByText('贵州茅台股票股份.')).toBeInTheDocument();
-    expect(screen.queryByText('贵州茅台股票股份有限公司')).not.toBeInTheDocument();
+    // '貴州茅臺股票股份有限公司' (12 Chinese chars) should be truncated to '貴州茅臺股票股份.' (8 chars + dot)
+    expect(screen.getByText('貴州茅臺股票股份.')).toBeInTheDocument();
+    expect(screen.queryByText('貴州茅臺股票股份有限公司')).not.toBeInTheDocument();
     expect(
       screen.getByRole('button', {
-        name: /^贵州茅台股票股份有限公司 600519 历史记录$/,
+        name: /^貴州茅臺股票股份有限公司 600519 歷史記錄$/,
       }),
     ).toBeInTheDocument();
 

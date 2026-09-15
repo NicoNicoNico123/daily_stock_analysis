@@ -4,19 +4,17 @@ import { Activity, Check, ChevronDown, Copy, Workflow } from 'lucide-react';
 import { historyApi } from '../../api/history';
 import { formatUiText, UI_TEXT } from '../../i18n/uiText';
 import type {
-  ReportLanguage,
   RunDiagnosticComponent,
   RunDiagnosticComponentStatus,
   RunDiagnosticStatus,
   RunDiagnosticSummary,
 } from '../../types/analysis';
-import { normalizeReportLanguage } from '../../utils/reportLanguage';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { Badge, Button, Card, StatusDot } from '../common';
 
 interface ReportDiagnosticsProps {
   recordId?: number;
   summary?: RunDiagnosticSummary;
-  language?: ReportLanguage;
   onOpenRunFlow?: (recordId: number) => void;
 }
 
@@ -34,33 +32,33 @@ const COMPONENT_ORDER = [
 
 const TEXT = {
   zh: {
-    eyebrow: '运行诊断',
-    title: '运行状态',
-    loading: '诊断加载中...',
-    unavailable: '运行诊断暂不可用',
-    noComponents: '暂无组件诊断',
-    components: '关键链路',
-    advanced: '高级字段',
-    copy: '复制排障信息',
-    copied: '已复制',
-    scope: '抓取 / LLM / 保存 / 通知链路',
+    eyebrow: '運行診斷',
+    title: '運行狀態',
+    loading: '診斷加載中...',
+    unavailable: '運行診斷暫不可用',
+    noComponents: '暫無組件診斷',
+    components: '關鍵鏈路',
+    advanced: '高級字段',
+    copy: '拷貝排障信息',
+    copied: '已拷貝',
+    scope: '抓取 / LLM / 保存 / 通知鏈路',
     trace: 'Trace',
     task: 'Task',
     query: 'Query',
-    trigger: '触发来源',
+    trigger: '觸發來源',
     overall: {
       normal: '正常',
-      degraded: '部分降级',
-      failed: '失败',
+      degraded: '部分降級',
+      failed: '失敗',
       unknown: '未知',
     },
     component: {
       ok: '正常',
-      degraded: '最近失败后已降级',
-      failed: '失败',
+      degraded: '最近失敗後已降級',
+      failed: '失敗',
       unknown: '未知',
       not_configured: '未配置',
-      skipped: '已跳过',
+      skipped: '已跳過',
     },
   },
   en: {
@@ -165,12 +163,12 @@ const getOrderedComponents = (
 export const ReportDiagnostics: React.FC<ReportDiagnosticsProps> = ({
   recordId,
   summary,
-  language = 'zh',
   onOpenRunFlow,
 }) => {
-  const reportLanguage = normalizeReportLanguage(language);
-  const text = TEXT[reportLanguage];
-  const runFlowText = UI_TEXT[reportLanguage === 'ko' ? 'en' : reportLanguage];
+  // 运行诊断标签跟随界面语言，而不是报告内容语言。
+  const { language: uiLanguage } = useUiLanguage();
+  const text = TEXT[uiLanguage];
+  const runFlowText = UI_TEXT[uiLanguage];
   const [fetchState, setFetchState] = useState<{
     recordId?: number;
     summary: RunDiagnosticSummary | null;

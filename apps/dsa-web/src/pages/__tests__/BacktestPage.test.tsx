@@ -53,15 +53,15 @@ const basePerformance = {
 const baseResultItem = {
   analysisHistoryId: 101,
   code: '600519',
-  stockName: '贵州茅台',
+  stockName: '貴州茅臺',
   analysisDate: '2026-03-20',
   evalWindowDays: 10,
   engineVersion: 'test-engine',
   evalStatus: 'completed',
-  operationAdvice: '继续持有',
+  operationAdvice: '繼續持有',
   action: 'watch',
-  actionLabel: '观望',
-  trendPrediction: '震荡偏多',
+  actionLabel: '觀望',
+  trendPrediction: '震盪偏多',
   actualMovement: 'up',
   actualReturnPct: 3.8,
   directionExpected: 'long',
@@ -103,7 +103,7 @@ describe('BacktestPage', () => {
   it('renders shared surface inputs and prediction tracking outputs', async () => {
     render(<BacktestPage />);
 
-    const filterInput = await screen.findByPlaceholderText('按股票代码筛选（留空表示全部）');
+    const filterInput = await screen.findByPlaceholderText('按股票代碼篩選（留空表示全部）');
     const windowInput = screen.getByPlaceholderText('10');
 
     expect(filterInput).toHaveClass('input-surface');
@@ -114,20 +114,20 @@ describe('BacktestPage', () => {
     expect(await screen.findByText('盈利')).toBeInTheDocument();
     expect(screen.getByText('已完成')).toBeInTheDocument();
     expect(screen.getByText('600519')).toBeInTheDocument();
-    expect(screen.getByText('贵州茅台')).toBeInTheDocument();
+    expect(screen.getByText('貴州茅臺')).toBeInTheDocument();
     const resultRow = screen.getByText('600519').closest('tr');
     expect(resultRow).not.toBeNull();
     const rowScope = within(resultRow as HTMLElement);
-    expect(rowScope.getByText('观望')).toBeInTheDocument();
-    expect(rowScope.getByText('震荡偏多')).toBeInTheDocument();
-    expect(rowScope.getByText('继续持有')).toBeInTheDocument();
-    expect(screen.getByText('上涨')).toBeInTheDocument();
+    expect(rowScope.getByText('觀望')).toBeInTheDocument();
+    expect(rowScope.getByText('震盪偏多')).toBeInTheDocument();
+    expect(rowScope.getByText('繼續持有')).toBeInTheDocument();
+    expect(screen.getByText('上漲')).toBeInTheDocument();
     expect(screen.getByText('窗口收益')).toBeInTheDocument();
     expect(screen.getByText('方向匹配')).toBeInTheDocument();
     expect(screen.getByText('做多')).toBeInTheDocument();
     expect(screen.getAllByLabelText('是').length).toBeGreaterThan(0);
-    expect(screen.getByText('方向准确率')).toBeInTheDocument();
-    expect(screen.getByText('平均模拟收益')).toBeInTheDocument();
+    expect(screen.getByText('方向準確率')).toBeInTheDocument();
+    expect(screen.getByText('平均仿真收益')).toBeInTheDocument();
   });
 
   it('falls back to the taxonomy label when backtest actionLabel is missing', async () => {
@@ -150,8 +150,8 @@ describe('BacktestPage', () => {
     const resultRow = codeCell.closest('tr');
     expect(resultRow).not.toBeNull();
     const rowScope = within(resultRow as HTMLElement);
-    expect(rowScope.getByText('观望')).toBeInTheDocument();
-    expect(rowScope.getByText('继续持有')).toBeInTheDocument();
+    expect(rowScope.getByText('觀望')).toBeInTheDocument();
+    expect(rowScope.getByText('繼續持有')).toBeInTheDocument();
   });
 
   it('uses localized taxonomy labels before server labels in English UI mode', async () => {
@@ -164,7 +164,7 @@ describe('BacktestPage', () => {
           ...baseResultItem,
           operationAdvice: 'continue holding',
           action: 'watch',
-          actionLabel: '观望',
+          actionLabel: '觀望',
           trendPrediction: 'range-bound',
         },
       ],
@@ -178,7 +178,7 @@ describe('BacktestPage', () => {
     const rowScope = within(resultRow as HTMLElement);
     expect(rowScope.getByText('Watch')).toBeInTheDocument();
     expect(rowScope.getByText('continue holding')).toBeInTheDocument();
-    expect(rowScope.queryByText('观望')).not.toBeInTheDocument();
+    expect(rowScope.queryByText('觀望')).not.toBeInTheDocument();
   });
 
   it('keeps operation advice visible when backtest action fields are absent for multi-guard advice', async () => {
@@ -202,10 +202,10 @@ describe('BacktestPage', () => {
     const resultRow = codeCell.closest('tr');
     expect(resultRow).not.toBeNull();
     const rowScope = within(resultRow as HTMLElement);
-    expect(rowScope.getByText('震荡偏多')).toBeInTheDocument();
+    expect(rowScope.getByText('震盪偏多')).toBeInTheDocument();
     expect(rowScope.getByText('risk alert, avoid buying')).toBeInTheDocument();
-    expect(rowScope.queryByText('回避')).not.toBeInTheDocument();
-    expect(rowScope.queryByText('预警')).not.toBeInTheDocument();
+    expect(rowScope.queryByText('迴避')).not.toBeInTheDocument();
+    expect(rowScope.queryByText('預警')).not.toBeInTheDocument();
   });
 
   it('renders backtest controls and result headings in English UI mode', async () => {
@@ -218,25 +218,25 @@ describe('BacktestPage', () => {
     expect(screen.getByText('Window return')).toBeInTheDocument();
     expect(screen.getByText('Direction match')).toBeInTheDocument();
     expect(screen.getByText('Direction accuracy')).toBeInTheDocument();
-    expect(screen.queryByText('运行回测')).not.toBeInTheDocument();
+    expect(screen.queryByText('運行回測')).not.toBeInTheDocument();
     expect(screen.queryByText('窗口收益')).not.toBeInTheDocument();
   });
 
   it('filters results with stock code, window, phase, and analysis date range when clicking Filter', async () => {
     render(<BacktestPage />);
 
-    const filterInput = await screen.findByPlaceholderText('按股票代码筛选（留空表示全部）');
+    const filterInput = await screen.findByPlaceholderText('按股票代碼篩選（留空表示全部）');
     const windowInput = screen.getByPlaceholderText('10');
-    const phaseSelect = screen.getByDisplayValue('全部阶段');
-    const fromInput = screen.getByLabelText('分析开始日期');
-    const toInput = screen.getByLabelText('分析结束日期');
+    const phaseSelect = screen.getByDisplayValue('全部階段');
+    const fromInput = screen.getByLabelText('分析開始日期');
+    const toInput = screen.getByLabelText('分析結束日期');
 
     fireEvent.change(filterInput, { target: { value: 'aapl' } });
     fireEvent.change(windowInput, { target: { value: '20' } });
     fireEvent.change(phaseSelect, { target: { value: 'intraday' } });
     fireEvent.change(fromInput, { target: { value: '2026-03-01' } });
     fireEvent.change(toInput, { target: { value: '2026-03-31' } });
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    fireEvent.click(screen.getByRole('button', { name: '篩選' }));
 
     await waitFor(() => {
       expect(mockGetResults).toHaveBeenLastCalledWith({
@@ -264,21 +264,21 @@ describe('BacktestPage', () => {
       completed: 0,
       insufficient: 0,
       errors: 0,
-      message: '未找到符合条件的历史分析记录',
+      message: '未找到符合條件的歷史分析記錄',
       diagnostics: { emptyReason: 'no_matching_analysis' },
     });
     render(<BacktestPage />);
 
-    const filterInput = await screen.findByPlaceholderText('按股票代码筛选（留空表示全部）');
+    const filterInput = await screen.findByPlaceholderText('按股票代碼篩選（留空表示全部）');
     const windowInput = screen.getByPlaceholderText('10');
-    const fromInput = screen.getByLabelText('分析开始日期');
-    const toInput = screen.getByLabelText('分析结束日期');
+    const fromInput = screen.getByLabelText('分析開始日期');
+    const toInput = screen.getByLabelText('分析結束日期');
 
     fireEvent.change(filterInput, { target: { value: '600519.SH' } });
     fireEvent.change(windowInput, { target: { value: '15' } });
     fireEvent.change(fromInput, { target: { value: '2026-03-01' } });
     fireEvent.change(toInput, { target: { value: '2026-03-31' } });
-    fireEvent.click(screen.getByRole('button', { name: '运行回测' }));
+    fireEvent.click(screen.getByRole('button', { name: '運行回測' }));
 
     await waitFor(() => {
       expect(mockRun).toHaveBeenCalledWith({
@@ -309,9 +309,9 @@ describe('BacktestPage', () => {
       });
     });
 
-    expect(await screen.findByText('已处理:')).toBeInTheDocument();
+    expect(await screen.findByText('已處理:')).toBeInTheDocument();
     expect(screen.getByText('已保存:')).toBeInTheDocument();
-    expect(screen.getByText('未找到符合条件的历史分析记录')).toBeInTheDocument();
+    expect(screen.getByText('未找到符合條件的歷史分析記錄')).toBeInTheDocument();
   });
 
   it('uses backend-applied eval window when run input is empty', async () => {
@@ -322,21 +322,21 @@ describe('BacktestPage', () => {
       insufficient: 0,
       errors: 0,
       appliedEvalWindowDays: 10,
-      message: '未找到符合条件的历史分析记录',
+      message: '未找到符合條件的歷史分析記錄',
       diagnostics: { emptyReason: 'no_matching_analysis' },
     });
     render(<BacktestPage />);
 
-    const filterInput = await screen.findByPlaceholderText('按股票代码筛选（留空表示全部）');
+    const filterInput = await screen.findByPlaceholderText('按股票代碼篩選（留空表示全部）');
     const windowInput = screen.getByPlaceholderText('10');
-    const fromInput = screen.getByLabelText('分析开始日期');
-    const toInput = screen.getByLabelText('分析结束日期');
+    const fromInput = screen.getByLabelText('分析開始日期');
+    const toInput = screen.getByLabelText('分析結束日期');
 
     fireEvent.change(filterInput, { target: { value: '600519.SH' } });
     fireEvent.change(windowInput, { target: { value: '' } });
     fireEvent.change(fromInput, { target: { value: '2026-03-01' } });
     fireEvent.change(toInput, { target: { value: '2026-03-31' } });
-    fireEvent.click(screen.getByRole('button', { name: '运行回测' }));
+    fireEvent.click(screen.getByRole('button', { name: '運行回測' }));
 
     await waitFor(() => {
       expect(mockRun).toHaveBeenCalledWith({
@@ -374,14 +374,14 @@ describe('BacktestPage', () => {
       });
     });
 
-    expect(await screen.findByText('未找到符合条件的历史分析记录')).toBeInTheDocument();
+    expect(await screen.findByText('未找到符合條件的歷史分析記錄')).toBeInTheDocument();
   });
 
   it('switches to next-day validation with the 1D shortcut', async () => {
     render(<BacktestPage />);
 
-    await screen.findByPlaceholderText('按股票代码筛选（留空表示全部）');
-    fireEvent.click(screen.getByRole('button', { name: '1 日验证' }));
+    await screen.findByPlaceholderText('按股票代碼篩選（留空表示全部）');
+    fireEvent.click(screen.getByRole('button', { name: '1 日驗證' }));
 
     await waitFor(() => {
       expect(mockGetResults).toHaveBeenLastCalledWith({
@@ -401,8 +401,8 @@ describe('BacktestPage', () => {
       });
     });
 
-    expect(screen.getByText('实际表现')).toBeInTheDocument();
-    expect(screen.getByText('准确性')).toBeInTheDocument();
-    expect(screen.getByText('1 日验证模式会用下一个交易日收盘表现校验 AI 预测。')).toBeInTheDocument();
+    expect(screen.getByText('實際表現')).toBeInTheDocument();
+    expect(screen.getByText('準確性')).toBeInTheDocument();
+    expect(screen.getByText('1 日驗證模式會用下一個交易日收盤表現校驗 AI 預測。')).toBeInTheDocument();
   });
 });

@@ -33,8 +33,7 @@ describe('ShareImageButton', () => {
     render(
       <ShareImageButton
         recordId={17}
-        reportTitle="中钨高新-000657"
-        reportLanguage="zh"
+        reportTitle="中鎢高新-000657"
       />,
     );
 
@@ -57,8 +56,7 @@ describe('ShareImageButton', () => {
     render(
       <ShareImageButton
         recordId={18}
-        reportTitle="A股市场复盘"
-        reportLanguage="zh"
+        reportTitle="A股市場覆盤"
       />,
     );
 
@@ -75,14 +73,14 @@ describe('ShareImageButton', () => {
       resolveImage?.(new Blob(['png'], { type: 'image/png' }));
     });
 
-    expect(screen.getByRole('button', { name: '再次点击分享' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '再次點擊分享' })).toBeEnabled();
     expect(nativeShare).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '再次点击分享' }));
+    fireEvent.click(screen.getByRole('button', { name: '再次點擊分享' }));
     expect(nativeShare).toHaveBeenCalledTimes(1);
     const sharePayload = nativeShare.mock.calls[0][0];
-    expect(sharePayload.title).toBe('A股市场复盘');
-    expect(sharePayload.files[0].name).toBe('A股市场复盘-18.png');
+    expect(sharePayload.title).toBe('A股市場覆盤');
+    expect(sharePayload.files[0].name).toBe('A股市場覆盤-18.png');
     expect(mockedGetShareImage).toHaveBeenCalledTimes(1);
   });
 
@@ -95,19 +93,18 @@ describe('ShareImageButton', () => {
     render(
       <ShareImageButton
         recordId={20}
-        reportTitle="A股市场复盘"
-        reportLanguage="zh"
+        reportTitle="A股市場覆盤"
       />,
     );
 
     expect(mockedGetShareImage).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: '分享' }));
 
-    expect(await screen.findByRole('button', { name: '再次点击分享' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: '再次點擊分享' })).toBeEnabled();
     expect(nativeShare).not.toHaveBeenCalled();
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '再次点击分享' }));
+    fireEvent.click(screen.getByRole('button', { name: '再次點擊分享' }));
     await waitFor(() => expect(nativeShare).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1));
     expect(screen.getByRole('button', { name: '已生成' })).toBeInTheDocument();
@@ -119,14 +116,13 @@ describe('ShareImageButton', () => {
     render(
       <ShareImageButton
         recordId={19}
-        reportTitle="中钨高新"
-        reportLanguage="zh"
+        reportTitle="中鎢高新"
       />,
     );
 
     expect(mockedGetShareImage).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '分享' }));
-    expect(await screen.findByRole('button', { name: '重试' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '重試' })).toBeInTheDocument();
     expect(mockedGetShareImage).toHaveBeenCalledWith(19);
   });
 
@@ -140,8 +136,7 @@ describe('ShareImageButton', () => {
     render(
       <ShareImageButton
         recordId={23}
-        reportTitle="桌面端报告"
-        reportLanguage="zh"
+        reportTitle="桌面端報告"
       />,
     );
 
@@ -161,8 +156,7 @@ describe('ShareImageButton', () => {
     render(
       <ShareImageButton
         recordId={24}
-        reportTitle="桌面端报告"
-        reportLanguage="zh"
+        reportTitle="桌面端報告"
       />,
     );
 
@@ -189,8 +183,7 @@ describe('ShareImageButton', () => {
     const { rerender } = render(
       <ShareImageButton
         recordId={21}
-        reportTitle="报告A"
-        reportLanguage="zh"
+        reportTitle="報告A"
       />,
     );
 
@@ -204,10 +197,10 @@ describe('ShareImageButton', () => {
 
     expect(mockedGetShareImage).toHaveBeenCalledWith(21);
     expect(nativeShare).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '再次点击分享' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '再次點擊分享' })).toBeInTheDocument();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '再次点击分享' }));
+      fireEvent.click(screen.getByRole('button', { name: '再次點擊分享' }));
       await Promise.resolve();
     });
 
@@ -217,8 +210,7 @@ describe('ShareImageButton', () => {
     rerender(
       <ShareImageButton
         recordId={22}
-        reportTitle="报告B"
-        reportLanguage="zh"
+        reportTitle="報告B"
       />,
     );
 
@@ -232,11 +224,11 @@ describe('ShareImageButton', () => {
     });
 
     expect(mockedGetShareImage).toHaveBeenCalledWith(22);
-    expect(screen.getByRole('button', { name: '再次点击分享' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '再次點擊分享' })).toBeInTheDocument();
     expect(clearTimeoutSpy).toHaveBeenCalled();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '再次点击分享' }));
+      fireEvent.click(screen.getByRole('button', { name: '再次點擊分享' }));
       await Promise.resolve();
     });
 

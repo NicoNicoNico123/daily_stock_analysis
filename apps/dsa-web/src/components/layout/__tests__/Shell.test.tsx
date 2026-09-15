@@ -49,8 +49,8 @@ describe('Shell', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getAllByRole('button', { name: '切换主题' }).length).toBeGreaterThan(0);
-    expect(screen.getByRole('link', { name: '问股' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '切換主題' }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: '問股' })).toBeInTheDocument();
     expect(screen.getByTestId('chat-completion-badge')).toBeInTheDocument();
     const logoutButton = screen.getByRole('button', { name: '退出' });
     expect(logoutButton).toBeInTheDocument();
@@ -68,9 +68,9 @@ describe('Shell', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getAllByRole('button', { name: '切换主题' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '切換主題' })[0]);
 
-    expect(await screen.findByRole('menu', { name: '主题模式' })).toBeInTheDocument();
+    expect(await screen.findByRole('menu', { name: '主題模式' })).toBeInTheDocument();
   });
 
   it('hides the desktop update entry outside Electron runtime', () => {
@@ -122,8 +122,8 @@ describe('Shell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '退出' }));
 
-    expect(await screen.findByRole('heading', { name: '退出登录' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '确认退出' }));
+    expect(await screen.findByRole('heading', { name: '退出登錄' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '確認退出' }));
     expect(mockLogout).toHaveBeenCalled();
   });
 });
