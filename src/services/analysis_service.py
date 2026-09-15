@@ -89,6 +89,7 @@ class AnalysisService:
         portfolio_context: Optional[Dict[str, Any]] = None,
         report_language: Optional[str] = None,
         analysis_target: Optional[Any] = None,
+        owner_user_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         执行股票分析
@@ -146,6 +147,7 @@ class AnalysisService:
                 analysis_skills=skills,
                 analysis_phase=analysis_phase,
                 portfolio_context=portfolio_context,
+                owner_user_id=owner_user_id,
             )
             
             # 确定报告类型 (API: simple/detailed/full/brief -> ReportType)

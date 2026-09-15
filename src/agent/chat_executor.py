@@ -57,12 +57,14 @@ class AgentChatExecutor:
         context: Optional[Dict[str, Any]] = None,
         cancel_event=None,
         selected_skill_ids: Optional[List[str]] = None,
+        owner_user_id: Optional[str] = None,
     ) -> AgentResult:
         turn = self.prepare_turn(
             message=message,
             session_id=session_id,
             context=context,
             selected_skill_ids=selected_skill_ids,
+            owner_user_id=owner_user_id,
         )
         return self.execute_turn(
             turn,
@@ -77,6 +79,7 @@ class AgentChatExecutor:
         session_id: str,
         context: Optional[Dict[str, Any]] = None,
         selected_skill_ids: Optional[List[str]] = None,
+        owner_user_id: Optional[str] = None,
     ) -> PreparedAgentChatTurn:
         """Prepare context and persist the user message without starting a backend."""
         conversation_manager.get_or_create(session_id)
@@ -99,6 +102,7 @@ class AgentChatExecutor:
             session_id,
             message,
             selected_skill_ids,
+            owner_user_id=owner_user_id,
         )
         return PreparedAgentChatTurn(
             message=message,

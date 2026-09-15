@@ -85,7 +85,7 @@ def test_runtime_owned_backend_uses_visible_history_and_forwards_cancellation() 
     assert backend.request.max_wall_clock_seconds == 45
     assert prepare.call_args.kwargs["include_provider_trace"] is False
     assert prepare.call_args.kwargs["strict_initial_stock_scope"] is True
-    add_user_message.assert_called_once_with("session", "question", [])
+    add_user_message.assert_called_once_with("session", "question", [], owner_user_id=None)
     persist_trace.assert_not_called()
 
 

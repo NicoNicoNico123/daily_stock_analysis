@@ -17,7 +17,7 @@ import re
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, Depends
 
-from api.deps import get_system_config_service
+from api.deps import get_current_user, get_system_config_service
 
 from api.v1.schemas.stocks import (
     ExtractFromImageResponse,
@@ -44,6 +44,8 @@ from src.services.stock_profile_service import InvalidStockProfileCode, StockPro
 from src.services.run_diagnostics import sanitize_diagnostic_text
 from src.services.stock_list_parser import split_stock_list
 from src.services.system_config_service import SystemConfigService
+from src.auth import is_multi_user_enabled
+from src.storage import DatabaseManager
 from data_provider.base import normalize_stock_code
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,22 @@ def _write_watchlist_codes(service: SystemConfigService, codes: list) -> None:
         mask_token="******",
         reload_now=True,
     )
+
+
+def _watchlist_user_id(current_user: Optional[dict]) -> Optional[int]:
+    """解析自选队列作用域：多用户模式返回当前用户 id，单用户模式返回 None。
+
+    - 单用户模式（多用户关闭）：走 legacy STOCK_LIST（.env/SystemConfig）路径，行为不变。
+    - 多用户开启但请求无身份（正常会被认证中间件拦截，此处兜底）时 fail-closed 返回 401。
+    """
+    if not is_multi_user_enabled():
+        return None
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "unauthorized", "message": "Login required"},
+        )
+    return int(current_user["id"])
 
 
 # Stock code validation patterns (aligned with frontend validateStockCode)
@@ -331,10 +349,18 @@ async def parse_import(request: Request) -> ExtractFromImageResponse:
 )
 def get_watchlist(
     service: SystemConfigService = Depends(get_system_config_service),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> WatchlistResponse:
     try:
+        user_id = _watchlist_user_id(current_user)
+        if user_id is not None:
+            # 多用户模式：读取当前登录用户在 user_stocks 表中的自选队列
+            codes = DatabaseManager.get_instance().list_user_stocks(user_id)
+            return WatchlistResponse(stock_codes=codes, message=f"当前自选 {len(codes)} 只股票")
         codes = _read_watchlist_codes(service)
         return WatchlistResponse(stock_codes=codes, message=f"当前自选 {len(codes)} 只股票")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"获取自选队列失败: {e}", exc_info=True)
         raise HTTPException(
@@ -357,9 +383,34 @@ def get_watchlist(
 def add_to_watchlist(
     request: WatchlistRequest,
     service: SystemConfigService = Depends(get_system_config_service),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> WatchlistResponse:
     try:
         validated = _validate_and_normalize_stock_code(request.stock_code)
+        user_id = _watchlist_user_id(current_user)
+        if user_id is not None:
+            # 多用户模式：与 legacy 路径使用同一套等价匹配键去重；
+            # 库内落库为校验后的规范化代码（user_stocks 为新表，无历史格式负担）。
+            db = DatabaseManager.get_instance()
+            codes = db.list_user_stocks(user_id)
+            existing_keys = [_watchlist_match_key(c) for c in codes]
+            if _watchlist_match_key(validated) not in existing_keys:
+                # 自选股数量上限（防滥用；admin 不受限）
+                from src.services.user_quota import get_watchlist_cap
+
+                role = (current_user or {}).get("role") if current_user else None
+                cap = get_watchlist_cap()
+                if cap > 0 and role != "admin" and len(codes) >= cap:
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "error": "watchlist_cap",
+                            "message": f"自选股数量已达上限（{cap}）",
+                        },
+                    )
+                db.add_user_stock(user_id, validated)
+                codes = db.list_user_stocks(user_id)
+            return WatchlistResponse(stock_codes=codes, message=f"已加入 {request.stock_code.strip()}")
         codes = _read_watchlist_codes(service)
         existing_keys = [_watchlist_match_key(c) for c in codes]
         if _watchlist_match_key(validated) not in existing_keys:
@@ -390,9 +441,22 @@ def add_to_watchlist(
 def remove_from_watchlist(
     request: WatchlistRequest,
     service: SystemConfigService = Depends(get_system_config_service),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> WatchlistResponse:
     try:
         validated = _validate_and_normalize_stock_code(request.stock_code)
+        user_id = _watchlist_user_id(current_user)
+        if user_id is not None:
+            # 多用户模式：按等价匹配键定位库内已存代码后精确移除
+            db = DatabaseManager.get_instance()
+            codes = db.list_user_stocks(user_id)
+            existing_keys = [_watchlist_match_key(c) for c in codes]
+            requested_key = _watchlist_match_key(validated)
+            if requested_key in existing_keys:
+                idx = existing_keys.index(requested_key)
+                db.remove_user_stock(user_id, codes[idx])
+                codes = db.list_user_stocks(user_id)
+            return WatchlistResponse(stock_codes=codes, message=f"已移除 {request.stock_code.strip()}")
         codes = _read_watchlist_codes(service)
         existing_keys = [_watchlist_match_key(c) for c in codes]
         requested_key = _watchlist_match_key(validated)

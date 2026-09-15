@@ -74,7 +74,8 @@ class TaskService:
         source_message: Optional[BotMessage] = None,
         save_context_snapshot: Optional[bool] = None,
         query_source: str = "bot",
-        analysis_target: Optional[AnalysisTarget] = None
+        analysis_target: Optional[AnalysisTarget] = None,
+        owner_user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         提交异步分析任务
@@ -88,6 +89,7 @@ class TaskService:
             analysis_target: 可选结构化分析目标（INDEX 时原样使用
                 ``target.canonical_id`` 并跳过股票代码规范化，防止
                 ``sh000016`` 被改写为 ``SH000016``）
+            owner_user_id: 归属用户 id（多用户模式；None = 全局/无归属）
 
         Returns:
             任务信息字典
@@ -112,7 +114,7 @@ class TaskService:
 
         task_id = f"{normalized_code}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
 
-        # 提交到线程池
+        # 提交到线程池（owner_user_id 用关键字传参，保持既有位置参数契约不变）
         self.executor.submit(
             self._run_analysis,
             normalized_code,
@@ -121,7 +123,8 @@ class TaskService:
             source_message,
             save_context_snapshot,
             query_source,
-            analysis_target
+            analysis_target,
+            owner_user_id=owner_user_id
         )
 
         logger.info(
@@ -170,7 +173,8 @@ class TaskService:
         source_message: Optional[BotMessage] = None,
         save_context_snapshot: Optional[bool] = None,
         query_source: str = "bot",
-        analysis_target: Optional[AnalysisTarget] = None
+        analysis_target: Optional[AnalysisTarget] = None,
+        owner_user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         执行单只股票分析
@@ -186,7 +190,8 @@ class TaskService:
                 "start_time": datetime.now().isoformat(),
                 "result": None,
                 "error": None,
-                "report_type": report_type.value
+                "report_type": report_type.value,
+                "owner_user_id": owner_user_id
             }
 
         try:
@@ -196,7 +201,7 @@ class TaskService:
 
             logger.info(f"[TaskService] 开始分析股票: {code}")
 
-            # 创建分析管道
+            # 创建分析管道（owner_user_id 贯穿历史归属与报告落盘目录）
             config = get_config()
             pipeline = StockAnalysisPipeline(
                 config=config,
@@ -204,7 +209,8 @@ class TaskService:
                 source_message=source_message,
                 query_id=task_id,
                 query_source=query_source,
-                save_context_snapshot=save_context_snapshot
+                save_context_snapshot=save_context_snapshot,
+                owner_user_id=owner_user_id
             )
 
             # 执行单只股票分析（启用单股推送）

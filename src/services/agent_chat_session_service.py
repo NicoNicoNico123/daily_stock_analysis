@@ -37,11 +37,17 @@ class AgentChatSessionService:
         config,
         session_id: str,
         requested_skill_ids: Optional[List[str]],
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> ChatSkillSelection:
         if requested_skill_ids is None:
             return ChatSkillSelection(
                 effective_skill_ids=(
-                    self.db.get_conversation_session_selected_skill_ids(session_id)
+                    self.db.get_conversation_session_selected_skill_ids(
+                        session_id,
+                        owner_user_id=owner_user_id,
+                        include_unowned=include_unowned,
+                    )
                 ),
                 selected_skill_ids_update=None,
             )
@@ -55,7 +61,11 @@ class AgentChatSessionService:
         if not normalized:
             return ChatSkillSelection(
                 effective_skill_ids=(
-                    self.db.get_conversation_session_selected_skill_ids(session_id)
+                    self.db.get_conversation_session_selected_skill_ids(
+                        session_id,
+                        owner_user_id=owner_user_id,
+                        include_unowned=include_unowned,
+                    )
                 ),
                 selected_skill_ids_update=None,
             )
@@ -68,25 +78,50 @@ class AgentChatSessionService:
         self,
         limit: int,
         user_id: Optional[str],
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[Dict[str, Any]]:
+        # 多用户模式：user_id 前缀过滤被忽略，严格按归属过滤；admin 额外可见 NULL（legacy/bot）会话。
         return self.db.get_chat_sessions(
             limit=limit,
             session_prefix=user_id,
             extra_session_ids=[user_id] if user_id else None,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
 
     def get_session_detail(
         self,
         session_id: str,
         limit: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> ChatSessionDetail:
-        messages = self.db.get_conversation_messages(session_id, limit=limit)
-        selected_skill_ids = self.db.get_conversation_session_selected_skill_ids(session_id)
+        messages = self.db.get_conversation_messages(
+            session_id,
+            limit=limit,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
+        selected_skill_ids = self.db.get_conversation_session_selected_skill_ids(
+            session_id,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
 
         return ChatSessionDetail(
             messages=messages,
             selected_skill_ids=selected_skill_ids,
         )
 
-    def delete_session(self, session_id: str) -> int:
-        return self.db.delete_conversation_session(session_id)
+    def delete_session(
+        self,
+        session_id: str,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> int:
+        return self.db.delete_conversation_session(
+            session_id,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )

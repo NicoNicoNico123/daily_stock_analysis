@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy import and_, delete, desc, func, or_, select
 
 from src.storage import (
     AlertCooldownRecord,
@@ -26,7 +26,19 @@ class AlertRepository:
     def __init__(self, db_manager: Optional[DatabaseManager] = None):
         self.db = db_manager or DatabaseManager.get_instance()
 
-    def create_rule(self, fields: Dict[str, Any]) -> AlertRuleRecord:
+    @staticmethod
+    def _user_scope_condition(column, owner_user_id: Optional[str], include_unowned: bool):
+        """按 owner 过滤 user_id 列；owner_user_id 为 None 时不过滤（单用户历史行为）。"""
+        if owner_user_id is None:
+            return None
+        if include_unowned:
+            # admin：可见本人 + NULL（legacy/无主）行
+            return or_(column == owner_user_id, column.is_(None))
+        return column == owner_user_id
+
+    def create_rule(self, fields: Dict[str, Any], owner_user_id: Optional[str] = None) -> AlertRuleRecord:
+        if owner_user_id is not None and "user_id" not in fields:
+            fields = {**fields, "user_id": owner_user_id}
         with self.db.get_session() as session:
             row = AlertRuleRecord(**fields)
             session.add(row)
@@ -34,19 +46,36 @@ class AlertRepository:
             session.refresh(row)
             return row
 
-    def get_rule(self, rule_id: int) -> Optional[AlertRuleRecord]:
+    def get_rule(
+        self,
+        rule_id: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[AlertRuleRecord]:
         with self.db.get_session() as session:
-            return session.execute(
-                select(AlertRuleRecord).where(AlertRuleRecord.id == rule_id).limit(1)
-            ).scalar_one_or_none()
+            query = select(AlertRuleRecord).where(AlertRuleRecord.id == rule_id)
+            scope = self._user_scope_condition(AlertRuleRecord.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                query = query.where(scope)
+            return session.execute(query.limit(1)).scalar_one_or_none()
 
-    def update_rule(self, rule_id: int, fields: Dict[str, Any]) -> Optional[AlertRuleRecord]:
+    def update_rule(
+        self,
+        rule_id: int,
+        fields: Dict[str, Any],
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[AlertRuleRecord]:
         with self.db.get_session() as session:
-            row = session.execute(
-                select(AlertRuleRecord).where(AlertRuleRecord.id == rule_id).limit(1)
-            ).scalar_one_or_none()
+            query = select(AlertRuleRecord).where(AlertRuleRecord.id == rule_id)
+            scope = self._user_scope_condition(AlertRuleRecord.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                query = query.where(scope)
+            row = session.execute(query.limit(1)).scalar_one_or_none()
             if row is None:
                 return None
+            if owner_user_id is not None and "user_id" not in fields:
+                row.user_id = owner_user_id
             for key, value in fields.items():
                 setattr(row, key, value)
             row.updated_at = datetime.now()
@@ -54,9 +83,18 @@ class AlertRepository:
             session.refresh(row)
             return row
 
-    def delete_rule(self, rule_id: int) -> bool:
+    def delete_rule(
+        self,
+        rule_id: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> bool:
         with self.db.get_session() as session:
-            result = session.execute(delete(AlertRuleRecord).where(AlertRuleRecord.id == rule_id))
+            conditions = [AlertRuleRecord.id == rule_id]
+            scope = self._user_scope_condition(AlertRuleRecord.user_id, owner_user_id, include_unowned)
+            if scope is not None:
+                conditions.append(scope)
+            result = session.execute(delete(AlertRuleRecord).where(and_(*conditions)))
             session.commit()
             return bool(result.rowcount)
 
@@ -70,8 +108,13 @@ class AlertRepository:
         source: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Tuple[List[AlertRuleRecord], int]:
         conditions = []
+        scope = self._user_scope_condition(AlertRuleRecord.user_id, owner_user_id, include_unowned)
+        if scope is not None:
+            conditions.append(scope)
         if enabled is not None:
             conditions.append(AlertRuleRecord.enabled.is_(enabled))
         if alert_type:
@@ -173,6 +216,11 @@ class AlertRepository:
     def record_notification_attempt(self, fields: Dict[str, Any]) -> AlertNotificationRecord:
         if not fields.get("channel"):
             raise ValueError("alert notification channel is required")
+        if "user_id" not in fields:
+            # 通知记录跟随触发规则归属（多用户模式）；查不到归属时保持 NULL
+            owner = self._resolve_trigger_owner(fields.get("trigger_id"))
+            if owner is not None:
+                fields = {**fields, "user_id": owner}
 
         with self.db.get_session() as session:
             row = AlertNotificationRecord(**fields)
@@ -180,6 +228,17 @@ class AlertRepository:
             session.commit()
             session.refresh(row)
             return row
+
+    def _resolve_trigger_owner(self, trigger_id: Optional[int]) -> Optional[str]:
+        if trigger_id is None:
+            return None
+        with self.db.get_session() as session:
+            return session.execute(
+                select(AlertRuleRecord.user_id)
+                .join(AlertTriggerRecord, AlertTriggerRecord.rule_id == AlertRuleRecord.id)
+                .where(AlertTriggerRecord.id == trigger_id)
+                .limit(1)
+            ).scalar_one_or_none()
 
     def get_active_cooldown(
         self,
@@ -271,8 +330,24 @@ class AlertRepository:
         status: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Tuple[List[AlertTriggerRecord], int]:
         conditions = []
+        # alert_triggers 无 user_id 列，按所属规则的归属过滤
+        scope = self._user_scope_condition(AlertRuleRecord.user_id, owner_user_id, include_unowned)
+        if scope is not None:
+            scoped_rule_ids = select(AlertRuleRecord.id).where(scope)
+            if include_unowned:
+                # admin：额外保留 legacy env 规则（rule_id 为空）产生的触发历史
+                conditions.append(
+                    or_(
+                        AlertTriggerRecord.rule_id.in_(scoped_rule_ids),
+                        AlertTriggerRecord.rule_id.is_(None),
+                    )
+                )
+            else:
+                conditions.append(AlertTriggerRecord.rule_id.in_(scoped_rule_ids))
         if rule_id is not None:
             conditions.append(AlertTriggerRecord.rule_id == rule_id)
         if target:
@@ -303,8 +378,13 @@ class AlertRepository:
         success: Optional[bool] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Tuple[List[AlertNotificationRecord], int]:
         conditions = []
+        scope = self._user_scope_condition(AlertNotificationRecord.user_id, owner_user_id, include_unowned)
+        if scope is not None:
+            conditions.append(scope)
         if trigger_id is not None:
             conditions.append(AlertNotificationRecord.trigger_id == trigger_id)
         if channel:

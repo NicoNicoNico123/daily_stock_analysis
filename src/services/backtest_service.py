@@ -52,6 +52,7 @@ class BacktestService:
         analysis_date_from: Optional[date] = None,
         analysis_date_to: Optional[date] = None,
         limit: int = 200,
+        owner_user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         config = get_config()
 
@@ -250,6 +251,10 @@ class BacktestService:
 
         saved = 0
         if results_to_save:
+            # 多用户模式给本次写入的回测结果标注归属；单用户模式保持 NULL
+            if owner_user_id is not None:
+                for row in results_to_save:
+                    row.user_id = owner_user_id
             saved = self.repo.save_results_batch(results_to_save, replace_existing=force)
 
         if saved:
@@ -506,6 +511,8 @@ class BacktestService:
         analysis_date_from: Optional[date] = None,
         analysis_date_to: Optional[date] = None,
         analysis_phase: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         config = get_config()
         engine_version = str(getattr(config, "backtest_engine_version", "v1"))
@@ -518,6 +525,8 @@ class BacktestService:
                 engine_version=engine_version,
                 analysis_date_from=analysis_date_from,
                 analysis_date_to=analysis_date_to,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
         if phase_bucket is not None:
             return self._get_recent_evaluations_by_phase(
@@ -529,6 +538,8 @@ class BacktestService:
                 analysis_date_from=analysis_date_from,
                 analysis_date_to=analysis_date_to,
                 phase_bucket=phase_bucket,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
 
         offset = max(page - 1, 0) * limit
@@ -541,6 +552,8 @@ class BacktestService:
             days=None,
             offset=offset,
             limit=limit,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         items = []
         for result, stock_name, trend_prediction, _created_at, context_snapshot, raw_result, report_type, analysis_sentiment_score in rows:
@@ -692,12 +705,16 @@ class BacktestService:
         engine_version: str,
         analysis_date_from: Optional[date],
         analysis_date_to: Optional[date],
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Optional[int]:
         windows = self.repo.get_distinct_eval_windows(
             code=code,
             engine_version=engine_version,
             analysis_date_from=analysis_date_from,
             analysis_date_to=analysis_date_to,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return windows[0] if windows else None
 
@@ -712,6 +729,8 @@ class BacktestService:
         analysis_date_from: Optional[date],
         analysis_date_to: Optional[date],
         phase_bucket: str,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         page_offset = max(page - 1, 0) * limit
         batch_size = max(100, min(500, limit * 4))
@@ -745,6 +764,8 @@ class BacktestService:
                 days=None,
                 offset=sql_offset,
                 limit=batch_limit,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
             if not batch:
                 break

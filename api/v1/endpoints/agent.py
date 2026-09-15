@@ -11,10 +11,10 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from api.deps import get_agent_chat_session_service
+from api.deps import get_agent_chat_session_service, get_current_user, resolve_owner_scope
 from api.v1.schemas.system_config import AgentBackendStatusResponse
 from src.config import get_config
 from src.services.agent_chat_session_service import AgentChatSessionService
@@ -43,6 +43,39 @@ TOOL_DISPLAY_NAMES: Dict[str, str] = {
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _enforce_chat_quota(owner_user_id):
+    """多用户模式：每用户每日 agent chat 轮数配额（服务端强制）。
+
+    返回 None 表示放行；否则返回 429 JSONResponse。
+    """
+    if not owner_user_id:
+        return None
+    try:
+        from src.auth import is_multi_user_enabled
+        from src.services.user_quota import QUOTA_CHAT, consume_daily_quota, get_daily_chat_limit
+
+        if not is_multi_user_enabled():
+            return None
+        try:
+            user_id = int(owner_user_id)
+        except (TypeError, ValueError):
+            return None
+        allowed, used, limit = consume_daily_quota(user_id, QUOTA_CHAT)
+        if allowed:
+            return None
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "quota_exceeded",
+                "message": f"今日对话轮数已用尽（{used}/{limit}），明天再试或联系管理员调整限额",
+            },
+        )
+    except Exception as exc:
+        # 护栏基础设施故障不拖垮 chat 主流程（耗尽判定仍在 consume_daily_quota 内生效）
+        logger.warning("[quota] chat 配额检查异常（放行）: %s", exc)
+        return None
 
 _ACTIVE_CODEX_STREAMS: Dict[str, threading.Event] = {}
 _ACTIVE_CODEX_STREAMS_LOCK = threading.Lock()
@@ -198,6 +231,7 @@ async def get_strategies():
 async def agent_chat(
     request: ChatRequest,
     session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
     """
     Chat with the AI Agent without progress events.
@@ -218,12 +252,19 @@ async def agent_chat(
         )
     
     session_id = request.session_id or str(uuid.uuid4())
-    
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
+
+    quota_error = _enforce_chat_quota(owner_user_id)
+    if quota_error is not None:
+        return quota_error
+
     try:
         skill_selection = session_service.resolve_skill_selection(
             config,
             session_id,
             request.effective_skills,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         skills = skill_selection.effective_skill_ids
         selected_skill_ids = skill_selection.selected_skill_ids_update
@@ -236,7 +277,8 @@ async def agent_chat(
         result = await loop.run_in_executor(
             None,
             lambda: executor.chat(message=request.message, session_id=session_id,
-                                  context=ctx, selected_skill_ids=selected_skill_ids),
+                                  context=ctx, selected_skill_ids=selected_skill_ids,
+                                  owner_user_id=owner_user_id),
         )
 
         return ChatResponse(
@@ -276,6 +318,7 @@ async def list_chat_sessions(
     limit: int = 50,
     user_id: Optional[str] = None,
     session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
     """获取聊天会话列表
 
@@ -286,8 +329,20 @@ async def list_chat_sessions(
             starts with this prefix are returned.  The value must
             include the platform prefix, e.g. ``telegram_12345``,
             ``feishu_ou_abc``.
+
+    多用户模式下忽略入参 ``user_id``（防止越权枚举他人会话），仅按登录身份过滤；
+    单用户模式保留 ``user_id`` 前缀过滤行为，兼容 bot / 集成调用方。
     """
-    sessions = session_service.list_sessions(limit, user_id)
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
+    if owner_user_id:
+        sessions = session_service.list_sessions(
+            limit,
+            None,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
+    else:
+        sessions = session_service.list_sessions(limit, user_id)
     return SessionsResponse(sessions=sessions)
 
 
@@ -296,11 +351,15 @@ async def get_chat_session_messages(
     session_id: str,
     limit: int = 100,
     session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
     """获取单个会话的完整消息"""
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     detail = session_service.get_session_detail(
         session_id,
         limit,
+        owner_user_id=owner_user_id,
+        include_unowned=include_unowned,
     )
     return SessionMessagesResponse(
         session_id=session_id,
@@ -315,9 +374,15 @@ async def get_chat_session_messages(
 async def delete_chat_session(
     session_id: str,
     session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
     """删除指定会话"""
-    count = session_service.delete_session(session_id)
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
+    count = session_service.delete_session(
+        session_id,
+        owner_user_id=owner_user_id,
+        include_unowned=include_unowned,
+    )
     return {"deleted": count}
 
 
@@ -477,6 +542,7 @@ async def agent_research(request: ResearchRequest):
 async def agent_chat_stream(
     request: ChatRequest,
     session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+    current_user: Optional[dict] = Depends(get_current_user),
 ):
     """
     Chat with the AI Agent, streaming progress via SSE.
@@ -501,10 +567,18 @@ async def agent_chat_stream(
     queue: asyncio.Queue = asyncio.Queue()
     cancel_event = threading.Event()
     request_id = request.request_id or str(uuid.uuid4())
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
+
+    quota_error = _enforce_chat_quota(owner_user_id)
+    if quota_error is not None:
+        return quota_error
+
     skill_selection = session_service.resolve_skill_selection(
         config,
         session_id,
         request.effective_skills,
+        owner_user_id=owner_user_id,
+        include_unowned=include_unowned,
     )
     skills = skill_selection.effective_skill_ids
     selected_skill_ids = skill_selection.selected_skill_ids_update
@@ -578,6 +652,7 @@ async def agent_chat_stream(
                     session_id=session_id,
                     context=stream_ctx,
                     selected_skill_ids=selected_skill_ids,
+                    owner_user_id=owner_user_id,
                 )
             except asyncio.CancelledError:
                 raise

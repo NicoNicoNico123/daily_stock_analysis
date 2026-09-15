@@ -15,7 +15,7 @@ from typing import Any, Mapping, Optional
 from fastapi import APIRouter, HTTPException, Query, Depends, Body
 from fastapi.responses import HTMLResponse, Response
 
-from api.deps import get_database_manager
+from api.deps import get_current_user, get_database_manager, resolve_owner_scope
 from api.v1.schemas.history import (
     HistoryListResponse,
     HistoryItem,
@@ -86,14 +86,33 @@ def _history_share_image_payload(result: Mapping[str, Any]) -> Optional[Mapping[
     return raw_result if isinstance(raw_result, Mapping) else None
 
 
+def _owner_scope_kwargs(
+    owner_user_id: Optional[str],
+    include_unowned: bool,
+) -> dict:
+    """构造归属过滤 kwargs。
+
+    单用户模式（owner_user_id=None）返回空 dict，保持旧的无参调用签名，
+    兼容现有测试替身与直接函数调用路径。
+    """
+    if owner_user_id is None:
+        return {}
+    return {"owner_user_id": owner_user_id, "include_unowned": include_unowned}
+
+
 def _history_share_image_input(
     record_id: str,
     db_manager: DatabaseManager,
+    owner_user_id: Optional[str] = None,
+    include_unowned: bool = False,
 ) -> tuple[Mapping[str, Any], str]:
     """Load the shared persisted input used by PNG and desktop HTML renderers."""
 
     service = HistoryService(db_manager)
-    result = service.resolve_and_get_detail(record_id)
+    result = service.resolve_and_get_detail(
+        record_id,
+        **_owner_scope_kwargs(owner_user_id, include_unowned),
+    )
     if result is None:
         raise HTTPException(
             status_code=404,
@@ -104,7 +123,10 @@ def _history_share_image_input(
         )
 
     try:
-        markdown_content = service.get_markdown_report(record_id)
+        markdown_content = service.get_markdown_report(
+            record_id,
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
+        )
     except MarkdownReportGenerationError as exc:
         logger.error("Share image report generation failed for %s: %s", record_id, exc.message)
         raise HTTPException(
@@ -237,13 +259,14 @@ def get_history_list(
     end_date: Optional[str] = Query(None, description="结束日期 (YYYY-MM-DD)"),
     page: int = Query(1, ge=1, description="页码（从 1 开始）"),
     limit: int = Query(20, ge=1, le=100, description="每页数量"),
-    db_manager: DatabaseManager = Depends(get_database_manager)
+    db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> HistoryListResponse:
     """
     获取历史分析列表
-    
+
     分页获取历史分析记录摘要，支持按股票代码和日期范围筛选
-    
+
     Args:
         stock_code: 股票代码筛选
         report_type: 报告类型筛选
@@ -252,13 +275,16 @@ def get_history_list(
         page: 页码
         limit: 每页数量
         db_manager: 数据库管理器依赖
-        
+        current_user: 当前登录用户（多用户模式；单用户模式为 None）
+
     Returns:
         HistoryListResponse: 历史记录列表
     """
+    # 多用户模式按登录用户过滤可见历史；单用户模式 (None, False) 保持原行为
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     try:
         service = HistoryService(db_manager)
-        
+
         # 使用 def 而非 async def，FastAPI 自动在线程池中执行
         result = service.get_history_list(
             stock_code=stock_code,
@@ -266,7 +292,8 @@ def get_history_list(
             start_date=start_date,
             end_date=end_date,
             page=page,
-            limit=limit
+            limit=limit,
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
         )
         
         # 转换为响应模型
@@ -329,7 +356,10 @@ def get_history_list(
 def delete_history_by_code(
     stock_code: str,
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> DeleteHistoryResponse:
+    # 多用户模式下仅删除当前用户自己的记录（大盘复盘行由存储层保护）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     try:
         candidates = HistoryService._history_code_filter_candidates(stock_code)
         if not candidates:
@@ -343,12 +373,16 @@ def delete_history_by_code(
             records, _ = db_manager.get_analysis_history_paginated(
                 code=candidates,
                 limit=_DELETE_BY_CODE_BATCH_SIZE,
+                **_owner_scope_kwargs(owner_user_id, include_unowned),
             )
             record_ids = [r.id for r in records if r.id is not None]
             if not record_ids:
                 break
 
-            batch_deleted = db_manager.delete_analysis_history_records(record_ids)
+            batch_deleted = db_manager.delete_analysis_history_records(
+                record_ids,
+                **_owner_scope_kwargs(owner_user_id, include_unowned),
+            )
             if batch_deleted == 0:
                 raise RuntimeError("history deletion made no progress")
             deleted += batch_deleted
@@ -380,11 +414,14 @@ def delete_history_by_code(
 )
 def delete_history_records(
     request: DeleteHistoryRequest = Body(...),
-    db_manager: DatabaseManager = Depends(get_database_manager)
+    db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> DeleteHistoryResponse:
     """
     按主键 ID 批量删除历史分析记录。
     """
+    # 多用户模式下仅删除当前用户自己的记录（大盘复盘行由存储层保护）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     record_ids = sorted({record_id for record_id in request.record_ids if record_id is not None})
     if not record_ids:
         raise HTTPException(
@@ -397,7 +434,10 @@ def delete_history_records(
 
     try:
         service = HistoryService(db_manager)
-        deleted = service.delete_history_records(record_ids)
+        deleted = service.delete_history_records(
+            record_ids,
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
+        )
         return DeleteHistoryResponse(deleted=deleted)
     except HTTPException:
         raise
@@ -427,7 +467,10 @@ def get_stock_bar(
     end_date: Optional[str] = Query(None, description="结束日期 (YYYY-MM-DD)"),
     limit: int = Query(200, ge=1, le=500, description="最大返回数量"),
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> StockBarResponse:
+    # 多用户模式仅统计当前用户自己的历史（大盘复盘行由存储层保持全局可见）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     try:
         from datetime import date as date_type
         from src.utils.data_processing import parse_json_field
@@ -443,6 +486,7 @@ def get_stock_bar(
             start_date=start,
             end_date=end,
             limit=fetch_limit,
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
         )
 
         # Deduplicate by normalized code, keeping the record with highest id
@@ -482,6 +526,7 @@ def get_stock_bar(
             analysis_count = db_manager.get_analysis_history_paginated(
                 code=HistoryService._history_code_filter_candidates(display_stock_code),
                 limit=1,
+                **_owner_scope_kwargs(owner_user_id, include_unowned),
             )[1]
             items.append(
                 StockBarItem(
@@ -531,29 +576,36 @@ def get_stock_bar(
 )
 def get_history_detail(
     record_id: str,
-    db_manager: DatabaseManager = Depends(get_database_manager)
+    db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> AnalysisReport:
     """
     获取历史报告详情
-    
+
     根据分析历史记录主键 ID 或 query_id 获取完整的历史分析报告。
     优先尝试按主键 ID（整数）查询，若参数不是合法整数则按 query_id 查询。
-    
+
     Args:
         record_id: 分析历史记录主键 ID（整数）或 query_id（字符串）
         db_manager: 数据库管理器依赖
-        
+        current_user: 当前登录用户（多用户模式；单用户模式为 None）
+
     Returns:
         AnalysisReport: 完整分析报告
-        
+
     Raises:
         HTTPException: 404 - 报告不存在
     """
+    # 多用户模式仅允许查看当前用户自己的记录（大盘复盘行全局可见）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     try:
         service = HistoryService(db_manager)
-        
+
         # Try integer ID first, fall back to query_id string lookup
-        result = service.resolve_and_get_detail(record_id)
+        result = service.resolve_and_get_detail(
+            record_id,
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
+        )
         
         if result is None:
             raise HTTPException(
@@ -705,13 +757,19 @@ def get_history_detail(
 def get_history_diagnostics(
     record_id: str,
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> RunDiagnosticSummaryResponse:
     """
     获取历史报告运行诊断摘要。
     """
+    # 多用户模式仅允许查看当前用户自己的记录（大盘复盘行全局可见）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     try:
         service = HistoryService(db_manager)
-        summary = service.resolve_and_get_diagnostics(record_id)
+        summary = service.resolve_and_get_diagnostics(
+            record_id,
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
+        )
         if summary is None:
             raise HTTPException(
                 status_code=404,
@@ -748,13 +806,19 @@ def get_history_diagnostics(
 def get_history_run_flow(
     record_id: str,
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> RunFlowSnapshot:
     """
     获取历史报告运行流。
     """
+    # 多用户模式仅允许查看当前用户自己的记录（大盘复盘行全局可见）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     try:
         service = HistoryService(db_manager)
-        snapshot = service.resolve_and_get_run_flow(record_id)
+        snapshot = service.resolve_and_get_run_flow(
+            record_id,
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
+        )
         if snapshot is None:
             raise HTTPException(
                 status_code=404,
@@ -790,7 +854,8 @@ def get_history_run_flow(
 def get_history_news(
     record_id: str,
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
-    db_manager: DatabaseManager = Depends(get_database_manager)
+    db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> NewsIntelResponse:
     """
     获取历史报告关联新闻
@@ -802,13 +867,20 @@ def get_history_news(
         record_id: 分析历史记录主键 ID（整数）或 query_id（字符串）
         limit: 返回数量限制
         db_manager: 数据库管理器依赖
+        current_user: 当前登录用户（多用户模式；单用户模式为 None）
 
     Returns:
         NewsIntelResponse: 新闻情报列表
     """
+    # 多用户模式仅允许查看当前用户自己的记录（大盘复盘行全局可见）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     try:
         service = HistoryService(db_manager)
-        items = service.resolve_and_get_news(record_id=record_id, limit=limit)
+        items = service.resolve_and_get_news(
+            record_id=record_id,
+            limit=limit,
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
+        )
 
         response_items = [
             NewsIntelItem(
@@ -850,8 +922,16 @@ def get_history_news(
 def get_history_share_image_html(
     record_id: str,
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> HTMLResponse:
-    result, markdown_content = _history_share_image_input(record_id, db_manager)
+    # 多用户模式仅允许查看当前用户自己的记录（大盘复盘行全局可见）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
+    result, markdown_content = _history_share_image_input(
+        record_id,
+        db_manager,
+        owner_user_id,
+        include_unowned,
+    )
     config = get_config()
     max_chars = getattr(config, "markdown_to_image_max_chars", 15000)
     if len(markdown_content) > max_chars:
@@ -904,8 +984,16 @@ def get_history_share_image_html(
 def get_history_share_image(
     record_id: str,
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> Response:
-    result, markdown_content = _history_share_image_input(record_id, db_manager)
+    # 多用户模式仅允许查看当前用户自己的记录（大盘复盘行全局可见）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
+    result, markdown_content = _history_share_image_input(
+        record_id,
+        db_manager,
+        owner_user_id,
+        include_unowned,
+    )
 
     config = get_config()
     image_bytes = markdown_to_image(
@@ -948,7 +1036,8 @@ def get_history_share_image(
 )
 def get_history_markdown(
     record_id: str,
-    db_manager: DatabaseManager = Depends(get_database_manager)
+    db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> MarkdownReportResponse:
     """
     获取历史报告的 Markdown 格式内容
@@ -958,6 +1047,7 @@ def get_history_markdown(
     Args:
         record_id: 分析历史记录主键 ID（整数）或 query_id（字符串）
         db_manager: 数据库管理器依赖
+        current_user: 当前登录用户（多用户模式；单用户模式为 None）
 
     Returns:
         MarkdownReportResponse: Markdown 格式的完整报告
@@ -966,10 +1056,15 @@ def get_history_markdown(
         HTTPException: 404 - 报告不存在
         HTTPException: 500 - 报告生成失败（服务器内部错误）
     """
+    # 多用户模式仅允许查看当前用户自己的记录（大盘复盘行全局可见）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     service = HistoryService(db_manager)
 
     try:
-        markdown_content = service.get_markdown_report(record_id)
+        markdown_content = service.get_markdown_report(
+            record_id,
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
+        )
     except MarkdownReportGenerationError as e:
         logger.error(f"Markdown report generation failed for {record_id}: {e.message}")
         raise HTTPException(

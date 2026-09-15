@@ -30,7 +30,7 @@ from typing import Optional, Union, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from api.deps import get_config_dep
+from api.deps import get_config_dep, get_current_user, resolve_owner_scope
 from api.v1.errors import api_error
 from api.v1.schemas.analysis import (
     AnalyzeRequest,
@@ -84,12 +84,14 @@ from src.services.name_to_code_resolver import resolve_name_to_code
 from src.services.task_queue import (
     get_task_queue,
     DuplicateTaskError,
+    AnalysisQuotaExceededError,
     TaskStatus as TaskStatusEnum,
 )
 from src.services.analysis_service import asset_type_from_canonical_code
 from src.services.run_diagnostics import build_run_diagnostic_summary
 from src.services.run_flow import build_task_run_flow_snapshot
 from src.services.empty_news import empty_news_disclosure_from_stored
+from src.auth import is_multi_user_enabled
 from src.utils.data_processing import (
     normalize_model_used,
     parse_json_field,
@@ -105,6 +107,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _SUPPORTED_FREE_TEXT_RE = re.compile(r"^[A-Za-z0-9.*\-+\u3400-\u9fff\s]+$")
+
+
+def _analysis_owner_scope(current_user: Optional[dict]):
+    """解析分析任务归属作用域 (owner_user_id, include_unowned)。
+
+    - 多用户关闭：返回 (None, False)，任务不过滤、提交不留归属（单用户行为不变）。
+    - 多用户开启但请求无身份（正常由认证中间件拦截，此处兜底）时 fail-closed 401。
+    """
+    if not is_multi_user_enabled():
+        return None, False
+    if not current_user:
+        raise api_error(401, "unauthorized", "Login required")
+    return resolve_owner_scope(current_user)
+
+
+def _task_visible_to(task: Any, owner_user_id: Optional[str], include_unowned: bool) -> bool:
+    """判断任务对当前作用域是否可见；owner_user_id 为空（单用户模式）时全量可见。"""
+    if owner_user_id is None:
+        return True
+    task_owner = getattr(task, "owner_user_id", None)
+    if task_owner == owner_user_id:
+        return True
+    return bool(include_unowned) and task_owner is None
 
 
 def _get_task_trace_id(task: Any) -> Optional[str]:
@@ -344,7 +369,8 @@ def _resolve_analysis_input(raw_value: str):
 )
 def trigger_analysis(
         request: AnalyzeRequest,
-        config: Config = Depends(get_config_dep)
+        config: Config = Depends(get_config_dep),
+        current_user: Optional[dict] = Depends(get_current_user),
 ) -> Union[AnalysisResultResponse, JSONResponse]:
     """
     触发股票分析
@@ -370,6 +396,8 @@ def trigger_analysis(
         HTTPException: 500 - 分析失败
     """
     # 校验请求参数
+    owner_user_id, include_unowned = _analysis_owner_scope(current_user)
+
     stock_codes = []
     if request.stock_code:
         stock_codes.append(request.stock_code)
@@ -444,10 +472,21 @@ def trigger_analysis(
             code, target = rejected_entries[0]
             reason = target.unsupported_reason or f"不支持的目标: {code}"
             raise api_error(400, "validation_error", reason)
-        return _handle_sync_analysis(stock_codes[0], request, analysis_target=unique_targets[0] if unique_targets else None)
+        return _handle_sync_analysis(
+            stock_codes[0],
+            request,
+            analysis_target=unique_targets[0] if unique_targets else None,
+            owner_user_id=owner_user_id,
+        )
 
     # Async mode submits one task per stock.
-    return _handle_async_analysis_batch(stock_codes, request, analysis_targets=unique_targets, rejected_entries=rejected_entries)
+    return _handle_async_analysis_batch(
+        stock_codes,
+        request,
+        analysis_targets=unique_targets,
+        rejected_entries=rejected_entries,
+        owner_user_id=owner_user_id,
+    )
 
 
 def _handle_async_analysis_batch(
@@ -455,6 +494,7 @@ def _handle_async_analysis_batch(
     request: AnalyzeRequest,
     analysis_targets: Optional[list] = None,
     rejected_entries: Optional[list] = None,
+    owner_user_id: Optional[str] = None,
 ) -> JSONResponse:
     """
     Handle asynchronous analysis requests, including batch submission.
@@ -467,6 +507,8 @@ def _handle_async_analysis_batch(
         rejected_entries: optional list of ``(code, target)`` pairs that were
             explicitly rejected (e.g. unregistered CSI); returned in the
             ``rejected`` field for batch requests only.
+        owner_user_id: owner attribution stamped onto accepted tasks (multi-user
+            mode only; dedupe keys become per-owner in that mode)
     """
     task_queue = get_task_queue()
     
@@ -505,8 +547,22 @@ def _handle_async_analysis_batch(
     # 的既有 kwargs 契约不变。
     if analysis_targets is not None and any(t is not None for t in analysis_targets):
         submit_kwargs["analysis_targets"] = analysis_targets
+    # 多用户模式：任务带归属提交（去重键按 owner 隔离）；
+    # 单用户模式不传该参数，保持既有 kwargs 契约与去重键完全不变
+    if owner_user_id is not None:
+        submit_kwargs["owner_user_id"] = owner_user_id
 
-    accepted_tasks, duplicate_errors = task_queue.submit_tasks_batch(**submit_kwargs)
+    try:
+        accepted_tasks, duplicate_errors = task_queue.submit_tasks_batch(**submit_kwargs)
+    except AnalysisQuotaExceededError as exc:
+        # 多用户配额护栏：当日分析次数用尽
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "quota_exceeded",
+                "message": f"今日分析次数已用尽（{exc.used}/{exc.limit}），明天再试或联系管理员调整限额",
+            },
+        )
 
     accepted = [
         BatchTaskAcceptedItem(
@@ -586,6 +642,7 @@ def _handle_sync_analysis(
     stock_code: str,
     request: AnalyzeRequest,
     analysis_target: Optional[Any] = None,
+    owner_user_id: Optional[str] = None,
 ) -> AnalysisResultResponse:
     """
     处理同步分析请求
@@ -596,7 +653,28 @@ def _handle_sync_analysis(
     from src.services.analysis_service import AnalysisService
     
     query_id = uuid.uuid4().hex
-    
+
+    # 多用户配额：同步分析路径与队列路径同一计数
+    if owner_user_id:
+        try:
+            user_id_int = int(owner_user_id)
+        except (TypeError, ValueError):
+            user_id_int = None
+        if user_id_int is not None:
+            from src.auth import is_multi_user_enabled
+            from src.services.user_quota import QUOTA_ANALYSIS, consume_daily_quota
+
+            if is_multi_user_enabled():
+                allowed, used, limit = consume_daily_quota(user_id_int, QUOTA_ANALYSIS)
+                if not allowed:
+                    return JSONResponse(
+                        status_code=429,
+                        content={
+                            "error": "quota_exceeded",
+                            "message": f"今日分析次数已用尽（{used}/{limit}），明天再试或联系管理员调整限额",
+                        },
+                    )
+
     try:
         service = AnalysisService()
         result = service.analyze_stock(
@@ -609,6 +687,7 @@ def _handle_sync_analysis(
             analysis_phase=request.analysis_phase,
             report_language=getattr(request, "report_language", None),
             analysis_target=analysis_target,
+            owner_user_id=owner_user_id,
         )
 
         if result is None:
@@ -736,29 +815,38 @@ def get_task_list(
         description="筛选状态：pending, processing, completed, failed, cancel_requested, cancelled（支持逗号分隔多个）"
     ),
     limit: int = Query(20, description="返回数量限制", ge=1, le=100),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> TaskListResponse:
     """
     获取分析任务列表
-    
+
     Args:
         status: 状态筛选（可选）
         limit: 返回数量限制
-        
+
     Returns:
         TaskListResponse: 任务列表响应
     """
     task_queue = get_task_queue()
-    
-    # 获取所有任务
-    all_tasks = task_queue.list_all_tasks(limit=limit)
-    
+    owner_user_id, include_unowned = _analysis_owner_scope(current_user)
+
+    # 获取所有任务（多用户模式下仅返回当前用户可见的任务）
+    all_tasks = task_queue.list_all_tasks(
+        limit=limit,
+        owner_user_id=owner_user_id,
+        include_unowned=include_unowned,
+    )
+
     # 状态筛选
     if status:
         status_list = [s.strip().lower() for s in status.split(",")]
         all_tasks = [t for t in all_tasks if t.status.value in status_list]
-    
-    # 统计信息
-    stats = task_queue.get_task_stats()
+
+    # 统计信息（与列表同作用域）
+    stats = task_queue.get_task_stats(
+        owner_user_id=owner_user_id,
+        include_unowned=include_unowned,
+    )
     
     # 转换为 Schema
     task_infos = [
@@ -805,10 +893,10 @@ def get_task_list(
     summary="任务状态 SSE 流",
     description="通过 Server-Sent Events 实时推送任务状态变化"
 )
-async def task_stream():
+async def task_stream(current_user: Optional[dict] = Depends(get_current_user)):
     """
     SSE 任务状态流
-    
+
     事件类型：
     - connected: 连接成功
     - task_created: 新任务创建
@@ -817,19 +905,24 @@ async def task_stream():
     - task_completed: 任务完成
     - task_failed: 任务失败
     - heartbeat: 心跳（每 30 秒）
-    
+
     Returns:
         StreamingResponse: SSE 事件流
     """
+    owner_user_id, include_unowned = _analysis_owner_scope(current_user)
+
     async def event_generator():
         task_queue = get_task_queue()
         event_queue: asyncio.Queue = asyncio.Queue()
-        
+
         # 发送连接成功事件
         yield _format_sse_event("connected", {"message": "Connected to task stream"})
-        
-        # 发送当前进行中的任务
-        pending_tasks = task_queue.list_pending_tasks()
+
+        # 发送当前进行中的任务（多用户模式下仅当前用户可见的任务）
+        pending_tasks = task_queue.list_pending_tasks(
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         for task in pending_tasks:
             yield _format_sse_event("task_created", task.to_dict())
         
@@ -917,7 +1010,10 @@ def _load_history_run_flow_by_query_id(
     summary="获取分析任务运行流",
     description="根据 task_id 查询任务数据流/信息流快照；活跃任务缺少诊断时返回骨架流。",
 )
-def get_task_run_flow(task_id: str) -> RunFlowSnapshot:
+def get_task_run_flow(
+    task_id: str,
+    current_user: Optional[dict] = Depends(get_current_user),
+) -> RunFlowSnapshot:
     """
     查询分析任务运行流。
 
@@ -926,6 +1022,11 @@ def get_task_run_flow(task_id: str) -> RunFlowSnapshot:
     """
     task_queue = get_task_queue()
     task = task_queue.get_task(task_id)
+    owner_user_id, include_unowned = _analysis_owner_scope(current_user)
+
+    # 多用户模式：越权任务直接 404，不再回退历史查询（避免跨用户读取运行流）
+    if task and not _task_visible_to(task, owner_user_id, include_unowned):
+        raise api_error(404, "not_found", f"任务 {task_id} 不存在或已过期")
 
     if task:
         if task.status == TaskStatusEnum.COMPLETED:
@@ -1167,25 +1268,34 @@ def _build_task_analysis_result(task: Any) -> AnalysisResultResponse:
     summary="查询分析任务状态",
     description="根据 task_id 查询单个任务的状态"
 )
-def get_analysis_status(task_id: str) -> TaskStatus:
+def get_analysis_status(
+    task_id: str,
+    current_user: Optional[dict] = Depends(get_current_user),
+) -> TaskStatus:
     """
     查询分析任务状态
-    
+
     优先从任务队列查询，如果不存在则从数据库查询历史记录
-    
+
     Args:
         task_id: 任务 ID
-        
+
     Returns:
         TaskStatus: 任务状态信息
-        
+
     Raises:
         HTTPException: 404 - 任务不存在
     """
+    owner_user_id, include_unowned = _analysis_owner_scope(current_user)
+
     # 1. 先从任务队列查询
     task_queue = get_task_queue()
     task = task_queue.get_task(task_id)
-    
+
+    # 多用户模式：越权任务直接 404，不再回退历史查询（避免跨用户读取结果）
+    if task and not _task_visible_to(task, owner_user_id, include_unowned):
+        raise api_error(404, "not_found", f"任务 {task_id} 不存在或已过期")
+
     if task:
         result: Optional[AnalysisResultResponse] = None
         market_review_report = None
@@ -1225,11 +1335,16 @@ def get_analysis_status(task_id: str) -> TaskStatus:
             skills=getattr(task, "skills", None),
         )
     
-    # 2. 从数据库查询已完成的记录
+    # 2. 从数据库查询已完成的记录（多用户模式下按归属过滤）
     try:
         from src.storage import DatabaseManager
         db = DatabaseManager.get_instance()
-        records = db.get_analysis_history(query_id=task_id, limit=1)
+        records = db.get_analysis_history(
+            query_id=task_id,
+            limit=1,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
 
         if records:
             record = records[0]

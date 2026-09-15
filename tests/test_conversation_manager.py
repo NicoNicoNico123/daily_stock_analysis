@@ -25,6 +25,7 @@ class ConversationManagerThreadSafetyTestCase(unittest.TestCase):
             "skill-session",
             "hello",
             [],
+            owner_user_id=None,
         )
 
     def test_add_message_is_safe_under_parallel_session_creation(self):

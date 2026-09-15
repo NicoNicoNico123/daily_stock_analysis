@@ -52,7 +52,8 @@ def _dedupe_stock_code_key(stock_code: str) -> str:
 def _dedupe_task_key(
     stock_code: str,
     analysis_target: Optional[Any] = None,
-) -> str:
+    owner_user_id: Optional[str] = None,
+):
     """
     Build the duplicate-detection key for a submitted task.
 
@@ -61,12 +62,29 @@ def _dedupe_task_key(
     registered CSI aliases converge to one key. Stock targets keep the legacy
     code-based key, preserving existing dedup semantics for
     ``600519``/``600519.SH`` and friends.
+
+    多用户模式下键升级为 ``(owner_user_id, canonical)`` 元组，使不同用户的
+    同一股票互不去重；多用户关闭时保持原有裸代码键，行为完全不变。
     """
     from src.services.stock_list_parser import ParseStatus
 
     if analysis_target is not None and analysis_target.asset_type == ParseStatus.INDEX:
-        return analysis_target.canonical_id
-    return _dedupe_stock_code_key(stock_code)
+        canonical = analysis_target.canonical_id
+    else:
+        canonical = _dedupe_stock_code_key(stock_code)
+    if _multi_user_mode_enabled():
+        return (owner_user_id, canonical)
+    return canonical
+
+
+def _multi_user_mode_enabled() -> bool:
+    """延迟读取多用户开关（函数内导入，避免与 src.auth 形成导入环）。"""
+    try:
+        from src.auth import is_multi_user_enabled
+
+        return bool(is_multi_user_enabled())
+    except Exception:
+        return False
 
 
 def asset_type_from_analysis_target(analysis_target: Optional[Any]) -> Optional[str]:
@@ -136,6 +154,9 @@ class TaskInfo:
     # parser 来源的可选资产类型（``index``/``stock``/``None``）；SSE 与任务列表
     # 从这里透传，不得在消费端重新猜测。
     asset_type: Optional[str] = None
+    # 任务归属用户（多用户模式；None = 系统触发/单用户模式）。
+    # 仅用于服务端归属过滤与去重键，不写入 to_dict()（保持 API/SSE 载荷不变）。
+    owner_user_id: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert task info into an API-friendly dictionary."""
@@ -191,19 +212,30 @@ class TaskInfo:
             dedupe_key=self.dedupe_key,
             analysis_target=self.analysis_target,
             asset_type=self.asset_type,
+            owner_user_id=self.owner_user_id,
         )
 
 
 class DuplicateTaskError(Exception):
     """
     重复提交异常
-    
+
     当股票已在分析中时抛出此异常
     """
     def __init__(self, stock_code: str, existing_task_id: str):
         self.stock_code = stock_code
         self.existing_task_id = existing_task_id
         super().__init__(f"股票 {stock_code} 正在分析中 (task_id: {existing_task_id})")
+
+
+class AnalysisQuotaExceededError(Exception):
+    """多用户模式下用户当日分析配额已用尽（服务端强制，端点映射 429）。"""
+
+    def __init__(self, owner_user_id: str, used: int, limit: int):
+        self.owner_user_id = owner_user_id
+        self.used = used
+        self.limit = limit
+        super().__init__(f"当日分析配额已用尽（{used}/{limit}）")
 
 
 class AnalysisTaskQueue:
@@ -333,33 +365,79 @@ class AnalysisTaskQueue:
     
     # ========== 任务提交与查询 ==========
     
-    def is_analyzing(self, stock_code: str) -> bool:
+    def is_analyzing(self, stock_code: str, owner_user_id: Optional[str] = None) -> bool:
         """
         检查股票是否正在分析中
-        
+
         Args:
             stock_code: 股票代码
-            
+            owner_user_id: 归属用户（多用户模式下去重键按用户隔离）
+
         Returns:
             True 表示正在分析中
         """
-        dedupe_key = _dedupe_stock_code_key(stock_code)
+        dedupe_key = _dedupe_task_key(stock_code, None, owner_user_id)
         with self._data_lock:
             return dedupe_key in self._analyzing_stocks
-    
-    def get_analyzing_task_id(self, stock_code: str) -> Optional[str]:
+
+    def get_analyzing_task_id(
+        self,
+        stock_code: str,
+        owner_user_id: Optional[str] = None,
+    ) -> Optional[str]:
         """
         获取正在分析该股票的任务 ID
-        
+
         Args:
             stock_code: 股票代码
-            
+            owner_user_id: 归属用户（多用户模式下去重键按用户隔离）
+
         Returns:
             任务 ID，如果没有则返回 None
         """
-        dedupe_key = _dedupe_stock_code_key(stock_code)
+        dedupe_key = _dedupe_task_key(stock_code, None, owner_user_id)
         with self._data_lock:
             return self._analyzing_stocks.get(dedupe_key)
+
+    def _enforce_daily_analysis_quota(
+        self,
+        stock_codes: List[str],
+        owner_user_id: Optional[str],
+    ) -> None:
+        """多用户模式下的每日分析配额闸门（提交路径服务端强制）。
+
+        - owner 为空（单用户模式 / 系统任务 / bot）：不限制
+        - 管理员：consume_daily_quota 内部直通
+        - 每只股票消耗一次计数；任一次被拒即整批拒绝（已消耗的少量计数不回滚）
+        """
+        if not owner_user_id or not stock_codes:
+            return
+        try:
+            user_id = int(owner_user_id)
+        except (TypeError, ValueError):
+            return
+        try:
+            from src.auth import is_multi_user_enabled
+            from src.services.user_quota import (
+                QUOTA_ANALYSIS,
+                consume_daily_quota,
+                get_daily_analysis_limit,
+            )
+
+            if not is_multi_user_enabled():
+                return
+            limit = get_daily_analysis_limit()
+            if limit <= 0:
+                return
+            for _code in stock_codes:
+                allowed, used, _limit = consume_daily_quota(user_id, QUOTA_ANALYSIS)
+                if not allowed:
+                    raise AnalysisQuotaExceededError(owner_user_id, used, limit)
+        except AnalysisQuotaExceededError:
+            raise
+        except Exception as exc:
+            # 配额基础设施异常时保守放行，避免分析主流程被护栏拖垮（与 fail-open 通知一致）
+            logger.warning("[quota] 分析配额检查异常（放行）: %s", exc)
 
     def validate_selection_source(self, selection_source: Optional[str]) -> None:
         """
@@ -391,6 +469,7 @@ class AnalysisTaskQueue:
         skills: Optional[List[str]] = None,
         report_language: Optional[str] = None,
         analysis_target: Optional[Any] = None,
+        owner_user_id: Optional[str] = None,
     ) -> TaskInfo:
         """
         Submit a single analysis task.
@@ -405,6 +484,7 @@ class AnalysisTaskQueue:
             force_refresh: Whether to bypass cache
             analysis_target: Optional structured analysis target (index targets
                 dedupe by canonical id and flow through to the pipeline)
+            owner_user_id: Optional owner attribution (multi-user mode)
 
         Returns:
             TaskInfo: Accepted task information
@@ -429,6 +509,7 @@ class AnalysisTaskQueue:
             skills=skills,
             report_language=report_language,
             analysis_targets=([analysis_target] if analysis_target is not None else None),
+            owner_user_id=owner_user_id,
         )
         if duplicates:
             raise duplicates[0]
@@ -449,6 +530,7 @@ class AnalysisTaskQueue:
         skills: Optional[List[str]] = None,
         report_language: Optional[str] = None,
         analysis_targets: Optional[List[Any]] = None,
+        owner_user_id: Optional[str] = None,
     ) -> Tuple[List[TaskInfo], List[DuplicateTaskError]]:
         """
         Submit analysis tasks in batch.
@@ -458,8 +540,15 @@ class AnalysisTaskQueue:
         - ``analysis_targets`` is an optional per-code structured target list.
           Index targets dedupe by ``canonical_id`` (never collapsing with a
           same-digit stock); stock targets keep the legacy code-based key.
+        - ``owner_user_id`` stamps attribution on accepted tasks and (multi-user
+          mode only) scopes the dedupe key per owner.
+
+        Raises:
+            AnalysisQuotaExceededError: 多用户模式下该用户当日分析配额已用尽
+              （已在提交前消耗的少量计数不回滚，语义偏保守）。
         """
         self.validate_selection_source(selection_source)
+        self._enforce_daily_analysis_quota(stock_codes, owner_user_id)
 
         accepted: List[TaskInfo] = []
         duplicates: List[DuplicateTaskError] = []
@@ -492,7 +581,7 @@ class AnalysisTaskQueue:
         with self._data_lock:
             for idx, stock_code in enumerate(canonical_codes):
                 analysis_target = targets_by_index.get(idx)
-                dedupe_key = _dedupe_task_key(stock_code, analysis_target)
+                dedupe_key = _dedupe_task_key(stock_code, analysis_target, owner_user_id)
                 if dedupe_key in self._analyzing_stocks:
                     existing_task_id = self._analyzing_stocks[dedupe_key]
                     duplicates.append(DuplicateTaskError(stock_code, existing_task_id))
@@ -518,6 +607,7 @@ class AnalysisTaskQueue:
                     dedupe_key=dedupe_key,
                     analysis_target=analysis_target,
                     asset_type=asset_type_from_analysis_target(analysis_target),
+                    owner_user_id=owner_user_id,
                 )
                 self._tasks[task_id] = task_info
                 self._analyzing_stocks[dedupe_key] = task_id
@@ -563,6 +653,7 @@ class AnalysisTaskQueue:
         task_id: Optional[str] = None,
         trace_id: Optional[str] = None,
         region: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
     ) -> TaskInfo:
         """
         Submit a generic background callable with task lifecycle tracking.
@@ -580,6 +671,7 @@ class AnalysisTaskQueue:
             message=message,
             report_type=report_type,
             region=region,
+            owner_user_id=owner_user_id,
         )
 
         with self._data_lock:
@@ -611,6 +703,7 @@ class AnalysisTaskQueue:
                 dedupe_key = task.dedupe_key or _dedupe_task_key(
                     task.stock_code,
                     getattr(task, "analysis_target", None),
+                    getattr(task, "owner_user_id", None),
                 )
                 if self._analyzing_stocks.get(dedupe_key) == task_id:
                     del self._analyzing_stocks[dedupe_key]
@@ -667,10 +760,26 @@ class AnalysisTaskQueue:
                 return []
             return copy.deepcopy(task.flow_events)
     
-    def list_pending_tasks(self) -> List[TaskInfo]:
+    def _owner_visible_locked(self, task: TaskInfo, owner_user_id: Optional[str], include_unowned: bool) -> bool:
+        """按归属判断任务可见性；owner_user_id 为空时不过滤（单用户/全局路径）。"""
+        if owner_user_id is None:
+            return True
+        if task.owner_user_id == owner_user_id:
+            return True
+        return bool(include_unowned) and task.owner_user_id is None
+
+    def list_pending_tasks(
+        self,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> List[TaskInfo]:
         """
         获取所有进行中的任务（pending + processing）
-        
+
+        Args:
+            owner_user_id: 归属用户过滤（多用户模式；None = 不过滤）
+            include_unowned: admin 同时可见无归属任务
+
         Returns:
             任务列表（副本）
         """
@@ -678,42 +787,62 @@ class AnalysisTaskQueue:
             return [
                 task.copy() for task in self._tasks.values()
                 if task.status in (TaskStatus.PENDING, TaskStatus.PROCESSING, TaskStatus.CANCEL_REQUESTED)
+                and self._owner_visible_locked(task, owner_user_id, include_unowned)
             ]
-    
-    def list_all_tasks(self, limit: int = 50) -> List[TaskInfo]:
+
+    def list_all_tasks(
+        self,
+        limit: int = 50,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> List[TaskInfo]:
         """
         获取所有任务（按创建时间倒序）
-        
+
         Args:
             limit: 返回数量限制
-            
+            owner_user_id: 归属用户过滤（多用户模式；None = 不过滤）
+            include_unowned: admin 同时可见无归属任务
+
         Returns:
             任务列表（副本）
         """
         with self._data_lock:
             tasks = sorted(
-                self._tasks.values(),
+                (t for t in self._tasks.values()
+                 if self._owner_visible_locked(t, owner_user_id, include_unowned)),
                 key=lambda t: t.created_at,
                 reverse=True
             )
             return [t.copy() for t in tasks[:limit]]
-    
-    def get_task_stats(self) -> Dict[str, int]:
+
+    def get_task_stats(
+        self,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Dict[str, int]:
         """
         获取任务统计信息
-        
+
+        Args:
+            owner_user_id: 归属用户过滤（多用户模式；None = 全量统计）
+            include_unowned: admin 同时统计无归属任务
+
         Returns:
             统计信息字典
         """
         with self._data_lock:
             stats = {
-                "total": len(self._tasks),
+                "total": 0,
                 "pending": 0,
                 "processing": 0,
                 "completed": 0,
                 "failed": 0,
             }
             for task in self._tasks.values():
+                if not self._owner_visible_locked(task, owner_user_id, include_unowned):
+                    continue
+                stats["total"] += 1
                 stats[task.status.value] = stats.get(task.status.value, 0) + 1
             return stats
 
@@ -829,6 +958,7 @@ class AnalysisTaskQueue:
                 portfolio_context=portfolio_context,
                 report_language=report_language,
                 analysis_target=analysis_target,
+                owner_user_id=getattr(task, "owner_user_id", None),
             )
             reset_run_diagnostic_context(diag_token)
             diag_token = None
@@ -849,6 +979,7 @@ class AnalysisTaskQueue:
                         dedupe_key = task.dedupe_key or _dedupe_task_key(
                             task.stock_code,
                             getattr(task, "analysis_target", None),
+                            getattr(task, "owner_user_id", None),
                         )
                         if dedupe_key in self._analyzing_stocks:
                             del self._analyzing_stocks[dedupe_key]
@@ -882,6 +1013,7 @@ class AnalysisTaskQueue:
                     dedupe_key = task.dedupe_key or _dedupe_task_key(
                         task.stock_code,
                         getattr(task, "analysis_target", None),
+                        getattr(task, "owner_user_id", None),
                     )
                     if dedupe_key in self._analyzing_stocks:
                         del self._analyzing_stocks[dedupe_key]

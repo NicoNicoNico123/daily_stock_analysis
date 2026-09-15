@@ -107,18 +107,31 @@ class AlertService:
         self.db = db_manager or DatabaseManager.get_instance()
         self.repo = AlertRepository(self.db)
 
-    def create_rule(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def create_rule(self, payload: Dict[str, Any], *, owner_user_id: Optional[str] = None) -> Dict[str, Any]:
         fields = self._normalize_rule_payload(payload)
-        return self._serialize_rule(self.repo.create_rule(fields))
+        return self._serialize_rule(self.repo.create_rule(fields, owner_user_id=owner_user_id))
 
-    def get_rule(self, rule_id: int) -> Dict[str, Any]:
-        row = self.repo.get_rule(rule_id)
+    def get_rule(
+        self,
+        rule_id: int,
+        *,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Dict[str, Any]:
+        row = self.repo.get_rule(rule_id, owner_user_id=owner_user_id, include_unowned=include_unowned)
         if row is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
         return self._serialize_rule(row)
 
-    def update_rule(self, rule_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
-        row = self.repo.get_rule(rule_id)
+    def update_rule(
+        self,
+        rule_id: int,
+        payload: Dict[str, Any],
+        *,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Dict[str, Any]:
+        row = self.repo.get_rule(rule_id, owner_user_id=owner_user_id, include_unowned=include_unowned)
         if row is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
         if not payload:
@@ -128,16 +141,39 @@ class AlertService:
         merged = self._serialize_rule_base(row)
         merged.update(payload)
         fields = self._normalize_rule_payload(merged, source=merged.get("source") or "api")
-        updated = self.repo.update_rule(rule_id, fields)
+        updated = self.repo.update_rule(
+            rule_id,
+            fields,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         if updated is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
         return self._serialize_rule(updated)
 
-    def delete_rule(self, rule_id: int) -> bool:
-        return self.repo.delete_rule(rule_id)
+    def delete_rule(
+        self,
+        rule_id: int,
+        *,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> bool:
+        return self.repo.delete_rule(rule_id, owner_user_id=owner_user_id, include_unowned=include_unowned)
 
-    def enable_rule(self, rule_id: int, enabled: bool) -> Dict[str, Any]:
-        updated = self.repo.update_rule(rule_id, {"enabled": enabled})
+    def enable_rule(
+        self,
+        rule_id: int,
+        enabled: bool,
+        *,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Dict[str, Any]:
+        updated = self.repo.update_rule(
+            rule_id,
+            {"enabled": enabled},
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         if updated is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
         return self._serialize_rule(updated)
@@ -152,6 +188,8 @@ class AlertService:
         source: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         rows, total = self.repo.list_rules(
             enabled=enabled,
@@ -161,6 +199,8 @@ class AlertService:
             source=source,
             page=page,
             page_size=page_size,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return {
             "items": [self._serialize_rule(row) for row in rows],
@@ -169,8 +209,14 @@ class AlertService:
             "page_size": page_size,
         }
 
-    def test_rule(self, rule_id: int) -> Dict[str, Any]:
-        row = self.repo.get_rule(rule_id)
+    def test_rule(
+        self,
+        rule_id: int,
+        *,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Dict[str, Any]:
+        row = self.repo.get_rule(rule_id, owner_user_id=owner_user_id, include_unowned=include_unowned)
         if row is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
 
@@ -829,6 +875,8 @@ class AlertService:
         status: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         rows, total = self.repo.list_triggers(
             rule_id=rule_id,
@@ -836,6 +884,8 @@ class AlertService:
             status=status,
             page=page,
             page_size=page_size,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return {
             "items": [self._serialize_trigger(row) for row in rows],
@@ -852,6 +902,8 @@ class AlertService:
         success: Optional[bool] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         rows, total = self.repo.list_notifications(
             trigger_id=trigger_id,
@@ -859,6 +911,8 @@ class AlertService:
             success=success,
             page=page,
             page_size=page_size,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return {
             "items": [self._serialize_notification(row) for row in rows],

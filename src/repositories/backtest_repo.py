@@ -183,6 +183,8 @@ class BacktestRepository:
         days: Optional[int],
         offset: int,
         limit: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Tuple[List[BacktestResultContextRow], int]:
         with self.db.get_session() as session:
             conditions = self._build_result_conditions(
@@ -192,6 +194,8 @@ class BacktestRepository:
                 analysis_date_from=analysis_date_from,
                 analysis_date_to=analysis_date_to,
                 days=days,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
 
             where_clause = and_(*conditions) if conditions else True
@@ -232,6 +236,8 @@ class BacktestRepository:
         days: Optional[int],
         offset: int,
         limit: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[BacktestResultContextRow]:
         """Return result rows plus AnalysisHistory.context_snapshot for dynamic filtering."""
         with self.db.get_session() as session:
@@ -242,6 +248,8 @@ class BacktestRepository:
                 analysis_date_from=analysis_date_from,
                 analysis_date_to=analysis_date_to,
                 days=days,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
             where_clause = and_(*conditions) if conditions else True
             rows = session.execute(
@@ -273,6 +281,8 @@ class BacktestRepository:
         analysis_date_to: Optional[date] = None,
         days: Optional[int] = None,
         limit: Optional[int] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[Tuple[BacktestResult, Optional[str]]]:
         with self.db.get_session() as session:
             conditions = self._build_result_conditions(
@@ -282,6 +292,8 @@ class BacktestRepository:
                 analysis_date_from=analysis_date_from,
                 analysis_date_to=analysis_date_to,
                 days=days,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
             where_clause = and_(*conditions) if conditions else True
             query = (
@@ -303,6 +315,8 @@ class BacktestRepository:
         analysis_date_from: Optional[date] = None,
         analysis_date_to: Optional[date] = None,
         days: Optional[int] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> int:
         """Return the number of matching BacktestResult rows without loading them."""
         with self.db.get_session() as session:
@@ -313,6 +327,8 @@ class BacktestRepository:
                 analysis_date_from=analysis_date_from,
                 analysis_date_to=analysis_date_to,
                 days=days,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
             where_clause = and_(*conditions) if conditions else True
             count = session.execute(
@@ -332,6 +348,8 @@ class BacktestRepository:
         analysis_date_to: Optional[date] = None,
         days: Optional[int] = None,
         limit: Optional[int] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[BacktestResult]:
         with self.db.get_session() as session:
             conditions = self._build_result_conditions(
@@ -341,6 +359,8 @@ class BacktestRepository:
                 analysis_date_from=analysis_date_from,
                 analysis_date_to=analysis_date_to,
                 days=days,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
             where_clause = and_(*conditions) if conditions else True
             query = (
@@ -458,6 +478,8 @@ class BacktestRepository:
         engine_version: Optional[str] = None,
         analysis_date_from: Optional[date] = None,
         analysis_date_to: Optional[date] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[int]:
         """Return sorted distinct eval_window_days for matching results."""
         with self.db.get_session() as session:
@@ -468,6 +490,8 @@ class BacktestRepository:
                 analysis_date_from=analysis_date_from,
                 analysis_date_to=analysis_date_to,
                 days=None,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
             where_clause = and_(*conditions) if conditions else True
             rows = session.execute(
@@ -487,8 +511,18 @@ class BacktestRepository:
         analysis_date_from: Optional[date],
         analysis_date_to: Optional[date],
         days: Optional[int],
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> List[object]:
         conditions = []
+        # 多用户模式按归属过滤；owner 为 None 时不过滤（引擎/CLI 保持全量读取）
+        if owner_user_id is not None:
+            if include_unowned:
+                conditions.append(
+                    or_(BacktestResult.user_id == owner_user_id, BacktestResult.user_id.is_(None))
+                )
+            else:
+                conditions.append(BacktestResult.user_id == owner_user_id)
         if code:
             conditions.extend(BacktestRepository._build_code_conditions(BacktestResult.code, code))
         if eval_window_days is not None:

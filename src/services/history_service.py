@@ -105,6 +105,20 @@ class HistoryService:
         return value.astimezone().isoformat()
 
     @staticmethod
+    def _scope_kwargs(
+        owner_user_id: Optional[str],
+        include_unowned: bool,
+    ) -> Dict[str, Any]:
+        """构造归属过滤 kwargs。
+
+        单用户模式（owner_user_id=None）返回空 dict，保持旧的无参调用签名，
+        兼容现有测试替身与非用户面调用方（如回测选股）。
+        """
+        if not owner_user_id:
+            return {}
+        return {"owner_user_id": owner_user_id, "include_unowned": include_unowned}
+
+    @staticmethod
     def _history_code_filter_candidates(
         stock_code: str,
         *,
@@ -255,10 +269,12 @@ class HistoryService:
         limit: int = 20,
         include_ambiguous_numeric_aliases: bool = True,
         market_hint: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         """
         Get history analysis list.
-        
+
         Args:
             stock_code: Stock code filter
             report_type: Report type filter
@@ -270,7 +286,10 @@ class HistoryService:
                 aliases that may collide across offshore markets.
             market_hint: Trusted market identity for candidate expansion. When
                 present, candidates from other indexed markets are excluded.
-            
+            owner_user_id: 归属用户过滤（多用户模式；None 表示不过滤，
+                兼容回测选股等非用户面调用方）
+            include_unowned: admin 额外可见 NULL（legacy/无主）行
+
         Returns:
             Dictionary containing total count and items
         """
@@ -311,7 +330,8 @@ class HistoryService:
                 start_date=start_dt,
                 end_date=end_dt,
                 offset=offset,
-                limit=limit
+                limit=limit,
+                **self._scope_kwargs(owner_user_id, include_unowned),
             )
             
             # Convert to response format
@@ -479,12 +499,40 @@ class HistoryService:
 
         return asset_type_from_canonical_code(getattr(record, "code", None))
 
+    @staticmethod
+    def _record_visible_in_scope(
+        record,
+        owner_user_id: Optional[str],
+        include_unowned: bool,
+    ) -> bool:
+        """复刻存储层 ``_owner_allowed`` 的归属判定，用于兜底无归属参数的查询。
+
+        大盘复盘（code=MARKET）行为全局共享，对所有用户可见，与存储层语义一致。
+        """
+        if not owner_user_id:
+            return True
+        row_user_id = getattr(record, "user_id", None)
+        if row_user_id == owner_user_id:
+            return True
+        if include_unowned and row_user_id is None:
+            return True
+        try:
+            from src.core.market_review import MARKET_REVIEW_HISTORY_CODE
+
+            if str(getattr(record, "code", "") or "") == MARKET_REVIEW_HISTORY_CODE:
+                return True
+        except Exception:
+            pass
+        return False
+
     def _resolve_record(
         self,
         record_id: str,
         *,
         code: Optional[str] = None,
         report_type: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ):
         """
         Resolve a record_id parameter to an AnalysisHistory object.
@@ -494,13 +542,18 @@ class HistoryService:
 
         Args:
             record_id: integer PK (as string) or query_id string
+            owner_user_id: 归属用户过滤（多用户模式）；None 表示不过滤
+            include_unowned: admin 额外可见 NULL（legacy/无主）行
 
         Returns:
             AnalysisHistory object or None
         """
         try:
             int_id = int(record_id)
-            record = self.db.get_analysis_history_by_id(int_id)
+            record = self.db.get_analysis_history_by_id(
+                int_id,
+                **self._scope_kwargs(owner_user_id, include_unowned),
+            )
             if record:
                 return record
         except (ValueError, TypeError):
@@ -508,25 +561,43 @@ class HistoryService:
         # Fall back to query_id lookup. Keep the old no-kwargs call for
         # unfiltered paths so existing test doubles and integrations remain compatible.
         if code is None and report_type is None:
-            return self.db.get_latest_analysis_by_query_id(record_id)
-        return self.db.get_latest_analysis_by_query_id(
-            record_id,
-            code=code,
-            report_type=report_type,
-        )
+            record = self.db.get_latest_analysis_by_query_id(record_id)
+        else:
+            record = self.db.get_latest_analysis_by_query_id(
+                record_id,
+                code=code,
+                report_type=report_type,
+            )
+        # 存储层 query_id 查询不支持归属过滤，这里按同一语义做归属校验兜底，
+        # 防止多用户模式下通过 query_id 越权读取他人记录。
+        if record and not self._record_visible_in_scope(record, owner_user_id, include_unowned):
+            return None
+        return record
 
-    def resolve_and_get_detail(self, record_id: str) -> Optional[Dict[str, Any]]:
+    def resolve_and_get_detail(
+        self,
+        record_id: str,
+        *,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         """
         Resolve record_id (int PK or query_id string) and return history detail.
 
         Args:
             record_id: integer PK (as string) or query_id string
+            owner_user_id: 归属用户过滤（多用户模式）；None 表示不过滤
+            include_unowned: admin 额外可见 NULL（legacy/无主）行
 
         Returns:
             Complete analysis report dict, or None
         """
         try:
-            record = self._resolve_record(record_id)
+            record = self._resolve_record(
+                record_id,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
             if not record:
                 return None
             return self._record_to_detail_dict(record)
@@ -534,19 +605,32 @@ class HistoryService:
             logger.error(f"resolve_and_get_detail failed for {record_id}: {e}", exc_info=True)
             return None
 
-    def resolve_and_get_news(self, record_id: str, limit: int = 20) -> List[Dict[str, str]]:
+    def resolve_and_get_news(
+        self,
+        record_id: str,
+        limit: int = 20,
+        *,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> List[Dict[str, str]]:
         """
         Resolve record_id (int PK or query_id string) and return associated news.
 
         Args:
             record_id: integer PK (as string) or query_id string
             limit: max items to return
+            owner_user_id: 归属用户过滤（多用户模式）；None 表示不过滤
+            include_unowned: admin 额外可见 NULL（legacy/无主）行
 
         Returns:
             List of news intel dicts
         """
         try:
-            record = self._resolve_record(record_id)
+            record = self._resolve_record(
+                record_id,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
             if not record:
                 logger.warning(f"resolve_and_get_news: record not found for {record_id}")
                 return []
@@ -555,7 +639,13 @@ class HistoryService:
             logger.error(f"resolve_and_get_news failed for {record_id}: {e}", exc_info=True)
             return []
 
-    def resolve_and_get_diagnostics(self, record_id: str) -> Optional[Dict[str, Any]]:
+    def resolve_and_get_diagnostics(
+        self,
+        record_id: str,
+        *,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         """
         Resolve record_id and return a user-facing run diagnostic summary.
 
@@ -563,7 +653,11 @@ class HistoryService:
         summary instead of failing. Storage and JSON parsing errors are
         propagated so callers can surface backend failures accurately.
         """
-        record = self._resolve_record(record_id)
+        record = self._resolve_record(
+            record_id,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         if not record:
             return None
 
@@ -587,6 +681,8 @@ class HistoryService:
         *,
         code: Optional[str] = None,
         report_type: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ):
         """
         Resolve record_id and return a sanitized run-flow snapshot.
@@ -594,7 +690,13 @@ class HistoryService:
         Uses the same strict JSON parsing behavior as diagnostics so malformed
         persisted payloads surface as backend errors instead of partial graphs.
         """
-        record = self._resolve_record(record_id, code=code, report_type=report_type)
+        record = self._resolve_record(
+            record_id,
+            code=code,
+            report_type=report_type,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         if not record:
             return None
 
@@ -626,21 +728,31 @@ class HistoryService:
                 raise ValueError(f"invalid {field_name} JSON") from exc
         return value
 
-    def get_history_detail_by_id(self, record_id: int) -> Optional[Dict[str, Any]]:
+    def get_history_detail_by_id(
+        self,
+        record_id: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         """
         Get history report detail.
 
-        Uses database primary key for precise query, avoiding returning incorrect records 
+        Uses database primary key for precise query, avoiding returning incorrect records
         due to duplicate query_id in batch analysis.
 
         Args:
             record_id: Analysis history record primary key ID
+            owner_user_id: 归属用户过滤（多用户模式）；None 表示不过滤
+            include_unowned: admin 额外可见 NULL（legacy/无主）行
 
         Returns:
             Complete analysis report dictionary, or None if not exists
         """
         try:
-            record = self.db.get_analysis_history_by_id(record_id)
+            record = self.db.get_analysis_history_by_id(
+                record_id,
+                **self._scope_kwargs(owner_user_id, include_unowned),
+            )
             if not record:
                 return None
             return self._record_to_detail_dict(record)
@@ -815,12 +927,19 @@ class HistoryService:
             guardrail_reason=extract_decision_guardrail_reason(raw),
         )
 
-    def delete_history_records(self, record_ids: List[int]) -> int:
+    def delete_history_records(
+        self,
+        record_ids: List[int],
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> int:
         """
         Delete specified analysis history records.
 
         Args:
             record_ids: List of history record primary key IDs
+            owner_user_id: 归属用户过滤（多用户模式）；None 表示不过滤
+            include_unowned: admin 额外可见 NULL（legacy/无主）行
 
         Returns:
             Number of records actually deleted
@@ -829,7 +948,10 @@ class HistoryService:
             Exception: Re-raises any storage-layer exception so the API caller
                        receives a proper 500 error instead of a silent success.
         """
-        return self.db.delete_analysis_history_records(record_ids)
+        return self.db.delete_analysis_history_records(
+            record_ids,
+            **self._scope_kwargs(owner_user_id, include_unowned),
+        )
 
     def get_news_intel(self, query_id: str, limit: int = 20) -> List[Dict[str, str]]:
         """
@@ -966,7 +1088,13 @@ class HistoryService:
         else:
             return "极度悲观"
 
-    def get_markdown_report(self, record_id: str) -> Optional[str]:
+    def get_markdown_report(
+        self,
+        record_id: str,
+        *,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[str]:
         """
         Generate a Markdown report for a single analysis history record.
 
@@ -975,6 +1103,8 @@ class HistoryService:
 
         Args:
             record_id: integer PK (as string) or query_id string
+            owner_user_id: 归属用户过滤（多用户模式）；None 表示不过滤
+            include_unowned: admin 额外可见 NULL（legacy/无主）行
 
         Returns:
             Markdown formatted report string, or None if record not found
@@ -982,7 +1112,11 @@ class HistoryService:
         Raises:
             MarkdownReportGenerationError: If report generation fails due to internal errors
         """
-        record = self._resolve_record(record_id)
+        record = self._resolve_record(
+            record_id,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         if not record:
             logger.warning(f"get_markdown_report: record not found for {record_id}")
             return None

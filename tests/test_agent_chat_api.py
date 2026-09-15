@@ -447,6 +447,7 @@ def test_stream_prepares_and_persists_before_accepted_then_starts_backend() -> N
                 session_id="accepted-session",
                 context={"stock_code": "AAPL", "report_language": "zh"},
                 selected_skill_ids=None,
+                owner_user_id=None,
             )
             executor.execute_turn.assert_not_called()
             await iterator.aclose()
@@ -490,6 +491,7 @@ def test_stream_forwards_normalized_skill_selection_to_prepare_turn() -> None:
         session_id="risk-session",
         context={"skills": ["risk"], "report_language": "zh"},
         selected_skill_ids=["risk"],
+        owner_user_id=None,
     )
 
 
@@ -531,6 +533,7 @@ def test_stream_all_invalid_skills_inherit_without_clearing_state() -> None:
         session_id="saved-session",
         context={"skills": ["technical"], "report_language": "zh"},
         selected_skill_ids=None,
+        owner_user_id=None,
     )
     assert db.get_conversation_session_selected_skill_ids("saved-session") == [
         "technical"

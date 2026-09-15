@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy import and_, delete, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from src.storage import (
@@ -40,6 +40,22 @@ class DuplicateTradeDedupHashError(Exception):
 
 class PortfolioBusyError(Exception):
     """Raised when SQLite write serialization cannot acquire the ledger lock."""
+
+
+def _owner_scope_condition(owner_user_id: Optional[str], include_unowned: bool = False):
+    """按账号归属（PortfolioAccount.owner_id）构造过滤条件。
+
+    - owner_user_id 为空：返回 None（不过滤，保持单用户/全局路径行为不变）。
+    - include_unowned 为 True（admin）：额外可见 owner_id 为 NULL 的 legacy 行。
+    """
+    if not owner_user_id:
+        return None
+    if include_unowned:
+        return or_(
+            PortfolioAccount.owner_id == owner_user_id,
+            PortfolioAccount.owner_id.is_(None),
+        )
+    return PortfolioAccount.owner_id == owner_user_id
 
 
 class PortfolioRepository:
@@ -74,19 +90,35 @@ class PortfolioRepository:
             session.refresh(row)
             return row
 
-    def get_account(self, account_id: int, include_inactive: bool = False) -> Optional[PortfolioAccount]:
+    def get_account(
+        self,
+        account_id: int,
+        include_inactive: bool = False,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[PortfolioAccount]:
         with self.db.get_session() as session:
             return self.get_account_in_session(
                 session=session,
                 account_id=account_id,
                 include_inactive=include_inactive,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
             )
 
-    def list_accounts(self, include_inactive: bool = False) -> List[PortfolioAccount]:
+    def list_accounts(
+        self,
+        include_inactive: bool = False,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> List[PortfolioAccount]:
         with self.db.get_session() as session:
             query = select(PortfolioAccount)
             if not include_inactive:
                 query = query.where(PortfolioAccount.is_active.is_(True))
+            scope = _owner_scope_condition(owner_user_id, include_unowned)
+            if scope is not None:
+                query = query.where(scope)
             rows = session.execute(query.order_by(PortfolioAccount.id.asc())).scalars().all()
             return list(rows)
 
@@ -96,10 +128,15 @@ class PortfolioRepository:
         session: Any,
         account_id: int,
         include_inactive: bool = False,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Optional[PortfolioAccount]:
         conditions = [PortfolioAccount.id == account_id]
         if not include_inactive:
             conditions.append(PortfolioAccount.is_active.is_(True))
+        scope = _owner_scope_condition(owner_user_id, include_unowned)
+        if scope is not None:
+            conditions.append(scope)
         return session.execute(
             select(PortfolioAccount).where(and_(*conditions)).limit(1)
         ).scalar_one_or_none()
@@ -576,6 +613,8 @@ class PortfolioRepository:
         side: Optional[str],
         page: int,
         page_size: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Tuple[List[PortfolioTrade], int]:
         with self.db.get_session() as session:
             conditions = []
@@ -589,6 +628,9 @@ class PortfolioRepository:
                 conditions.append(PortfolioTrade.symbol.in_(symbols))
             if side:
                 conditions.append(PortfolioTrade.side == side)
+            owner_scope = _owner_scope_condition(owner_user_id, include_unowned)
+            if owner_scope is not None:
+                conditions.append(owner_scope)
 
             data_query = select(PortfolioTrade).join(
                 PortfolioAccount,
@@ -622,6 +664,8 @@ class PortfolioRepository:
         direction: Optional[str],
         page: int,
         page_size: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Tuple[List[PortfolioCashLedger], int]:
         with self.db.get_session() as session:
             conditions = []
@@ -633,6 +677,9 @@ class PortfolioRepository:
                 conditions.append(PortfolioCashLedger.event_date <= date_to)
             if direction:
                 conditions.append(PortfolioCashLedger.direction == direction)
+            owner_scope = _owner_scope_condition(owner_user_id, include_unowned)
+            if owner_scope is not None:
+                conditions.append(owner_scope)
 
             data_query = select(PortfolioCashLedger).join(
                 PortfolioAccount,
@@ -667,6 +714,8 @@ class PortfolioRepository:
         action_type: Optional[str],
         page: int,
         page_size: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Tuple[List[PortfolioCorporateAction], int]:
         with self.db.get_session() as session:
             conditions = []
@@ -680,6 +729,9 @@ class PortfolioRepository:
                 conditions.append(PortfolioCorporateAction.symbol.in_(symbols))
             if action_type:
                 conditions.append(PortfolioCorporateAction.action_type == action_type)
+            owner_scope = _owner_scope_condition(owner_user_id, include_unowned)
+            if owner_scope is not None:
+                conditions.append(owner_scope)
 
             data_query = select(PortfolioCorporateAction).join(
                 PortfolioAccount,

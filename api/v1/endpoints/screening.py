@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from api.deps import get_config_dep, get_database_manager
+from api.deps import get_config_dep, get_current_user, get_database_manager, resolve_owner_scope
 from api.v1.errors import api_error
 from src.config import Config
 from src.services.screening_service import ScreeningService
@@ -63,6 +63,59 @@ class ScreeningScreenTaskStatus(BaseModel):
 def _service(config: Config, db_manager: Any = None) -> ScreeningService:
     usable_db = db_manager if callable(getattr(db_manager, "save_screening_run", None)) else None
     return ScreeningService(config=config, db_manager=usable_db)
+
+
+class _OwnerScopedDatabaseManager:
+    """把 screening_runs 读写绑定到当前用户作用域的 DatabaseManager 轻代理。
+
+    ScreeningService 不感知多用户身份；该代理把 owner 透传给
+    DatabaseManager 的选股历史作用域方法，其余方法原样转发。
+    """
+
+    def __init__(self, inner: DatabaseManager, *, owner_user_id: Optional[str], include_unowned: bool) -> None:
+        self._inner = inner
+        self._owner_user_id = owner_user_id
+        self._include_unowned = include_unowned
+
+    def save_screening_run(self, payload: Dict[str, Any], owner_user_id: Optional[str] = None) -> int:
+        return self._inner.save_screening_run(payload, owner_user_id=self._owner_user_id)
+
+    def list_screening_runs(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        kwargs["owner_user_id"] = self._owner_user_id
+        kwargs["include_unowned"] = self._include_unowned
+        return self._inner.list_screening_runs(**kwargs)
+
+    def get_screening_run(
+        self,
+        run_id: str,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        # 他人运行返回 None，由 ScreeningService 统一映射为 404
+        return self._inner.get_screening_run(
+            run_id,
+            owner_user_id=self._owner_user_id,
+            include_unowned=self._include_unowned,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+def _scoped_db_manager(db_manager: Any, current_user: Optional[dict]) -> Any:
+    """单用户模式 (None, False) 直接返回原 db_manager，保持原有调用路径不变。"""
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
+    if owner_user_id is None:
+        return db_manager
+    return _OwnerScopedDatabaseManager(
+        db_manager,
+        owner_user_id=owner_user_id,
+        include_unowned=include_unowned,
+    )
+
+
+def _scoped_service(config: Config, db_manager: Any, current_user: Optional[dict]) -> ScreeningService:
+    return _service(config, _scoped_db_manager(db_manager, current_user))
 
 
 def _screening_task_not_found(task_id: str) -> HTTPException:
@@ -136,9 +189,12 @@ def screening_start_screen_task(
     http_request: Request,
     config: Config = Depends(get_config_dep),
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> ScreeningScreenAccepted:
     task_id = uuid.uuid4().hex
     task_queue = get_task_queue()
+    # 在请求上下文内解析归属，后台线程只使用已解析的作用域参数
+    scoped_db = _scoped_db_manager(db_manager, current_user)
 
     def run_screen() -> Dict[str, Any]:
         task_queue.update_task_progress(
@@ -150,7 +206,7 @@ def screening_start_screen_task(
         def report_progress(progress: int, message: str) -> None:
             task_queue.update_task_progress(task_id, progress, message)
 
-        result = _service(config, db_manager).screen(
+        result = _service(config, scoped_db).screen(
             strategy=request.strategy,
             market=request.market,
             max_results=request.max_results,
@@ -208,8 +264,9 @@ def screening_screen(
     http_request: Request,
     config: Config = Depends(get_config_dep),
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    return _service(config, db_manager).screen(
+    return _scoped_service(config, db_manager, current_user).screen(
         strategy=request.strategy,
         market=request.market,
         max_results=request.max_results,
@@ -224,8 +281,10 @@ def screening_history(
     market: str = Query("", max_length=16),
     config: Config = Depends(get_config_dep),
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    return _service(config, db_manager).history(
+    # 多用户模式按登录用户过滤选股运行历史；admin 额外可见 legacy 无主记录
+    return _scoped_service(config, db_manager, current_user).history(
         limit=limit,
         strategy=strategy,
         market=market,
@@ -237,8 +296,10 @@ def screening_history_detail(
     run_id: str,
     config: Config = Depends(get_config_dep),
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    return _service(config, db_manager).history_detail(run_id)
+    # 他人运行由 ScreeningService 以 404 返回
+    return _scoped_service(config, db_manager, current_user).history_detail(run_id)
 
 
 @router.get("/source-history")
@@ -246,5 +307,6 @@ def screening_source_history(
     limit: int = Query(100, ge=1, le=100),
     config: Config = Depends(get_config_dep),
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    return _service(config, db_manager).source_history(limit=limit)
+    return _scoped_service(config, db_manager, current_user).source_history(limit=limit)

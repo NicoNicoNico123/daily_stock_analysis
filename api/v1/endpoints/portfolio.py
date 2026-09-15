@@ -7,9 +7,10 @@ import logging
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 
+from api.deps import get_current_user, resolve_owner_scope
 from api.v1.errors import api_error
 from api.v1.schemas.analysis import DuplicateTaskErrorResponse, TaskAccepted
 from api.v1.schemas.common import ErrorResponse
@@ -36,6 +37,7 @@ from api.v1.schemas.portfolio import (
     PortfolioTradeCreateRequest,
 )
 from src.services.task_queue import get_task_queue
+from src.auth import is_multi_user_enabled
 from src.services.portfolio_import_service import PortfolioImportService
 from src.services.portfolio_risk_service import PortfolioRiskService
 from src.services.portfolio_service import (
@@ -63,6 +65,19 @@ def _conflict_error(*, error: str, message: str) -> HTTPException:
     return api_error(409, error, message)
 
 
+def _portfolio_owner_scope(current_user: Optional[dict]):
+    """解析持仓归属作用域 (owner_user_id, include_unowned)。
+
+    - 多用户关闭：返回 (None, False)，查询不过滤、写入不留归属（保持旧语义）。
+    - 多用户开启但请求无身份（正常由认证中间件拦截，此处兜底）时 fail-closed 401。
+    """
+    if not is_multi_user_enabled():
+        return None, False
+    if not current_user:
+        raise api_error(401, "unauthorized", "Login required")
+    return resolve_owner_scope(current_user)
+
+
 def _serialize_import_record(item: dict) -> PortfolioImportTradeItem:
     payload = dict(item)
     trade_date = payload.get("trade_date")
@@ -79,7 +94,11 @@ def _serialize_import_record(item: dict) -> PortfolioImportTradeItem:
     responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     summary="Create portfolio account",
 )
-def create_account(request: PortfolioAccountCreateRequest) -> PortfolioAccountItem:
+def create_account(
+    request: PortfolioAccountCreateRequest,
+    current_user: Optional[dict] = Depends(get_current_user),
+) -> PortfolioAccountItem:
+    owner_user_id, _ = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
         row = service.create_account(
@@ -87,7 +106,8 @@ def create_account(request: PortfolioAccountCreateRequest) -> PortfolioAccountIt
             broker=request.broker,
             market=request.market,
             base_currency=request.base_currency,
-            owner_id=request.owner_id,
+            # 多用户模式：归属以登录身份为准，忽略客户端自报的 owner_id
+            owner_id=owner_user_id if owner_user_id is not None else request.owner_id,
         )
         return PortfolioAccountItem(**row)
     except ValueError as exc:
@@ -104,10 +124,16 @@ def create_account(request: PortfolioAccountCreateRequest) -> PortfolioAccountIt
 )
 def list_accounts(
     include_inactive: bool = Query(False, description="Whether to include inactive accounts"),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> PortfolioAccountListResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
-        rows = service.list_accounts(include_inactive=include_inactive)
+        rows = service.list_accounts(
+            include_inactive=include_inactive,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         return PortfolioAccountListResponse(accounts=[PortfolioAccountItem(**item) for item in rows])
     except Exception as exc:
         raise _internal_error("List accounts failed", exc)
@@ -119,7 +145,12 @@ def list_accounts(
     responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     summary="Update portfolio account",
 )
-def update_account(account_id: int, request: PortfolioAccountUpdateRequest) -> PortfolioAccountItem:
+def update_account(
+    account_id: int,
+    request: PortfolioAccountUpdateRequest,
+    current_user: Optional[dict] = Depends(get_current_user),
+) -> PortfolioAccountItem:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
         updated = service.update_account(
@@ -130,6 +161,8 @@ def update_account(account_id: int, request: PortfolioAccountUpdateRequest) -> P
             base_currency=request.base_currency,
             owner_id=request.owner_id,
             is_active=request.is_active,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         if updated is None:
             raise api_error(404, "not_found", f"Account not found: {account_id}")
@@ -147,10 +180,18 @@ def update_account(account_id: int, request: PortfolioAccountUpdateRequest) -> P
     responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     summary="Deactivate portfolio account",
 )
-def delete_account(account_id: int):
+def delete_account(
+    account_id: int,
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
-        ok = service.deactivate_account(account_id)
+        ok = service.deactivate_account(
+            account_id,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         if not ok:
             raise api_error(404, "not_found", f"Account not found: {account_id}")
         return {"deleted": 1}
@@ -166,7 +207,11 @@ def delete_account(account_id: int):
     responses={400: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     summary="Record trade event",
 )
-def create_trade(request: PortfolioTradeCreateRequest) -> PortfolioEventCreatedResponse:
+def create_trade(
+    request: PortfolioTradeCreateRequest,
+    current_user: Optional[dict] = Depends(get_current_user),
+) -> PortfolioEventCreatedResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
         data = service.record_trade(
@@ -182,6 +227,8 @@ def create_trade(request: PortfolioTradeCreateRequest) -> PortfolioEventCreatedR
             currency=request.currency,
             trade_uid=request.trade_uid,
             note=request.note,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return PortfolioEventCreatedResponse(**data)
     except PortfolioBusyError as exc:
@@ -210,7 +257,9 @@ def list_trades(
     side: Optional[str] = Query(None, description="Optional side filter: buy/sell"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> PortfolioTradeListResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
         data = service.list_trade_events(
@@ -221,6 +270,8 @@ def list_trades(
             side=side,
             page=page,
             page_size=page_size,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return PortfolioTradeListResponse(**data)
     except ValueError as exc:
@@ -256,7 +307,11 @@ def delete_trade(trade_id: int) -> PortfolioDeleteResponse:
     responses={400: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     summary="Record cash event",
 )
-def create_cash_ledger(request: PortfolioCashLedgerCreateRequest) -> PortfolioEventCreatedResponse:
+def create_cash_ledger(
+    request: PortfolioCashLedgerCreateRequest,
+    current_user: Optional[dict] = Depends(get_current_user),
+) -> PortfolioEventCreatedResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
         data = service.record_cash_ledger(
@@ -266,6 +321,8 @@ def create_cash_ledger(request: PortfolioCashLedgerCreateRequest) -> PortfolioEv
             amount=request.amount,
             currency=request.currency,
             note=request.note,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return PortfolioEventCreatedResponse(**data)
     except PortfolioBusyError as exc:
@@ -289,7 +346,9 @@ def list_cash_ledger(
     direction: Optional[str] = Query(None, description="Optional direction filter: in/out"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> PortfolioCashLedgerListResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
         data = service.list_cash_ledger_events(
@@ -299,6 +358,8 @@ def list_cash_ledger(
             direction=direction,
             page=page,
             page_size=page_size,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return PortfolioCashLedgerListResponse(**data)
     except ValueError as exc:
@@ -334,7 +395,11 @@ def delete_cash_ledger(entry_id: int) -> PortfolioDeleteResponse:
     responses={400: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     summary="Record corporate action event",
 )
-def create_corporate_action(request: PortfolioCorporateActionCreateRequest) -> PortfolioEventCreatedResponse:
+def create_corporate_action(
+    request: PortfolioCorporateActionCreateRequest,
+    current_user: Optional[dict] = Depends(get_current_user),
+) -> PortfolioEventCreatedResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
         data = service.record_corporate_action(
@@ -347,6 +412,8 @@ def create_corporate_action(request: PortfolioCorporateActionCreateRequest) -> P
             cash_dividend_per_share=request.cash_dividend_per_share,
             split_ratio=request.split_ratio,
             note=request.note,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return PortfolioEventCreatedResponse(**data)
     except PortfolioBusyError as exc:
@@ -371,7 +438,9 @@ def list_corporate_actions(
     action_type: Optional[str] = Query(None, description="Optional action type filter"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> PortfolioCorporateActionListResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
         data = service.list_corporate_action_events(
@@ -382,6 +451,8 @@ def list_corporate_actions(
             action_type=action_type,
             page=page,
             page_size=page_size,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return PortfolioCorporateActionListResponse(**data)
     except ValueError as exc:
@@ -425,7 +496,9 @@ def get_snapshot(
         True,
         description="Whether today's snapshot should try realtime quotes before historical close fallback",
     ),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> PortfolioSnapshotResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
         data = service.get_portfolio_snapshot(
@@ -433,6 +506,8 @@ def get_snapshot(
             as_of=as_of,
             cost_method=cost_method,
             include_realtime=include_realtime,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return PortfolioSnapshotResponse(**data)
     except ValueError as exc:
@@ -448,10 +523,21 @@ def get_snapshot(
     responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": DuplicateTaskErrorResponse}, 500: {"model": ErrorResponse}},
     summary="Submit manual analysis for a held portfolio position",
 )
-def analyze_position(symbol: str, request: PortfolioPositionAnalysisRequest) -> TaskAccepted | JSONResponse:
+def analyze_position(
+    symbol: str,
+    request: PortfolioPositionAnalysisRequest,
+    current_user: Optional[dict] = Depends(get_current_user),
+) -> TaskAccepted | JSONResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
-        context = _resolve_position_analysis_context(service, symbol=symbol, account_id=request.account_id)
+        context = _resolve_position_analysis_context(
+            service,
+            symbol=symbol,
+            account_id=request.account_id,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
     except HTTPException:
         raise
     except ValueError as exc:
@@ -471,6 +557,7 @@ def analyze_position(symbol: str, request: PortfolioPositionAnalysisRequest) -> 
         analysis_phase=request.analysis_phase,
         force_refresh=bool(request.force),
         notify=True,
+        owner_user_id=owner_user_id,
     )
     if duplicates:
         dup = duplicates[0]
@@ -497,12 +584,19 @@ def _resolve_position_analysis_context(
     *,
     symbol: str,
     account_id: Optional[int],
+    owner_user_id: Optional[str] = None,
+    include_unowned: bool = False,
 ) -> dict:
     target = service._normalize_symbol_for_position(symbol)
     if not target:
         raise ValueError("symbol must not be empty")
 
-    snapshot = service.get_portfolio_snapshot(account_id=account_id, cost_method="fifo")
+    snapshot = service.get_portfolio_snapshot(
+        account_id=account_id,
+        cost_method="fifo",
+        owner_user_id=owner_user_id,
+        include_unowned=include_unowned,
+    )
     matches = []
     for account in snapshot.get("accounts") or []:
         for position in account.get("positions") or []:
@@ -608,9 +702,18 @@ def commit_csv_import(
     broker: str = Form(..., description="Broker id: huatai/citic/cmb"),
     dry_run: bool = Form(False),
     file: UploadFile = File(...),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> PortfolioImportCommitResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     importer = PortfolioImportService()
     try:
+        # 多用户模式：先做账号归属校验，越权账号拒绝提交
+        if owner_user_id is not None:
+            PortfolioService()._require_active_account(
+                account_id,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
         content = file.file.read()
         parsed = importer.parse_trade_csv(broker=broker, content=content)
         result = importer.commit_trade_records(
@@ -635,10 +738,17 @@ def commit_csv_import(
 def refresh_fx_rates(
     account_id: Optional[int] = Query(None, description="Optional account id"),
     as_of: Optional[date] = Query(None, description="Rate date, default today"),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> PortfolioFxRefreshResponse:
+    owner_user_id, include_unowned = _portfolio_owner_scope(current_user)
     service = PortfolioService()
     try:
-        data = service.refresh_fx_rates(account_id=account_id, as_of=as_of)
+        data = service.refresh_fx_rates(
+            account_id=account_id,
+            as_of=as_of,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         return PortfolioFxRefreshResponse(**data)
     except ValueError as exc:
         raise _bad_request(exc)
@@ -660,7 +770,9 @@ def get_risk_report(
         True,
         description="Whether today's risk snapshot should try realtime quotes before historical close fallback",
     ),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> PortfolioRiskResponse:
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     service = PortfolioRiskService()
     try:
         data = service.get_risk_report(
@@ -668,6 +780,8 @@ def get_risk_report(
             as_of=as_of,
             cost_method=cost_method,
             include_realtime=include_realtime,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return PortfolioRiskResponse(**data)
     except ValueError as exc:

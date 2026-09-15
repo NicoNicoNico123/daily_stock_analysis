@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.deps import get_database_manager
+from api.deps import get_current_user, get_database_manager, resolve_owner_scope
 from api.v1.schemas.backtest import (
     BacktestRunRequest,
     BacktestRunResponse,
@@ -56,7 +56,10 @@ def _validate_analysis_date_range(
 def run_backtest(
     request: BacktestRunRequest,
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> BacktestRunResponse:
+    # 回测候选读取保持引擎全量语义，仅给本次写入结果标注归属
+    owner_user_id, _include_unowned = resolve_owner_scope(current_user)
     try:
         _validate_analysis_date_range(request.analysis_date_from, request.analysis_date_to)
         service = BacktestService(db_manager)
@@ -68,6 +71,7 @@ def run_backtest(
             analysis_date_from=request.analysis_date_from,
             analysis_date_to=request.analysis_date_to,
             limit=request.limit,
+            owner_user_id=owner_user_id,
         )
         return BacktestRunResponse(**stats)
     except ValueError as exc:
@@ -105,7 +109,10 @@ def get_backtest_results(
     page: int = Query(1, ge=1, description="页码"),
     limit: int = Query(20, ge=1, le=200, description="每页数量"),
     db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
 ) -> BacktestResultsResponse:
+    # 多用户模式按登录用户过滤回测结果；admin 额外可见 legacy 无主结果
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
     try:
         _validate_analysis_date_range(analysis_date_from, analysis_date_to)
         service = BacktestService(db_manager)
@@ -117,6 +124,8 @@ def get_backtest_results(
             analysis_date_from=analysis_date_from,
             analysis_date_to=analysis_date_to,
             analysis_phase=analysis_phase,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         items = [BacktestResultItem(**item) for item in data.get("items", [])]
         return BacktestResultsResponse(

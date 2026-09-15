@@ -138,8 +138,17 @@ class PortfolioService:
         )
         return self._account_to_dict(row)
 
-    def list_accounts(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
-        rows = self.repo.list_accounts(include_inactive=include_inactive)
+    def list_accounts(
+        self,
+        include_inactive: bool = False,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> List[Dict[str, Any]]:
+        rows = self.repo.list_accounts(
+            include_inactive=include_inactive,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         return [self._account_to_dict(r) for r in rows]
 
     def update_account(
@@ -152,7 +161,17 @@ class PortfolioService:
         base_currency: Optional[str] = None,
         owner_id: Optional[str] = None,
         is_active: Optional[bool] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Optional[Dict[str, Any]]:
+        # 多用户模式：越权账号直接视为不存在（404 语义），不做部分更新
+        if owner_user_id is not None and self.repo.get_account(
+            account_id,
+            include_inactive=True,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        ) is None:
+            return None
         fields: Dict[str, Any] = {}
         if name is not None:
             name_norm = name.strip()
@@ -177,7 +196,20 @@ class PortfolioService:
             return None
         return self._account_to_dict(row)
 
-    def deactivate_account(self, account_id: int) -> bool:
+    def deactivate_account(
+        self,
+        account_id: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> bool:
+        # 多用户模式：越权账号视为不存在（保持 404 语义）
+        if owner_user_id is not None and self.repo.get_account(
+            account_id,
+            include_inactive=True,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        ) is None:
+            return False
         return self.repo.deactivate_account(account_id)
 
     # ------------------------------------------------------------------
@@ -199,6 +231,8 @@ class PortfolioService:
         trade_uid: Optional[str] = None,
         dedup_hash: Optional[str] = None,
         note: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         side_norm = (side or "").strip().lower()
         if side_norm not in VALID_SIDES:
@@ -214,7 +248,12 @@ class PortfolioService:
         dedup_hash_norm = (dedup_hash or "").strip() or None
         try:
             with self.repo.portfolio_write_session() as session:
-                account = self._require_active_account_in_session(session=session, account_id=account_id)
+                account = self._require_active_account_in_session(
+                    session=session,
+                    account_id=account_id,
+                    owner_user_id=owner_user_id,
+                    include_unowned=include_unowned,
+                )
                 market_norm = self._normalize_market(market or account.market)
                 currency_norm = self._normalize_currency(currency or self._default_currency_for_market(market_norm))
                 self._validate_trade_identity(
@@ -262,6 +301,8 @@ class PortfolioService:
         amount: float,
         currency: Optional[str] = None,
         note: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         direction_norm = (direction or "").strip().lower()
         if direction_norm not in VALID_CASH_DIRECTIONS:
@@ -269,7 +310,12 @@ class PortfolioService:
         if amount <= 0:
             raise ValueError("amount must be > 0")
         with self.repo.portfolio_write_session() as session:
-            account = self._require_active_account_in_session(session=session, account_id=account_id)
+            account = self._require_active_account_in_session(
+                session=session,
+                account_id=account_id,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
             currency_norm = self._normalize_currency(currency or account.base_currency)
             row = self.repo.add_cash_ledger_in_session(
                 session=session,
@@ -294,6 +340,8 @@ class PortfolioService:
         cash_dividend_per_share: Optional[float] = None,
         split_ratio: Optional[float] = None,
         note: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         action_type_norm = (action_type or "").strip().lower()
         if action_type_norm not in VALID_CORPORATE_ACTIONS:
@@ -306,7 +354,12 @@ class PortfolioService:
             if split_ratio is None or split_ratio <= 0:
                 raise ValueError("split_ratio must be > 0 for split_adjustment")
         with self.repo.portfolio_write_session() as session:
-            account = self._require_active_account_in_session(session=session, account_id=account_id)
+            account = self._require_active_account_in_session(
+                session=session,
+                account_id=account_id,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
             market_norm = self._normalize_market(market or account.market)
             currency_norm = self._normalize_currency(currency or self._default_currency_for_market(market_norm))
             symbol_norm = self._normalize_symbol_for_storage(symbol)
@@ -348,9 +401,15 @@ class PortfolioService:
         side: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         if account_id is not None:
-            self._require_active_account(account_id)
+            self._require_active_account(
+                account_id,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
         page, page_size = self._validate_paging(page=page, page_size=page_size)
         if date_from is not None and date_to is not None and date_from > date_to:
             raise ValueError("date_from must be <= date_to")
@@ -375,6 +434,8 @@ class PortfolioService:
             side=side_norm,
             page=page,
             page_size=page_size,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return {
             "items": [self._trade_row_to_dict(row) for row in rows],
@@ -392,9 +453,15 @@ class PortfolioService:
         direction: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         if account_id is not None:
-            self._require_active_account(account_id)
+            self._require_active_account(
+                account_id,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
         page, page_size = self._validate_paging(page=page, page_size=page_size)
         if date_from is not None and date_to is not None and date_from > date_to:
             raise ValueError("date_from must be <= date_to")
@@ -412,6 +479,8 @@ class PortfolioService:
             direction=direction_norm,
             page=page,
             page_size=page_size,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return {
             "items": [self._cash_ledger_row_to_dict(row) for row in rows],
@@ -430,9 +499,15 @@ class PortfolioService:
         action_type: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         if account_id is not None:
-            self._require_active_account(account_id)
+            self._require_active_account(
+                account_id,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
         page, page_size = self._validate_paging(page=page, page_size=page_size)
         if date_from is not None and date_to is not None and date_from > date_to:
             raise ValueError("date_from must be <= date_to")
@@ -457,6 +532,8 @@ class PortfolioService:
             action_type=action_norm,
             page=page,
             page_size=page_size,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         return {
             "items": [self._corporate_action_row_to_dict(row) for row in rows],
@@ -475,15 +552,25 @@ class PortfolioService:
         as_of: Optional[date] = None,
         cost_method: str = "fifo",
         include_realtime: bool = True,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         as_of_date = as_of or date.today()
         method = self._normalize_cost_method(cost_method)
 
         if account_id is not None:
-            account = self._require_active_account(account_id)
+            account = self._require_active_account(
+                account_id,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
             account_rows = [account]
         else:
-            account_rows = self.repo.list_accounts(include_inactive=False)
+            account_rows = self.repo.list_accounts(
+                include_inactive=False,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
 
         accounts_payload: List[Dict[str, Any]] = []
         aggregate_currency = "CNY"
@@ -617,15 +704,27 @@ class PortfolioService:
         *,
         account_id: Optional[int] = None,
         as_of: Optional[date] = None,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
     ) -> Dict[str, Any]:
         """Refresh account FX pairs online with stale fallback when fetch fails."""
         as_of_date = as_of or date.today()
         config = get_config()
         refresh_enabled = bool(getattr(config, "portfolio_fx_update_enabled", True))
         if account_id is not None:
-            account_rows = [self._require_active_account(account_id)]
+            account_rows = [
+                self._require_active_account(
+                    account_id,
+                    owner_user_id=owner_user_id,
+                    include_unowned=include_unowned,
+                )
+            ]
         else:
-            account_rows = self.repo.list_accounts(include_inactive=False)
+            account_rows = self.repo.list_accounts(
+                include_inactive=False,
+                owner_user_id=owner_user_id,
+                include_unowned=include_unowned,
+            )
 
         summary = {
             "as_of": as_of_date.isoformat(),
@@ -1611,17 +1710,36 @@ class PortfolioService:
             return None
         return value
 
-    def _require_active_account(self, account_id: int) -> Any:
-        account = self.repo.get_account(account_id, include_inactive=False)
+    def _require_active_account(
+        self,
+        account_id: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Any:
+        account = self.repo.get_account(
+            account_id,
+            include_inactive=False,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+        )
         if account is None:
             raise ValueError(f"Active account not found: {account_id}")
         return account
 
-    def _require_active_account_in_session(self, *, session: Any, account_id: int) -> Any:
+    def _require_active_account_in_session(
+        self,
+        *,
+        session: Any,
+        account_id: int,
+        owner_user_id: Optional[str] = None,
+        include_unowned: bool = False,
+    ) -> Any:
         account = self.repo.get_account_in_session(
             session=session,
             account_id=account_id,
             include_inactive=False,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
         )
         if account is None:
             raise ValueError(f"Active account not found: {account_id}")
