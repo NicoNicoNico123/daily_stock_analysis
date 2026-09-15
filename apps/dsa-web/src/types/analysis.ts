@@ -126,6 +126,24 @@ export interface ReportStrategy {
   takeProfit?: string;
 }
 
+/** 报告翻译结果（后端 LLM 翻译并持久化缓存；值为空时回退原始内容） */
+export interface ReportTranslation {
+  cached: boolean;
+  targetLang: 'en' | 'zh';
+  summary: {
+    analysisSummary?: string;
+    operationAdvice?: string;
+    trendPrediction?: string;
+  };
+  strategy: {
+    idealBuy?: string;
+    secondaryBuy?: string;
+    stopLoss?: string;
+    takeProfit?: string;
+  };
+  markdown?: string | null;
+}
+
 export interface RelatedBoard {
   name: string;
   code?: string;

@@ -355,6 +355,25 @@ class MarkdownReportResponse(BaseModel):
     })
 
 
+class ReportTranslationResponse(BaseModel):
+    """报告翻译响应（LLM 翻译，后端持久化缓存）"""
+
+    cached: bool = Field(..., description="是否命中已持久化的翻译缓存")
+    target_lang: str = Field(..., description="目标语言（en / zh，zh = 简体中文）")
+    summary: Dict[str, Optional[str]] = Field(
+        default_factory=dict,
+        description="翻译后的概览字段（analysis_summary / operation_advice / trend_prediction）",
+    )
+    strategy: Dict[str, Optional[str]] = Field(
+        default_factory=dict,
+        description="翻译后的策略点位字段（ideal_buy / secondary_buy / stop_loss / take_profit）",
+    )
+    markdown: Optional[str] = Field(
+        None,
+        description="翻译后的完整 Markdown 报告；源记录无 Markdown 内容时为 null",
+    )
+
+
 class StockBarItem(BaseModel):
     """个股栏条目（去重后的股票维度摘要）"""
 

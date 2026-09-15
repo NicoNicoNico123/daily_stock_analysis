@@ -506,6 +506,35 @@ class AnalysisHistory(Base):
         }
 
 
+class ReportTranslation(Base):
+    """
+    报告翻译缓存
+
+    按分析历史记录主键 + 目标语言缓存 LLM 翻译结果，避免同一份报告重复付费翻译。
+    analysis_history_id 不使用外键：删除历史记录时由存储层显式清理，避免遗留孤儿缓存。
+    target_lang 取 'en' 或 'zh'（zh = 简体中文，与后端报告语言约定一致）。
+    """
+
+    __tablename__ = 'report_translations'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analysis_history_id = Column(Integer, nullable=False, index=True)
+    target_lang = Column(String(8), nullable=False)
+    content_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            'analysis_history_id',
+            'target_lang',
+            name='uix_report_translation_history_lang',
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReportTranslation(history_id={self.analysis_history_id}, lang={self.target_lang})>"
+
+
 class BacktestResult(Base):
     """单条分析记录的回测结果。"""
 
@@ -3876,6 +3905,104 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             ).scalars().first()
             return result
 
+    def get_report_translation(
+        self,
+        history_id: int,
+        target_lang: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        读取报告翻译缓存。
+
+        Args:
+            history_id: 分析历史记录主键 ID
+            target_lang: 目标语言（'en' 或 'zh'）
+
+        Returns:
+            反序列化后的翻译内容 dict；未命中或反序列化失败返回 None
+        """
+        with self.get_session() as session:
+            row = session.execute(
+                select(ReportTranslation).where(
+                    and_(
+                        ReportTranslation.analysis_history_id == history_id,
+                        ReportTranslation.target_lang == target_lang,
+                    )
+                )
+            ).scalars().first()
+            if row is None:
+                return None
+            try:
+                return json.loads(row.content_json)
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    "报告翻译缓存损坏 (history_id=%s, lang=%s): %s",
+                    history_id,
+                    target_lang,
+                    exc,
+                )
+                return None
+
+    def save_report_translation(
+        self,
+        history_id: int,
+        target_lang: str,
+        content: Dict[str, Any],
+    ) -> bool:
+        """
+        写入（或覆盖）报告翻译缓存。
+
+        Args:
+            history_id: 分析历史记录主键 ID
+            target_lang: 目标语言（'en' 或 'zh'）
+            content: 翻译内容 dict（序列化为 JSON 存储）
+
+        Returns:
+            是否写入成功
+        """
+        try:
+            payload = json.dumps(content, ensure_ascii=False)
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "报告翻译内容无法序列化 (history_id=%s, lang=%s): %s",
+                history_id,
+                target_lang,
+                exc,
+            )
+            return False
+
+        def _write(session: Session) -> bool:
+            existing = session.execute(
+                select(ReportTranslation).where(
+                    and_(
+                        ReportTranslation.analysis_history_id == history_id,
+                        ReportTranslation.target_lang == target_lang,
+                    )
+                )
+            ).scalars().first()
+            if existing is not None:
+                existing.content_json = payload
+                existing.created_at = datetime.now()
+                return True
+            session.add(
+                ReportTranslation(
+                    analysis_history_id=history_id,
+                    target_lang=target_lang,
+                    content_json=payload,
+                )
+            )
+            return True
+
+        try:
+            return self._run_write_transaction("save report translation", _write)
+        except Exception as exc:
+            logger.warning(
+                "保存报告翻译缓存失败 (history_id=%s, lang=%s): %s",
+                history_id,
+                target_lang,
+                exc,
+            )
+            return False
+
     def delete_analysis_history_records(
         self,
         record_ids: List[int],
@@ -3946,6 +4073,12 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 )
             session.execute(
                 delete(BacktestResult).where(BacktestResult.analysis_history_id.in_(existing_ids))
+            )
+            # 同步清理报告翻译缓存，避免 rowid 复用后读到别的报告的旧翻译
+            session.execute(
+                delete(ReportTranslation).where(
+                    ReportTranslation.analysis_history_id.in_(existing_ids)
+                )
             )
             linked_skill_sample_ids = sorted(
                 session.execute(

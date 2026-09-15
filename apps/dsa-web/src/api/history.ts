@@ -9,6 +9,7 @@ import type {
   NewsIntelItem,
   RunDiagnosticSummary,
   StockBarResponse,
+  ReportTranslation,
 } from '../types/analysis';
 import type { RunFlowSnapshot } from '../types/runFlow';
 
@@ -88,6 +89,19 @@ export const historyApi = {
   getMarkdown: async (recordId: number): Promise<string> => {
     const response = await apiClient.get<{ content: string }>(`/api/v1/history/${recordId}/markdown`);
     return response.data.content;
+  },
+
+  /**
+   * 获取历史报告翻译（后端 LLM 翻译并持久化缓存）
+   * @param recordId 分析历史记录主键 ID
+   * @param lang 目标语言（en / zh，zh = 简体中文）
+   */
+  getTranslation: async (recordId: number, lang: 'en' | 'zh'): Promise<ReportTranslation> => {
+    const response = await apiClient.get<Record<string, unknown>>(
+      `/api/v1/history/${recordId}/translation`,
+      { params: { lang } },
+    );
+    return toCamelCase<ReportTranslation>(response.data);
   },
 
   /**

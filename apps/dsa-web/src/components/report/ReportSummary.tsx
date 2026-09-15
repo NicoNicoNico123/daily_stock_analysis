@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { AnalysisResult, AnalysisReport } from '../../types/analysis';
 import { ReportOverview } from './ReportOverview';
 import { ReportStrategy } from './ReportStrategy';
@@ -9,6 +9,7 @@ import { AnalysisContextSummary } from './AnalysisContextSummary';
 import { MarketReviewReportView } from './MarketReviewReportView';
 import { getReportText } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import { useReportTranslation } from '../../hooks/useReportTranslation';
 
 interface ReportSummaryProps {
   data: AnalysisResult | AnalysisReport;
@@ -48,6 +49,44 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
     modelUsed && !['unknown', 'error', 'none', 'null', 'n/a'].includes(modelUsed.toLowerCase()),
   );
 
+  // 英文界面下，报告正文（结论/建议/趋势/点位）优先使用后端 LLM 翻译结果；
+  // 翻译未就绪或失败时回退原文，不阻塞首屏渲染。
+  const translated = useReportTranslation(recordId);
+  const localizedSummary = useMemo(() => {
+    const translatedSummary = translated?.summary;
+    if (!translatedSummary) {
+      return summary;
+    }
+    return {
+      ...summary,
+      analysisSummary: translatedSummary.analysisSummary || summary.analysisSummary,
+      operationAdvice: translatedSummary.operationAdvice || summary.operationAdvice,
+      trendPrediction: translatedSummary.trendPrediction || summary.trendPrediction,
+    };
+  }, [translated, summary]);
+  const localizedStrategy = useMemo(() => {
+    const translatedStrategy = translated?.strategy;
+    if (!translatedStrategy) {
+      return strategy;
+    }
+    const hasTranslation = Boolean(
+      translatedStrategy.idealBuy
+        || translatedStrategy.secondaryBuy
+        || translatedStrategy.stopLoss
+        || translatedStrategy.takeProfit,
+    );
+    if (!hasTranslation) {
+      return strategy;
+    }
+    return {
+      ...strategy,
+      idealBuy: translatedStrategy.idealBuy || strategy?.idealBuy,
+      secondaryBuy: translatedStrategy.secondaryBuy || strategy?.secondaryBuy,
+      stopLoss: translatedStrategy.stopLoss || strategy?.stopLoss,
+      takeProfit: translatedStrategy.takeProfit || strategy?.takeProfit,
+    };
+  }, [translated, strategy]);
+
   if (meta.reportType === 'market_review') {
     return (
       <MarketReviewReportView
@@ -63,14 +102,14 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
       {/* 概覽區（首屏） */}
       <ReportOverview
         meta={meta}
-        summary={summary}
+        summary={localizedSummary}
         details={details}
         isHistory={isHistory}
         watchlist={watchlist}
       />
 
       {/* 策略點位區 */}
-      <ReportStrategy strategy={strategy} />
+      <ReportStrategy strategy={localizedStrategy} />
 
       {/* 資訊區 */}
       <ReportNews recordId={recordId} limit={8} />

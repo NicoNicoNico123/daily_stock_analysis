@@ -29,6 +29,7 @@ from api.v1.schemas.history import (
     ReportStrategy,
     ReportDetails,
     MarkdownReportResponse,
+    ReportTranslationResponse,
     RunDiagnosticSummaryResponse,
     StockBarItem,
     StockBarResponse,
@@ -44,6 +45,10 @@ from src.report_language import (
     normalize_report_language,
 )
 from src.services.history_service import HistoryService, MarkdownReportGenerationError
+from src.services.report_translation_service import (
+    SUPPORTED_TARGET_LANGUAGES,
+    translate_analysis_report,
+)
 from src.services.analysis_service import asset_type_from_canonical_code
 from src.schemas.decision_action import build_action_fields
 from src.utils.data_processing import (
@@ -1094,3 +1099,110 @@ def get_history_markdown(
         )
 
     return MarkdownReportResponse(content=markdown_content)
+
+
+@router.get(
+    "/{record_id}/translation",
+    response_model=ReportTranslationResponse,
+    responses={
+        200: {"description": "翻译后的报告内容（命中缓存或首次翻译成功）"},
+        400: {"description": "不支持的目标语言", "model": ErrorResponse},
+        404: {"description": "报告不存在或无权访问", "model": ErrorResponse},
+        502: {"description": "翻译生成失败", "model": ErrorResponse},
+    },
+    summary="获取历史报告翻译",
+    description=(
+        "按目标语言返回分析报告的翻译内容（概览字段 / 策略点位 / Markdown 报告）。"
+        "翻译结果按（记录 ID + 目标语言）持久化缓存，同一记录同一语言只调用一次 LLM。"
+        "目标语言 zh 表示简体中文。"
+    ),
+)
+def get_history_translation(
+    record_id: int,
+    lang: str = Query("en", description="目标语言（en / zh），zh = 简体中文"),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+    current_user: Optional[dict] = Depends(get_current_user),
+) -> ReportTranslationResponse:
+    """
+    获取历史报告的翻译内容
+
+    翻译通过后端已配置的 LLM 生成链路完成，并持久化缓存（记录 ID + 目标语言唯一）。
+    多用户模式下仅允许访问当前用户自己的记录（大盘复盘行全局可见）。
+
+    Args:
+        record_id: 分析历史记录主键 ID
+        lang: 目标语言（en / zh）
+        db_manager: 数据库管理器依赖
+        current_user: 当前登录用户（多用户模式；单用户模式为 None）
+
+    Returns:
+        ReportTranslationResponse: 翻译后的报告内容
+
+    Raises:
+        HTTPException: 400 - 目标语言不支持
+        HTTPException: 404 - 报告不存在或无权访问
+        HTTPException: 502 - LLM 翻译失败
+    """
+    target_lang = (lang or "").strip().lower()
+    if target_lang not in SUPPORTED_TARGET_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_request",
+                "message": f"不支持的目标语言: {lang}（可选值: {', '.join(SUPPORTED_TARGET_LANGUAGES)}）",
+            },
+        )
+
+    # 多用户模式下仅允许访问当前用户自己的记录（大盘复盘行全局可见）
+    owner_user_id, include_unowned = resolve_owner_scope(current_user)
+    try:
+        service = HistoryService(db_manager)
+        detail = service.resolve_and_get_detail(
+            str(record_id),
+            **_owner_scope_kwargs(owner_user_id, include_unowned),
+        )
+        if detail is None or not detail.get("id"):
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "not_found",
+                    "message": f"未找到 id={record_id} 的分析记录",
+                },
+            )
+
+        payload = translate_analysis_report(
+            record_id,
+            target_lang,
+            owner_user_id=owner_user_id,
+            include_unowned=include_unowned,
+            detail=detail,
+            db_manager=db_manager,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"查询报告翻译失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "translation_failed",
+                "message": f"报告翻译失败: {str(e)}",
+            }
+        )
+
+    if payload is None:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "translation_failed",
+                "message": "报告翻译生成失败，请稍后重试",
+            },
+        )
+
+    return ReportTranslationResponse(
+        cached=bool(payload.get("cached")),
+        target_lang=target_lang,
+        summary=payload.get("summary") or {},
+        strategy=payload.get("strategy") or {},
+        markdown=payload.get("markdown"),
+    )
