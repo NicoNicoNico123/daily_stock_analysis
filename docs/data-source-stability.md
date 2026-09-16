@@ -169,7 +169,7 @@ DAILY_FETCH_MAX_WORKERS=1
 
 ### 港股 / 美股稳定模式
 
-适合港美股组合、持仓和个股分析。Longbridge 配置后优先参与港美股链路；YFinance、Finnhub、AlphaVantage 作为兜底。
+适合港美股组合、持仓和个股分析。Longbridge 配置后优先参与港美股链路；YFinance、Finnhub、AlphaVantage 作为兜底；TwelveData 配置后作为美股日 K 与实时价格的最后兜底（免费档 800 credits/day、8 req/min，被限流/鉴权失败时自动降级）。
 
 ```env
 LONGBRIDGE_OAUTH_CLIENT_ID=your_client_id
@@ -177,6 +177,7 @@ LONGBRIDGE_OAUTH_TOKEN_CACHE_B64=your_token_cache_base64
 
 FINNHUB_API_KEY=your_finnhub_key
 ALPHAVANTAGE_API_KEY=your_alphavantage_key
+TWELVEDATA_API_KEY=your_twelvedata_key
 ```
 
 如果仍使用 Legacy Longbridge 凭证，也可以继续配置：

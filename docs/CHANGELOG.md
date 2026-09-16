@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 筹码分布本地计算兜底：东财/Tushare 筹码接口均失败（如东财限流封禁窗口）时，改用多源日 K + 换手率递衰算法（与东财 CYQCalculator 同源）本地估算获利比例/平均成本/成本集中度，覆盖扩展至 A 股（含 ETF/BSE）、港股与美股（指数仍跳过）；换手率按 realtime → yfinance 流通股本 → 中位数启发式三级解析并在日志标注来源，结果仅作分析输入不落库；AkShare 筹码路径增加连接类异常退避重试。
 - [新功能] 东财妙想资讯搜索接入：新增 EASTMONEY_API_KEY 配置的搜索渠道（个股/题材语义查询，优先级在 Bocha 之后）与 eastmoney 情报源类型（含市场资讯模板与 query 字段迁移），Key 未配置时渠道与默认源静默跳过。
 - [新功能] Finnhub 美股日 K 兜底：已配置 FINNHUB_API_KEY 时自动加入美股日 K 多源 fallback 链（60 次/分限流、403/429 优雅降级、日志脱敏 token），免费档被拒时零副作用。
+- [新功能] TwelveData 美股最后兜底：已配置 TWELVEDATA_API_KEY 时自动加入美股日 K 多源 fallback 链末位与美股实时行情补字段链（免费档 800 credits/day、8 req/min；401/429 单次重试后优雅降级，日志脱敏 apikey），Key 未配置时不注册、零副作用。
 - [修复] 修复港股基本面恒为 fundamentals_not_supported 的问题：Yahoo 港股符号归一化去除前导零（02513.HK → 2513.HK），修复 5 位新上市港股（如智谱）quoteSummary 404 导致的基本面块空数据；分析重跑后基本面恢复正常（来源 yfinance，status ok/partial）。
 - [改进] 港/美实时行情提速：默认港股行情源优先级调整为 futu → longbridge → yfinance → akshare（yfinance 秒级 fast_info 先于 60 秒级新浪分页兜底）；未配置 Longbridge 凭证时跳过该源；离岸（港/美/日/韩/台）行情成功后不再触发补字段二次调用。
 - [改进] 报告页标签跟随界面语言而非报告内容语言；ACTION ADVICE 值经决策动作分类本地化（英文界面显示 Reduce 等英文标签）。

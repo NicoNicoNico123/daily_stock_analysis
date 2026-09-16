@@ -889,6 +889,7 @@ class Config:
     futu_hk_realtime_source_priority: str = "futu,longbridge,yfinance,akshare"
     finnhub_api_key: Optional[str] = None
     alphavantage_api_key: Optional[str] = None
+    twelvedata_api_key: Optional[str] = None
     longbridge_app_key: Optional[str] = None
     longbridge_app_secret: Optional[str] = None
     longbridge_access_token: Optional[str] = None
@@ -1806,6 +1807,7 @@ class Config:
             futu_hk_realtime_source_priority=os.getenv('FUTU_HK_REALTIME_SOURCE_PRIORITY', 'futu,longbridge,yfinance,akshare'),
             finnhub_api_key=os.getenv('FINNHUB_API_KEY') or None,
             alphavantage_api_key=os.getenv('ALPHAVANTAGE_API_KEY') or None,
+            twelvedata_api_key=os.getenv('TWELVEDATA_API_KEY') or None,
             longbridge_app_key=os.getenv('LONGBRIDGE_APP_KEY') or None,
             longbridge_app_secret=os.getenv('LONGBRIDGE_APP_SECRET') or None,
             longbridge_access_token=os.getenv('LONGBRIDGE_ACCESS_TOKEN') or None,

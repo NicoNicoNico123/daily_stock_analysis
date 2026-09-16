@@ -683,6 +683,7 @@ class DataFetcherManager:
         "FutuFetcher": {"hk"},
         "FinnhubFetcher": {"us"},
         "AlphaVantageFetcher": {"us"},
+        "TwelvedataFetcher": {"us"},
     }
     _daily_source_health = CircuitBreaker(failure_threshold=3, cooldown_seconds=300.0)
     _CN_INDEX_DAILY_SOURCE_ORDER = (
@@ -1901,6 +1902,13 @@ class DataFetcherManager:
         else:
             logger.debug("[数据源初始化] 跳过未配置的 AlphaVantageFetcher")
 
+        twelvedata_api_key = (getattr(config, "twelvedata_api_key", None) or "").strip()
+        if twelvedata_api_key:
+            from .twelvedata_fetcher import TwelvedataFetcher
+            optional_fetchers.append(TwelvedataFetcher())  # 美股最后兜底（免费档 800 credits/day）
+        else:
+            logger.debug("[数据源初始化] 跳过未配置的 TwelvedataFetcher")
+
         # 初始化数据源列表
         self._ensure_concurrency_guards()
         with self._fetchers_lock:
@@ -2005,17 +2013,17 @@ class DataFetcherManager:
             raise DataFetchError(error_summary)
 
         # 美股（含美股指数）使用专用路由；港股走下方通用数据源循环
-        # Failover chain: Finnhub(P2) -> AlphaVantage(P3) -> Yfinance(P4) -> Longbridge(P5)
-        # When Longbridge preferred: Longbridge -> Finnhub -> AlphaVantage -> Yfinance
+        # Failover chain: Finnhub(P2) -> AlphaVantage(P3) -> Yfinance(P4) -> Longbridge(P5) -> Twelvedata(P6)
+        # When Longbridge preferred: Longbridge -> Finnhub -> AlphaVantage -> Yfinance -> Twelvedata
         if is_us:
             prefer_lb = self._longbridge_preferred(capability="daily_data") and not is_us_index
             if is_us_index:
                 # 指数始终 YFinance 首选（Longbridge 不提供指数K线）
                 source_order = ["YfinanceFetcher", "FinnhubFetcher"]
             elif prefer_lb:
-                source_order = ["LongbridgeFetcher", "FinnhubFetcher", "AlphaVantageFetcher", "YfinanceFetcher"]
+                source_order = ["LongbridgeFetcher", "FinnhubFetcher", "AlphaVantageFetcher", "YfinanceFetcher", "TwelvedataFetcher"]
             else:
-                source_order = ["FinnhubFetcher", "AlphaVantageFetcher", "YfinanceFetcher", "LongbridgeFetcher"]
+                source_order = ["FinnhubFetcher", "AlphaVantageFetcher", "YfinanceFetcher", "LongbridgeFetcher", "TwelvedataFetcher"]
             # 消费各数据源当前优先级(含 *_PRIORITY 环境变量):默认优先级与内置链路一致,
             # 单项调整(如 YFINANCE_PRIORITY=0)即时生效;指数/Longbridge preferred 的锚定首选不被普通优先级覆盖
             pin_first = bool(is_us_index or prefer_lb)
@@ -2399,6 +2407,7 @@ class DataFetcherManager:
             "AkshareFetcher": "akshare",
             "FinnhubFetcher": "finnhub",
             "AlphaVantageFetcher": "alphavantage",
+            "TwelvedataFetcher": "twelvedata",
             "EfinanceFetcher": "efinance",
             "TushareFetcher": "tushare",
         }
@@ -2624,7 +2633,7 @@ class DataFetcherManager:
                     stock_code, primary_quote, secondary_src, **secondary_kw,
                 )
             if is_us and not is_us_index and primary_quote is not None:
-                for extra_src in ["FinnhubFetcher", "AlphaVantageFetcher"]:
+                for extra_src in ["FinnhubFetcher", "AlphaVantageFetcher", "TwelvedataFetcher"]:
                     primary_quote = self._supplement_quote(
                         stock_code, primary_quote, extra_src,
                     )
