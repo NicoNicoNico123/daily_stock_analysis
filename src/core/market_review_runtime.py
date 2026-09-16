@@ -106,6 +106,7 @@ def build_market_review_runtime(
                 False,
             ),
             searxng_timeout_seconds=getattr(config, "searxng_timeout_seconds", None),
+            eastmoney_api_key=getattr(config, "eastmoney_api_key", None),
             news_max_age_days=getattr(config, "news_max_age_days", 3),
             news_strategy_profile=getattr(config, "news_strategy_profile", "short"),
         )

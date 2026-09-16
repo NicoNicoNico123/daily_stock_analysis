@@ -1195,6 +1195,237 @@ class BochaSearchProvider(BaseSearchProvider):
             return '未知来源'
 
 
+class EastMoneySearchProvider(BaseSearchProvider):
+    """
+    东方财富妙想资讯搜索
+
+    特点：
+    - 财经垂直语义搜索，返回标题、正文核心内容（trunk/content）与关联证券（secuList）
+    - 中文财经资讯覆盖好，适合 A 股个股与大盘题材检索
+    - API Key 通过 `apikey` 请求头传递，请求体只携带查询语句
+    - 业务失败时 HTTP 仍为 200，需按 `success` / `code` / `status` 判断
+
+    文档：东方财富妙想 Skills（https://marketing.dfcfs.com/views/finskillshub/indexuNdYscEA）
+    """
+
+    API_ENDPOINT = "https://mkapi2.dfcfs.com/finskillshub/api/claw/news-search"
+    REQUEST_TIMEOUT_SECONDS = 10
+    MAX_RELATED_SECURITIES = 3
+
+    def __init__(self, api_keys: List[str]):
+        super().__init__(api_keys, "EastMoney")
+
+    @staticmethod
+    def build_stock_query(stock_name: str, stock_code: str) -> Optional[str]:
+        """构造妙想语义查询（如「立讯精密的资讯」），缺失主体时回退通用查询。"""
+        subject = (stock_name or "").strip() or (stock_code or "").strip()
+        return f"{subject}的资讯" if subject else None
+
+    @staticmethod
+    def _business_error(payload: Any) -> Optional[str]:
+        """返回妙想业务码层面的错误描述；业务成功时返回 None。"""
+        if not isinstance(payload, dict):
+            return "响应格式无效"
+        if payload.get("success") is False:
+            return str(payload.get("message") or "妙想资讯搜索返回失败")
+        for key in ("code", "status"):
+            value = payload.get(key)
+            if isinstance(value, int) and value != 0:
+                return str(payload.get("message") or f"API返回错误码: {value}")
+        return None
+
+    @staticmethod
+    def _extract_items(payload: dict) -> Optional[List[Any]]:
+        """防御式提取资讯条目列表，兼容真实嵌套结构与扁平结构。"""
+        data = payload.get("data")
+        if isinstance(data, list):
+            return data
+        if not isinstance(data, dict):
+            return None
+        inner = data.get("data")
+        if isinstance(inner, dict):
+            llm_response = inner.get("llmSearchResponse")
+            if isinstance(llm_response, dict) and isinstance(llm_response.get("data"), list):
+                return llm_response["data"]
+        items = data.get("items")
+        if isinstance(items, list):
+            return items
+        return None
+
+    @staticmethod
+    def _related_securities_label(item: Dict[str, Any]) -> str:
+        """把 secuList 压缩成短标签，帮助下游个股相关性识别。"""
+        secu_list = item.get("secuList")
+        if not isinstance(secu_list, list):
+            return ""
+        names = []
+        for secu in secu_list[: EastMoneySearchProvider.MAX_RELATED_SECURITIES]:
+            if not isinstance(secu, dict):
+                continue
+            name = str(secu.get("secuName") or secu.get("secuCode") or "").strip()
+            if name and name not in names:
+                names.append(name)
+        return "、".join(names)
+
+    def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        days: int = 7,
+        em_query: Optional[str] = None,
+    ) -> SearchResponse:
+        """执行妙想搜索，可按调用方传入语义化查询语句。"""
+        if em_query is None:
+            return super().search(query, max_results=max_results, days=days)
+        return self._execute_search(
+            query,
+            max_results=max_results,
+            days=days,
+            em_query=em_query,
+        )
+
+    def _do_search(
+        self,
+        query: str,
+        api_key: str,
+        max_results: int,
+        days: int = 7,
+        em_query: Optional[str] = None,
+    ) -> SearchResponse:
+        """执行东方财富妙想资讯搜索"""
+        try:
+            search_query = (em_query or "").strip() or query
+            headers = {
+                "Content-Type": "application/json",
+                "apikey": api_key,
+            }
+
+            response = _post_with_retry(
+                self.API_ENDPOINT,
+                headers=headers,
+                json={"query": search_query},
+                timeout=self.REQUEST_TIMEOUT_SECONDS,
+            )
+
+            if response.status_code != 200:
+                error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                logger.warning(f"[EastMoney] 搜索失败: {error_msg}")
+                return SearchResponse(
+                    query=query,
+                    results=[],
+                    provider=self.name,
+                    success=False,
+                    error_message=error_msg,
+                )
+
+            try:
+                data = response.json()
+            except ValueError as e:
+                error_msg = f"响应JSON解析失败: {str(e)}"
+                logger.error(f"[EastMoney] {error_msg}")
+                return SearchResponse(
+                    query=query,
+                    results=[],
+                    provider=self.name,
+                    success=False,
+                    error_message=error_msg,
+                )
+
+            business_error = self._business_error(data)
+            if business_error:
+                logger.warning(f"[EastMoney] 搜索失败: {business_error[:200]}")
+                return SearchResponse(
+                    query=query,
+                    results=[],
+                    provider=self.name,
+                    success=False,
+                    error_message=business_error[:200],
+                )
+
+            items = self._extract_items(data)
+            if items is None:
+                error_msg = "响应中缺少资讯条目"
+                logger.error(f"[EastMoney] {error_msg}")
+                return SearchResponse(
+                    query=query,
+                    results=[],
+                    provider=self.name,
+                    success=False,
+                    error_message=error_msg,
+                )
+
+            logger.info(f"[EastMoney] 搜索完成，query='{search_query}'")
+
+            results = []
+            for item in items[:max_results]:
+                if not isinstance(item, dict):
+                    continue
+                content = str(item.get("content") or item.get("trunk") or "")
+                snippet = content[:500]
+                related_securities = self._related_securities_label(item)
+                if related_securities:
+                    snippet = f"{snippet}\n关联证券: {related_securities}" if snippet else f"关联证券: {related_securities}"
+
+                results.append(SearchResult(
+                    title=str(item.get("title") or ""),
+                    snippet=snippet,
+                    url=str(item.get("jumpUrl") or item.get("url") or ""),
+                    source=str(item.get("source") or "") or self._extract_domain(item.get("jumpUrl") or ""),
+                    published_date=item.get("date") or item.get("publishDate"),
+                ))
+
+            logger.info(f"[EastMoney] 成功解析 {len(results)} 条结果")
+
+            return SearchResponse(
+                query=query,
+                results=results,
+                provider=self.name,
+                success=True,
+            )
+
+        except requests.exceptions.Timeout:
+            error_msg = "请求超时"
+            logger.error(f"[EastMoney] {error_msg}")
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider=self.name,
+                success=False,
+                error_message=error_msg,
+            )
+        except requests.exceptions.RequestException as e:
+            error_msg = f"网络请求失败: {str(e)}"
+            logger.error(f"[EastMoney] {error_msg}")
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider=self.name,
+                success=False,
+                error_message=error_msg,
+            )
+        except Exception as e:
+            error_msg = f"未知错误: {str(e)}"
+            logger.error(f"[EastMoney] {error_msg}")
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider=self.name,
+                success=False,
+                error_message=error_msg,
+            )
+
+    @staticmethod
+    def _extract_domain(url: str) -> str:
+        """从 URL 提取域名作为来源"""
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url or "")
+            domain = parsed.netloc.replace('www.', '')
+            return domain or '未知来源'
+        except Exception:
+            return '未知来源'
+
+
 class AnspireSearchProvider(BaseSearchProvider):
     """
     Anspire Search 搜索引擎
@@ -2401,6 +2632,7 @@ class SearchService:
         searxng_base_urls: Optional[List[str]] = None,
         searxng_public_instances_enabled: bool = False,
         searxng_timeout_seconds: Optional[int] = None,
+        eastmoney_api_key: Optional[str] = None,
         news_max_age_days: int = 3,
         news_strategy_profile: str = "short",
     ):
@@ -2416,6 +2648,8 @@ class SearchService:
             minimax_keys: MiniMax API Key 列表
             searxng_base_urls: SearXNG 实例地址列表（自建无配额兜底）
             searxng_public_instances_enabled: 未配置自建实例时，是否自动使用公共 SearXNG 实例
+            searxng_timeout_seconds: 自建 SearXNG 单次搜索超时（秒）
+            eastmoney_api_key: 东方财富妙想资讯搜索 API Key
             news_max_age_days: 新闻最大时效（天）
             news_strategy_profile: 新闻窗口策略档位（ultra_short/short/medium/long）
         """
@@ -2429,6 +2663,7 @@ class SearchService:
             "searxng_base_urls": list(searxng_base_urls or []),
             "searxng_public_instances_enabled": bool(searxng_public_instances_enabled),
             "searxng_timeout_seconds": searxng_timeout_seconds,
+            "eastmoney_api_key": eastmoney_api_key if isinstance(eastmoney_api_key, str) else None,
             "news_max_age_days": int(news_max_age_days),
             "news_strategy_profile": news_strategy_profile,
         }
@@ -2456,27 +2691,33 @@ class SearchService:
             self._providers.append(BochaSearchProvider(bocha_keys))
             logger.info(f"已配置 Bocha 搜索，共 {len(bocha_keys)} 个 API Key")
 
-        # 2. Tavily（免费额度更多，每月 1000 次）
+        # 2. EastMoney 妙想（财经垂直语义搜索，中文资讯质量高）
+        eastmoney_key = eastmoney_api_key.strip() if isinstance(eastmoney_api_key, str) else ""
+        if eastmoney_key:
+            self._providers.append(EastMoneySearchProvider([eastmoney_key]))
+            logger.info("已配置 EastMoney 妙想资讯搜索")
+
+        # 3. Tavily（免费额度更多，每月 1000 次）
         if tavily_keys:
             self._providers.append(TavilySearchProvider(tavily_keys))
             logger.info(f"已配置 Tavily 搜索，共 {len(tavily_keys)} 个 API Key")
 
-        # 3. Brave Search（隐私优先，全球覆盖）
+        # 4. Brave Search（隐私优先，全球覆盖）
         if brave_keys:
             self._providers.append(BraveSearchProvider(brave_keys))
             logger.info(f"已配置 Brave 搜索，共 {len(brave_keys)} 个 API Key")
 
-        # 4. SerpAPI 作为备选（每月 100 次）
+        # 5. SerpAPI 作为备选（每月 100 次）
         if serpapi_keys:
             self._providers.append(SerpAPISearchProvider(serpapi_keys))
             logger.info(f"已配置 SerpAPI 搜索，共 {len(serpapi_keys)} 个 API Key")
 
-        # 5. MiniMax（Coding Plan Web Search，结构化结果）
+        # 6. MiniMax（Coding Plan Web Search，结构化结果）
         if minimax_keys:
             self._providers.append(MiniMaxSearchProvider(minimax_keys))
             logger.info(f"已配置 MiniMax 搜索，共 {len(minimax_keys)} 个 API Key")
 
-        # 6. SearXNG（自建实例优先；未配置时可自动发现公共实例）
+        # 7. SearXNG（自建实例优先；未配置时可自动发现公共实例）
         searxng_provider = SearXNGSearchProvider(
             searxng_base_urls,
             use_public_instances=bool(searxng_public_instances_enabled and not searxng_base_urls),
@@ -2489,7 +2730,7 @@ class SearchService:
             else:
                 logger.info("已启用 SearXNG 公共实例自动发现模式")
 
-        # 7. Anspire Search（实时智能搜索优化）
+        # 8. Anspire Search（实时智能搜索优化，显式配置时置顶）
         if anspire_keys:
             self._providers.insert(0, AnspireSearchProvider(anspire_keys))
             logger.info(f"已配置 Anspire Search 搜索，共 {len(anspire_keys)} 个 API Key")
@@ -3885,6 +4126,8 @@ class SearchService:
                     search_kwargs["topic"] = "news"
                 elif isinstance(provider, BraveSearchProvider):
                     search_kwargs.update(self._brave_search_locale("", prefer_chinese=prefer_chinese))
+                elif isinstance(provider, EastMoneySearchProvider):
+                    search_kwargs["em_query"] = f"{topic_text}的资讯"
 
                 started_at = time.monotonic()
                 try:
@@ -4132,6 +4375,8 @@ class SearchService:
                             prefer_chinese=prefer_chinese,
                         )
                     )
+                elif isinstance(provider, EastMoneySearchProvider):
+                    search_kwargs["em_query"] = EastMoneySearchProvider.build_stock_query(stock_name, stock_code)
 
                 started_at = time.monotonic()
                 try:
@@ -4910,6 +5155,7 @@ def get_search_service() -> SearchService:
                     searxng_base_urls=config.searxng_base_urls,
                     searxng_public_instances_enabled=config.searxng_public_instances_enabled,
                     searxng_timeout_seconds=getattr(config, "searxng_timeout_seconds", None),
+                    eastmoney_api_key=getattr(config, "eastmoney_api_key", None),
                     news_max_age_days=config.news_max_age_days,
                     news_strategy_profile=getattr(config, "news_strategy_profile", "short"),
                 )

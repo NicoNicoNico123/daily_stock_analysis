@@ -10,7 +10,7 @@ import logging
 import re
 import socket
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional
@@ -26,7 +26,7 @@ from src.storage import IntelligenceSource, INTELLIGENCE_ITEM_NULL_SCOPE_VALUE
 from src.services.run_diagnostics import sanitize_diagnostic_text
 
 logger = logging.getLogger(__name__)
-_ALLOWED_SOURCE_TYPES = {"rss", "atom", "newsnow"}
+_ALLOWED_SOURCE_TYPES = {"rss", "atom", "newsnow", "eastmoney"}
 _ALLOWED_SCOPE_TYPES = {"symbol", "market", "sector"}
 _ALLOWED_MARKETS = {"cn", "hk", "us", "jp", "kr", "tw", "global"}
 _PRIVATE_HOSTNAMES = {"localhost", "localhost.localdomain"}
@@ -103,6 +103,14 @@ _NEWSNOW_DEFAULT_SOURCE_DEFS = [
         "description": "NewsNow 格隆汇事件资讯，适合港股和中概股市场上下文。",
     },
 ]
+_EASTMONEY_NEWS_API_URL = "https://mkapi2.dfcfs.com/finskillshub/api/claw/news-search"
+_EASTMONEY_DEFAULT_SOURCE_DEF = {
+    "template_id": "eastmoney-market-news",
+    "name": "EastMoney 妙想市场资讯",
+    "query": "今日市场动向原因",
+    "market": "cn",
+    "description": "东方财富妙想资讯搜索，适合 A 股大盘动向与热点解读，需配置 EASTMONEY_API_KEY。",
+}
 
 
 class IntelligenceServiceError(ValueError):
@@ -189,7 +197,7 @@ class IntelligenceService:
         request_fields.setdefault("enabled", False)
         created_count = 0
         items = []
-        for template in self._builtin_source_templates():
+        for template in self._default_source_templates():
             payload = {key: value for key, value in template.items() if key != "template_id"}
             payload.update({key: value for key, value in request_fields.items() if value is not None})
             existing = self.repo.get_source_by_name(str(payload["name"]))
@@ -206,7 +214,7 @@ class IntelligenceService:
         created_count = 0
         enabled_count = 0
         errors = []
-        templates = self._builtin_source_templates()
+        templates = self._default_source_templates()
         for template in templates:
             name = str(template["name"])
             try:
@@ -361,6 +369,7 @@ class IntelligenceService:
         name = str(payload.get("name") or "").strip()
         url = str(payload.get("url") or "").strip()
         source_type = str(payload.get("source_type") or "rss").strip().lower()
+        query = str(payload.get("query") or "").strip() or None
         scope_type = str(payload.get("scope_type") or "market").strip().lower()
         scope_value = str(payload.get("scope_value") or "").strip() or None
         market = str(payload.get("market") or "cn").strip().lower()
@@ -368,10 +377,16 @@ class IntelligenceService:
         description = str(payload.get("description") or "").strip() or None
         if not name:
             raise IntelligenceServiceError("source name is required")
-        if not url:
-            raise IntelligenceServiceError("source url is required")
         if source_type not in _ALLOWED_SOURCE_TYPES:
             raise IntelligenceServiceError(f"unsupported source_type: {source_type}")
+        if source_type == "eastmoney":
+            # 东方财富妙想是查询式 HTTP API：用户不需要提供 URL，默认写内置端点；
+            # 检索语句保存在 query 字段中。
+            if not query:
+                raise IntelligenceServiceError("source query is required when source_type=eastmoney")
+            url = url or _EASTMONEY_NEWS_API_URL
+        elif not url:
+            raise IntelligenceServiceError("source url is required")
         if scope_type not in _ALLOWED_SCOPE_TYPES:
             raise IntelligenceServiceError(f"unsupported scope_type: {scope_type}")
         if scope_type in {"symbol", "sector"} and not scope_value:
@@ -382,6 +397,7 @@ class IntelligenceService:
             "name": name[:100],
             "source_type": source_type,
             "url": url,
+            "query": query[:200] if query else None,
             "enabled": enabled,
             "scope_type": scope_type,
             "scope_value": scope_value[:64] if scope_value else None,
@@ -442,6 +458,8 @@ class IntelligenceService:
     def _fetch_feed_entries(self, fields: Dict[str, Any], *, limit: int) -> List[FeedEntry]:
         if fields["source_type"] == "newsnow":
             return self._fetch_newsnow_entries(fields, limit=limit)
+        if fields["source_type"] == "eastmoney":
+            return self._fetch_eastmoney_entries(fields, limit=limit)
 
         timeout = max(1, min(float(self.config.news_intel_fetch_timeout_sec), 30.0))
         headers = {"User-Agent": "daily-stock-analysis-intel/1.0"}
@@ -553,7 +571,7 @@ class IntelligenceService:
             raise IntelligenceServiceError("feed response is too large")
         return content
 
-    def _get_with_validated_dns(self, raw_url: str, **kwargs: Any) -> requests.Response:
+    def _request_with_validated_dns(self, sender: Any, raw_url: str, **kwargs: Any) -> requests.Response:
         parsed = urlparse(raw_url)
         target_hostname = self._normalize_hostname(parsed.hostname)
         original_getaddrinfo = socket.getaddrinfo
@@ -569,9 +587,14 @@ class IntelligenceService:
             try:
                 request_kwargs = dict(kwargs)
                 request_kwargs.setdefault("proxies", _DISABLE_REQUEST_PROXIES)
-                return requests.get(raw_url, **request_kwargs)
+                # sender 是 requests.get / requests.post 等具体动词函数，
+                # 保持调用方可按动词打点或 mock（tests 大量 patch requests.get）。
+                return sender(raw_url, **request_kwargs)
             finally:
                 socket.getaddrinfo = original_getaddrinfo
+
+    def _get_with_validated_dns(self, raw_url: str, **kwargs: Any) -> requests.Response:
+        return self._request_with_validated_dns(requests.get, raw_url, **kwargs)
 
     @staticmethod
     def _normalize_hostname(hostname: Any) -> str:
@@ -627,6 +650,105 @@ class IntelligenceService:
                 self._parse_datetime_or_timestamp(published_raw),
             ))
         return [entry for entry in entries if entry]
+
+    def _fetch_eastmoney_entries(self, fields: Dict[str, Any], *, limit: int) -> List[FeedEntry]:
+        api_key = (self.config.eastmoney_api_key or "").strip()
+        if not api_key:
+            raise IntelligenceServiceError("EastMoney news API key is not configured")
+        timeout = max(1, min(float(self.config.news_intel_fetch_timeout_sec), 30.0))
+        headers = {
+            "User-Agent": "daily-stock-analysis-intel/1.0",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            # 东方财富妙想要求通过 apikey 请求头传递密钥，请求体只携带查询语句。
+            "apikey": api_key,
+        }
+        self._validate_url(fields["url"])
+        response = None
+        try:
+            response = self._request_with_validated_dns(
+                requests.post,
+                fields["url"],
+                headers=headers,
+                json={"query": fields.get("query") or ""},
+                timeout=timeout,
+            )
+            status_code = int(getattr(response, "status_code", 200))
+            if status_code in _REDIRECT_STATUS_CODES:
+                raise IntelligenceServiceError("EastMoney API redirects are not followed")
+            response.raise_for_status()
+
+            content = self._read_limited_response(response)
+            try:
+                payload = json.loads(content.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise IntelligenceServiceError(f"invalid EastMoney JSON response: {exc}") from exc
+            return self._parse_eastmoney_payload(payload, source_name=fields["name"], limit=limit)
+        except IntelligenceServiceError:
+            raise
+        except Exception as exc:
+            raise IntelligenceServiceError(_UPSTREAM_FETCH_FAILURE_MESSAGE) from exc
+        finally:
+            if response is not None:
+                response.close()
+
+    @staticmethod
+    def _eastmoney_api_error(payload: Dict[str, Any]) -> Optional[str]:
+        """东方财富妙想业务失败时 HTTP 仍为 200，需要按业务码判断。"""
+        if payload.get("success") is False:
+            return str(payload.get("message") or "EastMoney API returned failure")
+        for key in ("code", "status"):
+            value = payload.get(key)
+            if isinstance(value, int) and value != 0:
+                return str(payload.get("message") or f"EastMoney API error code: {value}")
+        return None
+
+    @staticmethod
+    def _eastmoney_items(payload: Dict[str, Any]) -> Optional[List[Any]]:
+        """防御式提取资讯条目列表，兼容真实嵌套结构与扁平结构。"""
+        data = payload.get("data")
+        if isinstance(data, list):
+            return data
+        if not isinstance(data, dict):
+            return None
+        inner = data.get("data")
+        if isinstance(inner, dict):
+            llm_response = inner.get("llmSearchResponse")
+            if isinstance(llm_response, dict) and isinstance(llm_response.get("data"), list):
+                return llm_response["data"]
+        items = data.get("items")
+        if isinstance(items, list):
+            return items
+        return None
+
+    def _parse_eastmoney_payload(self, payload: Any, *, source_name: str, limit: int) -> List[FeedEntry]:
+        if not isinstance(payload, dict):
+            raise IntelligenceServiceError("invalid EastMoney response: expected object")
+        api_error = self._eastmoney_api_error(payload)
+        if api_error:
+            raise IntelligenceServiceError(f"EastMoney API error: {api_error[:200]}")
+        items = self._eastmoney_items(payload)
+        if items is None:
+            raise IntelligenceServiceError("invalid EastMoney response: missing items")
+        entries = []
+        for item in items[:limit]:
+            if not isinstance(item, dict):
+                continue
+            secu_list = item.get("secuList")
+            entry = self._build_entry(
+                str(item.get("title") or ""),
+                str(item.get("content") or item.get("trunk") or ""),
+                str(item.get("jumpUrl") or item.get("url") or ""),
+                source_name,
+                self._parse_datetime(str(item.get("date") or item.get("publishDate") or "")),
+            )
+            if entry is None:
+                continue
+            if isinstance(secu_list, list) and secu_list:
+                # secuList 是妙想给出的关联证券证据，随 raw_payload 落库供下游核对。
+                entry = replace(entry, raw_payload={"source": source_name, "secuList": secu_list})
+            entries.append(entry)
+        return entries
 
     def _parse_rss_item(self, node: ET.Element, source_name: str) -> Optional[FeedEntry]:
         return self._build_entry(
@@ -691,6 +813,7 @@ class IntelligenceService:
             "name": source.name,
             "source_type": source.source_type,
             "url": source.url,
+            "query": source.query,
             "enabled": source.enabled,
             "scope_type": source.scope_type,
             "scope_value": source.scope_value,
@@ -705,6 +828,7 @@ class IntelligenceService:
             "name": source.name,
             "source_type": source.source_type,
             "url": source.url,
+            "query": source.query,
             "enabled": bool(source.enabled),
             "scope_type": source.scope_type,
             "scope_value": source.scope_value,
@@ -809,11 +933,34 @@ class IntelligenceService:
                 "name": item["name"],
                 "source_type": "newsnow",
                 "url": self._build_newsnow_url(item["source_id"]),
+                "query": None,
                 "scope_type": "market",
                 "market": item["market"],
                 "description": item["description"],
             })
+        templates.append({
+            "template_id": _EASTMONEY_DEFAULT_SOURCE_DEF["template_id"],
+            "name": _EASTMONEY_DEFAULT_SOURCE_DEF["name"],
+            "source_type": "eastmoney",
+            "url": _EASTMONEY_NEWS_API_URL,
+            "query": _EASTMONEY_DEFAULT_SOURCE_DEF["query"],
+            "scope_type": "market",
+            "market": _EASTMONEY_DEFAULT_SOURCE_DEF["market"],
+            "description": _EASTMONEY_DEFAULT_SOURCE_DEF["description"],
+        })
         return templates
+
+    def _default_source_templates(self) -> List[Dict[str, Any]]:
+        """Templates eligible for one-click default creation.
+
+        EastMoney sources cannot fetch without ``EASTMONEY_API_KEY``; before the
+        key is configured they stay template-only so auto-bootstrap does not
+        create a source that can only fail.
+        """
+        return [
+            template for template in self._builtin_source_templates()
+            if template["source_type"] != "eastmoney" or (self.config.eastmoney_api_key or "").strip()
+        ]
 
     def _build_newsnow_url(self, source_id: str) -> str:
         base_url = (self.config.newsnow_base_url or "https://newsnow.busiyi.world").strip().rstrip("/")

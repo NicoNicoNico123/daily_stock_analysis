@@ -341,6 +341,7 @@ class IntelligenceSource(Base):
     scope_value = Column(String(64), index=True)
     market = Column(String(32), nullable=False, default='cn', index=True)
     description = Column(Text)
+    query = Column(String(200))
     last_status = Column(String(32))
     last_error = Column(Text)
     last_fetched_at = Column(DateTime, index=True)
@@ -1533,6 +1534,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_decision_signal_profile_schema()
             self._ensure_stock_daily_canonical_id()
             self._ensure_intelligence_item_scope_values()
+            self._ensure_intelligence_source_query_column()
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
             self._ensure_users_bootstrap()
@@ -2868,6 +2870,54 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                             time.sleep(delay)
                         continue
                     raise
+
+    def _ensure_intelligence_source_query_column(self) -> None:
+        """Add the nullable EastMoney query column to existing SQLite DBs."""
+        if not self._is_sqlite_engine:
+            return
+        table_name = IntelligenceSource.__tablename__
+        try:
+            existing = {
+                column["name"]
+                for column in inspect(self._engine).get_columns(table_name)
+            }
+        except Exception as exc:
+            logger.warning(
+                "[intelligence] failed to inspect %s columns; skipping best-effort "
+                "SQLite query column backfill: %s",
+                table_name,
+                exc,
+            )
+            return
+
+        if "query" in existing:
+            return
+        max_retries = self._sqlite_write_retry_max
+        for attempt in range(max_retries + 1):
+            try:
+                with self._engine.begin() as connection:
+                    connection.exec_driver_sql(
+                        f"ALTER TABLE {table_name} ADD COLUMN query VARCHAR(200)"
+                    )
+                break
+            except OperationalError as exc:
+                if self._is_sqlite_duplicate_column_error(exc, "query"):
+                    break
+                if self._is_sqlite_locked_error(exc) and attempt < max_retries:
+                    delay = self._sqlite_write_retry_base_delay * (2 ** attempt)
+                    logger.warning(
+                        "[intelligence] SQLite query column backfill locked, "
+                        "retrying: %s (%s/%s, %.2fs)",
+                        exc,
+                        attempt + 1,
+                        max_retries,
+                        delay,
+                    )
+                    if delay > 0:
+                        time.sleep(delay)
+                    continue
+                logger.warning("[intelligence] %s 增加 query 列失败: %s", table_name, exc)
+                break
 
     def _ensure_intelligence_item_scope_values(self) -> None:
         """Backfill nullable intelligence item scopes so SQLite unique keys work."""

@@ -7,15 +7,17 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-SourceTypeValue = Literal["rss", "atom", "newsnow"]
+SourceTypeValue = Literal["rss", "atom", "newsnow", "eastmoney"]
 ScopeTypeValue = Literal["symbol", "market", "sector"]
 MarketValue = Literal["cn", "hk", "us", "jp", "kr", "tw", "global"]
 
 
 class IntelligenceSourceCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    url: str = Field(..., min_length=1, max_length=1000)
+    # eastmoney 源不需要 URL（默认使用内置妙想端点），其余类型仍必填，由服务层校验。
+    url: str = Field("", max_length=1000)
     source_type: SourceTypeValue = "rss"
+    query: Optional[str] = Field(None, max_length=200)
     enabled: bool = True
     scope_type: ScopeTypeValue = "market"
     scope_value: Optional[str] = Field(None, max_length=64)
@@ -29,6 +31,7 @@ class IntelligenceSourceTemplateCreateRequest(BaseModel):
     scope_type: Optional[ScopeTypeValue] = None
     scope_value: Optional[str] = Field(None, max_length=64)
     market: Optional[MarketValue] = None
+    query: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = None
 
 
@@ -41,6 +44,7 @@ class IntelligenceSourceItem(BaseModel):
     name: str
     source_type: str
     url: str
+    query: Optional[str] = None
     enabled: bool
     scope_type: str
     scope_value: Optional[str] = None
@@ -58,6 +62,7 @@ class IntelligenceSourceTemplateItem(BaseModel):
     name: str
     source_type: str
     url: str
+    query: Optional[str] = None
     scope_type: str
     scope_value: Optional[str] = None
     market: str

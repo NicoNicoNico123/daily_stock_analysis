@@ -986,6 +986,7 @@ class Config:
     searxng_base_urls: List[str] = field(default_factory=list)  # SearXNG instance URLs (self-hosted, no quota)
     searxng_public_instances_enabled: bool = False  # Opt in to public discovery when base URLs are absent
     searxng_timeout_seconds: int = 10  # 自建 SearXNG 单次搜索超时（秒）
+    eastmoney_api_key: Optional[str] = None  # 东方财富妙想资讯搜索 API Key（可选，未配置则该渠道静默停用）
 
     # === Social Sentiment (US stocks only, api.adanos.org) ===
     social_sentiment_api_key: Optional[str] = None
@@ -1887,6 +1888,7 @@ class Config:
             searxng_timeout_seconds=parse_env_int(
                 os.getenv('SEARXNG_TIMEOUT_SECONDS'), 10, field_name='SEARXNG_TIMEOUT_SECONDS', minimum=1
             ),
+            eastmoney_api_key=(os.getenv('EASTMONEY_API_KEY') or '').strip() or None,
             social_sentiment_api_key=os.getenv('SOCIAL_SENTIMENT_API_KEY') or None,
             social_sentiment_api_url=os.getenv('SOCIAL_SENTIMENT_API_URL', 'https://api.adanos.org').rstrip('/'),
             news_max_age_days=parse_env_int(os.getenv('NEWS_MAX_AGE_DAYS'), 3, field_name='NEWS_MAX_AGE_DAYS', minimum=1),
@@ -3000,6 +3002,7 @@ class Config:
             or self.tavily_api_keys
             or self.brave_api_keys
             or self.serpapi_keys
+            or self.eastmoney_api_key
             or self.has_searxng_enabled()
         )
 
@@ -3429,7 +3432,7 @@ class Config:
         if not self.has_search_capability_enabled():
             issues.append(ConfigIssue(
                 severity="info",
-                message="未配置搜索引擎能力 (Bocha/MiniMax/Tavily/Brave/SerpAPI/SearXNG)，新闻搜索功能将不可用",
+                message="未配置搜索引擎能力 (Bocha/MiniMax/Tavily/Brave/SerpAPI/EastMoney/SearXNG)，新闻搜索功能将不可用",
                 field="BOCHA_API_KEYS",
             ))
 

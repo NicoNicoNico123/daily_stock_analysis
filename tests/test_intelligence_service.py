@@ -20,7 +20,11 @@ import requests
 
 from src.config import Config
 from src.repositories.intelligence_repo import IntelligenceRepository
-from src.services.intelligence_service import IntelligenceService, IntelligenceServiceError
+from src.services.intelligence_service import (
+    _EASTMONEY_NEWS_API_URL,
+    IntelligenceService,
+    IntelligenceServiceError,
+)
 from src.storage import DatabaseManager, IntelligenceItem, INTELLIGENCE_ITEM_NULL_SCOPE_VALUE
 
 RSS_FIXTURE = b'<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel>\n<item><title>Policy support lifts AI supply chain</title><link>https://news.example.com/a</link><description>Market-level catalyst with evidence link.</description><pubDate>Wed, 17 Jun 2026 08:00:00 GMT</pubDate></item>\n<item><title>Second item</title><link>https://news.example.com/b</link><description>Second summary.</description></item>\n</channel></rss>'
@@ -46,6 +50,60 @@ NEWSNOW_FIXTURE = {
         },
     ],
 }
+EASTMONEY_FIXTURE = {
+    "success": True,
+    "status": 0,
+    "code": 0,
+    "message": "ok",
+    "requestId": "req-live-1",
+    "data": {
+        "requestId": None,
+        "message": "OK",
+        "status": 0,
+        "code": 0,
+        "stack": None,
+        "data": {
+            "protocolType": "SEARCH_NEWS",
+            "id": "task-1",
+            "llmSearchRequest": {"query": "今日市场动向原因"},
+            "llmSearchResponse": {
+                "data": [
+                    {
+                        "code": "NW1",
+                        "title": "主力资金动向 23.44亿元潜入电子业",
+                        "content": "证券时报·数据宝统计，今日电子行业主力资金净流入 23.44 亿元。",
+                        "date": "2026-09-15 16:55:00",
+                        "informationType": "NEWS",
+                        "source": "证券时报网",
+                        "jumpUrl": "https://news.example.com/eastmoney-a",
+                        "secuList": [
+                            {"secuCode": "002475", "secuName": "立讯精密", "secuType": "股票"},
+                        ],
+                    },
+                    {
+                        "code": "NW2",
+                        "title": "AI 板块持续活跃",
+                        "content": "算力需求提升带动板块情绪修复。",
+                        "date": "2026-09-15 09:30:00",
+                        "source": "证券时报网",
+                    },
+                ],
+                "traceId": "trace-1",
+                "code": 0,
+                "status": 0,
+                "message": "OK",
+            },
+        },
+    },
+}
+EASTMONEY_API_ERROR_FIXTURE = {
+    "success": False,
+    "status": 114,
+    "code": 114,
+    "message": "API密钥不存在或已失效，请确认密钥是否正确",
+    "data": None,
+    "requestId": "req-live-err",
+}
 
 
 class IntelligenceServiceTestCase(unittest.TestCase):
@@ -55,10 +113,16 @@ class IntelligenceServiceTestCase(unittest.TestCase):
         os.environ["NEWS_INTEL_RETENTION_DAYS"] = "30"
         os.environ["NEWS_INTEL_MAX_ITEMS_PER_SOURCE"] = "50"
         os.environ["NEWS_INTEL_FETCH_TIMEOUT_SEC"] = "3"
+        # 本地 .env 可能配置了 EASTMONEY_API_KEY；测试必须离线且确定性，
+        # 需要在重建 Config 单例前屏蔽，真实 key 由具体用例自行注入。
+        self._original_eastmoney_api_key = os.environ.pop("EASTMONEY_API_KEY", None)
         Config._instance = None
         DatabaseManager.reset_instance()
         IntelligenceService.reset_auto_fetch_state()
         self.service = IntelligenceService()
+        # load_dotenv 会把本地 .env 的 EASTMONEY_API_KEY 注入 Config；
+        # 统一置空，避免默认源组装依赖本机密钥或触发真实外部请求。
+        self.service.config.eastmoney_api_key = None
         self._dns_patcher = patch(
             "src.services.intelligence_service.socket.getaddrinfo",
             side_effect=self._mock_getaddrinfo,
@@ -102,6 +166,8 @@ class IntelligenceServiceTestCase(unittest.TestCase):
             "NEWS_INTEL_AUTO_FETCH_ENABLED",
         ]:
             os.environ.pop(key, None)
+        if self._original_eastmoney_api_key is not None:
+            os.environ["EASTMONEY_API_KEY"] = self._original_eastmoney_api_key
         self._temp_dir.cleanup()
 
     def _mock_response(self, source_url: str = "https://feeds.example.com/rss.xml"):
@@ -350,6 +416,145 @@ class IntelligenceServiceTestCase(unittest.TestCase):
         self.assertEqual(items["items"][0]["source_type"], "newsnow")
         self.assertEqual(result["sample_items"][0]["source"], "newsnow-cls")
         self.assertEqual(result["sample_items"][0]["summary"], "Capital market hot topic from NewsNow.")
+
+    def _mock_eastmoney_response(self, payload=EASTMONEY_FIXTURE, source_url: str = _EASTMONEY_NEWS_API_URL):
+        response = Mock()
+        response.status_code = 200
+        response.url = source_url
+        response.headers = {}
+        response.raise_for_status.return_value = None
+        response.iter_content.return_value = [json.dumps(payload).encode("utf-8")]
+        return response
+
+    def test_eastmoney_source_requires_query(self) -> None:
+        with self.assertRaises(IntelligenceServiceError):
+            self.service.create_source({
+                "name": "eastmoney-no-query",
+                "source_type": "eastmoney",
+                "scope_type": "market",
+            })
+
+    def test_eastmoney_template_available_and_defaults_require_api_key(self) -> None:
+        templates = self.service.list_source_templates(source_type="eastmoney")
+        self.assertEqual(templates["total"], 1)
+        template = templates["items"][0]
+        self.assertEqual(template["template_id"], "eastmoney-market-news")
+        self.assertEqual(template["query"], "今日市场动向原因")
+        self.assertEqual(template["url"], _EASTMONEY_NEWS_API_URL)
+
+        # 未配置 API Key 时，一键默认源不会创建只能失败的 EastMoney 源
+        defaults = self.service.create_default_sources()
+        self.assertFalse(any(
+            item["source"]["source_type"] == "eastmoney" for item in defaults["items"]
+        ))
+
+        self.service.config.eastmoney_api_key = "test-key"
+        created = self.service.create_source_from_template(
+            "eastmoney-market-news",
+            {"enabled": True, "name": "eastmoney-template-copy"},
+        )
+        self.assertEqual(created["source_type"], "eastmoney")
+        self.assertEqual(created["query"], "今日市场动向原因")
+        self.assertEqual(created["url"], _EASTMONEY_NEWS_API_URL)
+        self.assertTrue(created["enabled"])
+
+        with_key = self.service.create_default_sources({"enabled": False})
+        self.assertTrue(any(
+            item["created"] and item["source"]["source_type"] == "eastmoney" for item in with_key["items"]
+        ))
+
+    def test_eastmoney_source_fetches_query_results(self) -> None:
+        self.service.config.eastmoney_api_key = "test-key"
+        source = self.service.create_source({
+            "name": "eastmoney-market",
+            "source_type": "eastmoney",
+            "query": "今日市场动向原因",
+            "scope_type": "market",
+            "market": "cn",
+        })
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured.update({"url": url, "headers": kwargs.get("headers"), "json": kwargs.get("json")})
+            return self._mock_eastmoney_response()
+
+        with patch("src.services.intelligence_service.requests.post", side_effect=fake_post):
+            result = self.service.fetch_source(source["id"])
+
+        self.assertEqual(captured["url"], _EASTMONEY_NEWS_API_URL)
+        self.assertEqual(captured["json"], {"query": "今日市场动向原因"})
+        self.assertEqual(captured["headers"]["apikey"], "test-key")
+
+        self.assertEqual(result["fetched_count"], 2)
+        self.assertEqual(result["saved_count"], 2)
+        sample = result["sample_items"][0]
+        self.assertEqual(sample["title"], "主力资金动向 23.44亿元潜入电子业")
+        self.assertEqual(sample["url"], "https://news.example.com/eastmoney-a")
+        self.assertTrue(sample["published_at"].startswith("2026-09-15"))
+
+        items = self.service.list_items(market="cn")
+        self.assertEqual(items["total"], 2)
+        self.assertEqual(items["items"][0]["source_type"], "eastmoney")
+        # 缺少 jumpUrl 的条目使用 no-url 兜底键
+        self.assertTrue(items["items"][1]["url"].startswith("no-url:intel:"))
+
+        with DatabaseManager.get_instance().get_session() as session:
+            row = session.query(IntelligenceItem).filter(
+                IntelligenceItem.url == "https://news.example.com/eastmoney-a"
+            ).first()
+        self.assertIsNotNone(row)
+        self.assertIn("secuList", row.raw_payload)
+        self.assertIn("立讯精密", row.raw_payload)
+
+    def test_eastmoney_business_error_does_not_leak_api_key(self) -> None:
+        self.service.config.eastmoney_api_key = "mkt_secret_key_value"
+        source = self.service.create_source({
+            "name": "eastmoney-bad-key",
+            "source_type": "eastmoney",
+            "query": "今日市场动向原因",
+            "scope_type": "market",
+        })
+
+        with patch(
+            "src.services.intelligence_service.requests.post",
+            return_value=self._mock_eastmoney_response(payload=EASTMONEY_API_ERROR_FIXTURE),
+        ):
+            with self.assertRaises(IntelligenceServiceError) as ctx:
+                self.service.fetch_source(source["id"])
+
+        message = str(ctx.exception)
+        self.assertIn("EastMoney API error", message)
+        self.assertNotIn("mkt_secret_key_value", message)
+        saved_source = self.service.repo.get_source(source["id"])
+        self.assertIsNotNone(saved_source)
+        self.assertNotIn("mkt_secret_key_value", saved_source.last_error or "")
+
+    def test_eastmoney_malformed_payload_fails_open_in_batch(self) -> None:
+        self.service.create_source({"name": "good-feed", "url": "https://feeds.example.com/rss.xml", "scope_type": "market"})
+        self.service.config.eastmoney_api_key = "test-key"
+        bad = self.service.create_source({
+            "name": "eastmoney-malformed",
+            "source_type": "eastmoney",
+            "query": "今日市场动向原因",
+            "scope_type": "market",
+        })
+        malformed_payload = {"success": True, "status": 0, "code": 0, "data": {}}
+
+        with patch(
+            "src.services.intelligence_service.requests.get",
+            return_value=self._mock_response(),
+        ), patch(
+            "src.services.intelligence_service.requests.post",
+            return_value=self._mock_eastmoney_response(payload=malformed_payload),
+        ):
+            result = self.service.fetch_enabled_sources()
+
+        self.assertEqual(result["source_count"], 2)
+        self.assertEqual(result["saved_count"], 2)
+        failures = [item for item in result["results"] if not item["ok"]]
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0]["source_id"], bad["id"])
+        self.assertIn("missing items", failures[0]["error"])
 
     def test_create_default_sources_is_idempotent(self) -> None:
         first = self.service.create_default_sources({"enabled": False})

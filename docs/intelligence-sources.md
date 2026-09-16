@@ -6,7 +6,8 @@ Issue #1707 的首版能力聚焦“合规资讯源采集、本地沉淀、可�
 
 - 支持配置 RSS / Atom HTTP(S) 资讯源。
 - 支持 NewsNow HTTP JSON 源，默认内置财联社热门、雪球热门股票、华尔街见闻快讯、金十数据和格隆汇事件等主流财经源。
-- 支持查询内置 RSS/Atom/NewsNow 模板，并可从模板创建可测试、可启停的资讯源；也可以一键创建全部内置默认源。
+- 支持东方财富妙想资讯搜索（`eastmoney` 源类型，查询式 HTTP API，需配置 `EASTMONEY_API_KEY`）。
+- 支持查询内置 RSS/Atom/NewsNow/EastMoney 模板，并可从模板创建可测试、可启停的资讯源；也可以一键创建全部内置默认源。
 - 保存资讯源配置、启用状态、作用域和最近一次拉取状态。
 - 拉取条目落库到 `intelligence_items`，保存标题、摘要、URL、来源、发布时间、拉取时间、市场与作用域。
 - 按 URL 去重；无 URL 条目使用 `no-url:intel:<hash>` 兜底键。
@@ -59,6 +60,49 @@ NEWSNOW_BASE_URL=https://newsnow.busiyi.world
   ```
 - 详细字段兼容性可参考自动化测试：`test_newsnow_source_fetches_json_items`，涵盖 `status`、`id`、`items[].title`、`items[].url`/`mobileUrl`、`items[].pubDate`/`items[].extra.date` 等字段
 - **部署实例不在自动化上线保障范围内**；如果依赖公开示例实例，部署前务必在实际生产环境执行上述验证
+
+## EastMoney 妙想资讯源
+
+东方财富妙想（Skills Hub）提供一个查询式资讯搜索 HTTP API，与 RSS/NewsNow 的“拉 feed”不同，它按检索语句返回结构化资讯（标题、正文核心内容、关联证券）。
+
+```text
+POST https://mkapi2.dfcfs.com/finskillshub/api/claw/news-search
+Header: Content-Type: application/json
+Header: apikey: $EASTMONEY_API_KEY
+Body:   {"query": "今日市场动向原因"}
+```
+
+配置项：
+
+```env
+EASTMONEY_API_KEY=
+```
+
+- `EASTMONEY_API_KEY` 未配置时：`eastmoney` 源类型与模板仍可查询/创建，但拉取会报 `EastMoney news API key is not configured`；一键默认源（`POST /sources/defaults` 与自动刷新 bootstrap）**不会**创建该源，避免制造只能失败的源。
+- 源不需要用户填写 URL：服务端默认写入上述端点，检索语句保存在新增的 `query` 字段（最长 200 字符，`source_type=eastmoney` 时必填）。
+- 返回业务失败时 HTTP 仍为 200（例如密钥无效返回 `code=114`），服务按业务码判定并写入 `last_error`，错误信息不会包含密钥。
+- 条目解析为标题（`title`）、摘要（`content`，兼容文档中的 `trunk` 字段）、链接（`jumpUrl`，缺失时用 `no-url:intel:<hash>` 兜底键）、发布时间（`date` / `publishDate`）；`secuList` 关联证券随 `raw_payload` 落库作为证据。
+- 批处理沿用 fail-open：单个 EastMoney 源失败不影响其他源与分析主链路。
+
+内置模板 `eastmoney-market-news`（市场 `cn`）默认查询“今日市场动向原因”，可通过模板创建接口覆盖名称、启用状态、作用域与 `query`。
+
+部署前可用下面的命令核验返回结构（与 `test_eastmoney_source_fetches_query_results` 覆盖的字段一致）：
+
+```bash
+curl -sS -X POST 'https://mkapi2.dfcfs.com/finskillshub/api/claw/news-search' \
+  -H 'Content-Type: application/json' -H "apikey: $EASTMONEY_API_KEY" \
+  --data '{"query":"今日市场动向原因"}' \
+  | python -c "import sys,json; d=json.load(sys.stdin); items=d['data']['data']['llmSearchResponse']['data']; print(d['success'], len(items), sorted(items[0].keys()))"
+```
+
+### 同一能力的按需搜索渠道
+
+`EASTMONEY_API_KEY` 同时启用个股/题材新闻搜索渠道 `EastMoney`（`src/search_service.py`）：
+
+- 优先级：Anspire（显式配置时置顶）> Bocha > **EastMoney** > Tavily > Brave > SerpAPI > MiniMax > SearXNG；排在 Bocha 之后意味着已有 Bocha 配置的行为不变，仅在其失败或未配置时生效。
+- 个股与题材搜索会改用妙想语义查询（`{股票名称}的资讯` / `{题材}的资讯`），返回结果仍走既有的时间窗过滤、语言优先、个股相关性与准入过滤。
+- 超时与其他 HTTP 渠道一致（10 秒），单渠道失败或业务码报错只记录诊断并继续尝试下一引擎，不会阻断分析流程。
+- `has_search_capability_enabled` 已包含该 Key，因此仅配置 `EASTMONEY_API_KEY` 也能启用搜索链路与大盘复盘搜索。
 
 ## API
 
