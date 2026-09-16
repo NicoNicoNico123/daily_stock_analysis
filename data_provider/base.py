@@ -32,6 +32,7 @@ from src.services.stock_list_parser import AnalysisTarget, ParseStatus, parse_an
 from .fundamental_adapter import AkshareFundamentalAdapter
 from .yfinance_fundamental_adapter import YfinanceFundamentalAdapter
 from .realtime_types import CircuitBreaker
+from .chip_calculator import compute_chip_distribution
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -152,6 +153,14 @@ def normalize_stock_code(stock_code: str) -> str:
 
 ETF_PREFIXES = ("51", "52", "56", "58", "15", "16", "18")
 
+# 筹码分布本地估算（CYQ 兜底）参数
+_CHIP_FALLBACK_DAILY_WINDOW = 120
+_CHIP_FALLBACK_QUOTE_TIMEOUT = 6.0
+_CHIP_FALLBACK_FLOAT_SHARES_TIMEOUT = 6.0
+# 外部流通股本反推的隐含换手率超出该区间时，视为股本与日K量纲不符，放弃该层数据
+_MIN_IMPLIED_TURNOVER = 1e-5
+_MAX_IMPLIED_TURNOVER = 1.0
+
 
 def _is_us_market(code: str) -> bool:
     """判断是否为美股/美股指数代码（不含中文前后缀）。"""
@@ -253,6 +262,51 @@ def _market_tag(code: str) -> str:
     if _is_tw_market(code):
         return "tw"
     return "cn"
+
+
+def _chip_fallback_scope_allows(stock_code: str) -> bool:
+    """
+    判断是否允许对给定代码做筹码分布本地估算。
+
+    CYQ 算法只依赖日 K 量价与换手率，与市场无关，因此覆盖
+    A 股（含 ETF / BSE）、港股、美股；东财筹码 API 不覆盖港/美/ETF，
+    本地估算正是在这些市场收益最大。
+    指数（A 股指数、美股指数）没有换手率与筹码语义，仍返回 False。
+    """
+    from .us_index_mapping import is_us_index_code
+
+    if _market_tag(stock_code) not in ("cn", "hk", "us"):
+        return False
+    normalized = normalize_stock_code(stock_code)
+    if is_us_index_code(normalized) or is_us_index_code(stock_code):
+        return False
+    # 港股指数（HSI/HSCEI/HSTECH）是纯字母代码，会被通用规则误判为美股代码，
+    # 这里显式复用 YfinanceFetcher 的港股指数清单排除。
+    from .yfinance_fetcher import HK_INDEX_YF_SYMBOLS
+
+    if normalized.upper() in HK_INDEX_YF_SYMBOLS or stock_code.strip().upper() in HK_INDEX_YF_SYMBOLS:
+        return False
+    try:
+        target = parse_analysis_target(stock_code)
+    except Exception:
+        return True
+    if target.asset_type == ParseStatus.INDEX:
+        return False
+    return True
+
+
+def _last_daily_volume(df: Any) -> float:
+    """取日线最后一根的成交量（>0），异常或缺失时返回 0。"""
+    try:
+        columns = getattr(df, "columns", None)
+        if df is None or columns is None or "volume" not in list(columns):
+            return 0.0
+        value = float(df["volume"].iloc[-1])
+    except (TypeError, ValueError, IndexError, KeyError):
+        return 0.0
+    if not np.isfinite(value) or value <= 0:
+        return 0.0
+    return value
 
 
 def is_bse_code(code: str) -> bool:
@@ -2987,7 +3041,191 @@ class DataFetcherManager:
                 continue
 
         logger.warning(f"[筹码分布] {stock_code} 所有数据源均失败")
-        return None
+
+        # 所有数据源失败后的兜底：用日线量价本地估算筹码分布（不落库，仅当次分析输入）
+        return self._get_computed_chip_distribution(stock_code)
+
+    def _get_computed_chip_distribution(self, stock_code: str):
+        """
+        本地估算筹码分布（CYQ 兜底）
+
+        前置条件：筹码功能开关已开启，且所有远程筹码数据源均失败。
+        覆盖 A 股（含 ETF/BSE）、港股、美股；指数无换手与筹码语义，直接返回 None。
+
+        数据来源：
+        - 日线量价：复用 get_daily_data 多源链（与其它指标同一链路），取最近约 120 根；
+        - 换手率：分级解析（见 _resolve_chip_turnover），全部缺失时退化为
+          chip_calculator 内部的中位数成交量启发式。
+
+        Returns:
+            ChipDistribution（source="computed"），无法估算时返回 None。
+            纯内存结果，不写入任何数据表。
+        """
+        if not _chip_fallback_scope_allows(stock_code):
+            logger.debug(f"[筹码估算] {stock_code} 为指数或不支持的市场，跳过本地估算")
+            return None
+
+        try:
+            df, daily_source = self.get_daily_data(
+                stock_code, days=_CHIP_FALLBACK_DAILY_WINDOW
+            )
+        except Exception as e:
+            logger.info(f"[筹码估算] {stock_code} 无法获取日线数据，放弃本地估算: {e}")
+            return None
+
+        if df is None or df.empty:
+            logger.info(f"[筹码估算] {stock_code} 日线数据为空，放弃本地估算")
+            return None
+
+        turnover_rate, turnover_source = self._resolve_chip_turnover(
+            stock_code, _last_daily_volume(df)
+        )
+
+        try:
+            chip = compute_chip_distribution(
+                df,
+                current_price=None,
+                latest_turnover_rate=turnover_rate,
+                code=stock_code,
+            )
+        except Exception as e:
+            logger.warning(f"[筹码估算] {stock_code} 本地估算异常，放弃: {e}")
+            return None
+
+        if chip is None:
+            logger.info(f"[筹码估算] {stock_code} 日线数据不足以完成本地估算")
+            return None
+
+        source_labels = {
+            "realtime": "实时行情",
+            "yfinance": "yfinance流通股本",
+            "heuristic": "启发式(中位数成交量)",
+        }
+        logger.info(
+            "[筹码估算] %s 使用本地估算筹码分布 (source=computed, 日线来源: %s, "
+            "换手率来源: %s, 获利比例=%.1f%%, 平均成本=%s)",
+            stock_code,
+            daily_source,
+            source_labels.get(turnover_source, turnover_source),
+            chip.profit_ratio * 100,
+            chip.avg_cost,
+        )
+        return chip
+
+    def _resolve_chip_turnover(
+        self, stock_code: str, latest_volume: float
+    ) -> Tuple[Optional[float], str]:
+        """
+        分级解析筹码估算所需的换手率（百分数或小数口径均可，chip_calculator 会归一化）。
+
+        1. realtime  ：实时行情换手率（各市场可用性不一，best-effort，硬超时预算）；
+        2. yfinance  ：港/美/ETF 通常无实时换手率，改用 Ticker.info 流通股本，
+                       隐含换手率 = 最新日 K 成交量 / 流通股本；
+        3. heuristic ：全部缺失（或隐含换手率明显不合理）时返回 None，
+                       由 chip_calculator 用中位数成交量启发式兜底。
+
+        Returns:
+            (换手率或 None, 来源标签: realtime / yfinance / heuristic)
+        """
+        turnover = self._best_effort_turnover_rate(stock_code)
+        if turnover is not None:
+            return turnover, "realtime"
+
+        float_shares = self._best_effort_float_shares(stock_code)
+        if float_shares is not None and float_shares > 0 and latest_volume > 0:
+            implied_turnover = latest_volume / float_shares
+            if _MIN_IMPLIED_TURNOVER <= implied_turnover <= _MAX_IMPLIED_TURNOVER:
+                return implied_turnover, "yfinance"
+            logger.debug(
+                "[筹码估算] %s 流通股本(%s)与日K量纲疑似不符（隐含换手率 %s），改用启发式",
+                stock_code,
+                float_shares,
+                implied_turnover,
+            )
+        return None, "heuristic"
+
+    def _best_effort_float_shares(self, stock_code: str) -> Optional[float]:
+        """
+        尽力获取流通股本（股），带硬超时预算，失败/超时不影响主流程。
+
+        目前只有 YfinanceFetcher 提供该能力（港/美/ETF 均可转换 Yahoo 符号）。
+        """
+        provider = next(
+            (
+                fetcher
+                for fetcher in self._get_fetchers_snapshot()
+                if hasattr(fetcher, "get_float_shares")
+            ),
+            None,
+        )
+        if provider is None:
+            return None
+
+        result: Dict[str, Any] = {}
+
+        def _worker() -> None:
+            try:
+                result["float_shares"] = provider.get_float_shares(stock_code)
+            except Exception as e:
+                logger.debug(
+                    "[筹码估算] %s 从 %s 获取流通股本异常: %s",
+                    stock_code,
+                    provider.name,
+                    e,
+                )
+
+        worker = Thread(target=_worker, daemon=True)
+        worker.start()
+        worker.join(_CHIP_FALLBACK_FLOAT_SHARES_TIMEOUT)
+        if worker.is_alive():
+            logger.debug(
+                "[筹码估算] %s 获取流通股本超时(>%ss)，改用启发式换手率",
+                stock_code,
+                _CHIP_FALLBACK_FLOAT_SHARES_TIMEOUT,
+            )
+            return None
+
+        value = _coerce_chip_metric(result.get("float_shares"))
+        if value is not None and value > 0:
+            logger.debug(
+                "[筹码估算] %s 从 %s 获取流通股本成功: %s",
+                stock_code,
+                provider.name,
+                value,
+            )
+        return value
+
+    def _best_effort_turnover_rate(self, stock_code: str) -> Optional[float]:
+        """
+        尽力获取当日换手率（%），带硬超时预算，失败/超时不影响主流程。
+
+        Returns:
+            换手率（百分数口径），不可得时返回 None。
+        """
+        result: Dict[str, Any] = {}
+
+        def _worker() -> None:
+            try:
+                quote = self.get_realtime_quote(stock_code, log_final_failure=False)
+            except Exception as e:
+                logger.debug(f"[筹码估算] {stock_code} 获取实时换手率异常: {e}")
+                return
+            if quote is None:
+                return
+            result["turnover_rate"] = getattr(quote, "turnover_rate", None)
+
+        worker = Thread(target=_worker, daemon=True)
+        worker.start()
+        worker.join(_CHIP_FALLBACK_QUOTE_TIMEOUT)
+        if worker.is_alive():
+            logger.debug(
+                "[筹码估算] %s 获取实时换手率超时(>%ss)，改用启发式换手率",
+                stock_code,
+                _CHIP_FALLBACK_QUOTE_TIMEOUT,
+            )
+            return None
+
+        return _coerce_chip_metric(result.get("turnover_rate"))
 
     def get_stock_name(self, stock_code: str, allow_realtime: bool = True) -> Optional[str]:
         """

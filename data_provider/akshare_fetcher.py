@@ -67,6 +67,11 @@ _AKSHARE_HISTORY_CALL_TIMEOUT = 30.0
 _AKSHARE_TIMEOUT_PROCESS_JOIN_GRACE = 1.0
 _AKSHARE_TIMEOUT_PROCESS_START_METHOD = "spawn"
 
+# 筹码接口（ak.stock_cyq_em）连接类异常的退避重试参数：
+# 东财按 IP 限流时常见 RemoteDisconnected，属瞬时故障，退避后重试即可恢复
+_CHIP_RETRY_ATTEMPTS = 2
+_CHIP_RETRY_BACKOFF_SECONDS = (1.0, 3.0)
+
 
 # User-Agent 池，用于随机轮换
 USER_AGENTS = [
@@ -76,6 +81,60 @@ USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ]
+
+
+def _is_chip_connection_error(exc: BaseException) -> bool:
+    """
+    判断是否为连接类异常（值得退避重试的瞬时网络故障）。
+
+    覆盖：
+    - http.client.RemoteDisconnected（继承 ConnectionResetError，东财限流的典型表现）
+    - 内置 ConnectionError / TimeoutError（含 socket.timeout、ConnectionResetError 等）
+    - requests 的 ConnectionError / Timeout / ChunkedEncodingError
+    - 类名含 disconnected / connection / timeout 的其他底层异常
+
+    沿异常链（__cause__ / __context__）向下检查，akshare 内部常把底层异常直接抛出。
+    """
+    seen = set()
+    current: Optional[BaseException] = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(
+            current,
+            (
+                ConnectionError,
+                TimeoutError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ChunkedEncodingError,
+            ),
+        ):
+            return True
+        name = type(current).__name__.lower()
+        if "disconnected" in name or "connection" in name or "timeout" in name:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _iter_akshare_shared_sessions() -> list:
+    """
+    尽力探测 akshare 模块空间内可复用的 requests.Session 实例。
+
+    akshare 各接口普遍直接使用 requests.get()/临时 Session（不共享 session 实例），
+    因此这里只是防御性探测，探测不到就返回空列表，调用方无感知。
+    """
+    sessions = []
+    try:
+        import akshare as ak
+    except Exception as exc:  # pragma: no cover - akshare 未安装时
+        logger.debug(f"探测 akshare 共享 session 失败: {exc}")
+        return sessions
+    for candidate in (getattr(ak, "utils", None), getattr(ak, "datasets", None)):
+        session = getattr(candidate, "session", None)
+        if isinstance(session, requests.Session):
+            sessions.append(session)
+    return sessions
 
 
 # 缓存实时行情数据（避免重复请求）
@@ -435,16 +494,27 @@ class AkshareFetcher(BaseFetcher):
     def _set_random_user_agent(self) -> None:
         """
         设置随机 User-Agent
-        
+
         通过修改 requests Session 的 headers 实现
         这是关键的反爬策略之一
+
+        说明：akshare 各接口普遍直接 requests.get()（临时 Session、请求间不共享），
+        没有稳定可注入的全局 session，因此这里：
+        1. 尽力写入 akshare 暴露的共享 session（_iter_akshare_shared_sessions，
+           当前版本探测不到则跳过）；
+        2. 选中随机 UA 后记录日志。东财域名（含筹码接口 push2his.eastmoney.com）
+           在 enable_eastmoney_patch 开启时，src/patches/eastmoney_patch.py 已在
+           requests.Session.request 层为每次请求注入随机 UA + nid Cookie，
+           因此筹码接口的 UA 轮换主要依赖该补丁，此处作为补充。
         """
         try:
-            import akshare as ak
-            # akshare 内部使用 requests，我们通过环境变量或直接设置来影响
-            # 实际上 akshare 可能不直接暴露 session，这里通过 fake_useragent 作为补充
             random_ua = random.choice(USER_AGENTS)
             logger.debug(f"设置 User-Agent: {random_ua[:50]}...")
+            for session in _iter_akshare_shared_sessions():
+                try:
+                    session.headers["User-Agent"] = random_ua
+                except Exception as exc:
+                    logger.debug(f"设置 akshare session User-Agent 失败: {exc}")
         except Exception as e:
             logger.debug(f"设置 User-Agent 失败: {e}")
     
@@ -1816,22 +1886,75 @@ class AkshareFetcher(BaseFetcher):
             circuit_breaker.record_failure(sina_key, str(e))
             return None
     
+    def _fetch_cyq_em(self, stock_code: str) -> pd.DataFrame:
+        """
+        ak.stock_cyq_em 原始调用
+
+        独立成方法便于重试与单测注入（东财筹码接口按 IP 限流，
+        RemoteDisconnected 属常见瞬时故障）。
+        """
+        import akshare as ak
+
+        return ak.stock_cyq_em(symbol=stock_code)
+
+    def _fetch_cyq_em_with_retry(self, stock_code: str) -> Tuple[pd.DataFrame, float]:
+        """
+        带退避重试的 ak.stock_cyq_em 调用
+
+        连接类异常（RemoteDisconnected / ConnectionError / 超时）最多重试
+        _CHIP_RETRY_ATTEMPTS 次，退避间隔取 _CHIP_RETRY_BACKOFF_SECONDS
+        （1s / 3s）；每次尝试前重置随机 User-Agent 并执行限流休眠。
+        其他异常直接抛出，不重试。
+
+        Returns:
+            (DataFrame, 耗时秒数)
+        """
+        total_attempts = _CHIP_RETRY_ATTEMPTS + 1
+        for attempt in range(total_attempts):
+            try:
+                # 防封禁策略：随机 UA + 限流休眠（每次尝试都刷新）
+                self._set_random_user_agent()
+                self._enforce_rate_limit()
+
+                if attempt == 0:
+                    logger.info(f"[API调用] ak.stock_cyq_em(symbol={stock_code}) 获取筹码分布...")
+                else:
+                    logger.warning(
+                        f"[API重试] ak.stock_cyq_em(symbol={stock_code}) 第 "
+                        f"{attempt}/{_CHIP_RETRY_ATTEMPTS} 次重试..."
+                    )
+                api_start = time.time()
+                df = self._fetch_cyq_em(stock_code)
+                return df, time.time() - api_start
+            except Exception as e:
+                if attempt >= _CHIP_RETRY_ATTEMPTS or not _is_chip_connection_error(e):
+                    raise
+                delay = _CHIP_RETRY_BACKOFF_SECONDS[min(attempt, len(_CHIP_RETRY_BACKOFF_SECONDS) - 1)]
+                logger.warning(
+                    f"[API重试] {stock_code} 筹码接口连接类异常 "
+                    f"({type(e).__name__}: {e})，{delay:g}s 后重试"
+                    f"（{attempt + 1}/{_CHIP_RETRY_ATTEMPTS}）"
+                )
+                time.sleep(delay)
+        raise DataFetchError(f"ak.stock_cyq_em {stock_code} 重试 {_CHIP_RETRY_ATTEMPTS} 次后仍失败")
+
     def get_chip_distribution(self, stock_code: str) -> Optional[ChipDistribution]:
         """
         获取筹码分布数据
-        
+
         数据来源：ak.stock_cyq_em()
         包含：获利比例、平均成本、筹码集中度
-        
-        注意：ETF/指数没有筹码分布数据，会直接返回 None
-        
+
+        注意：ETF/指数没有筹码分布数据，会直接返回 None；
+        连接类异常（RemoteDisconnected / ConnectionError / 超时）会在
+        _fetch_cyq_em_with_retry 中做最多 2 次重试（1s/3s 退避）。
+
         Args:
             stock_code: 股票代码
-            
+
         Returns:
             ChipDistribution 对象（最新一天的数据），获取失败返回 None
         """
-        import akshare as ak
 
         # 美股没有筹码分布数据（Akshare 不支持）
         if _is_us_code(stock_code):
@@ -1847,20 +1970,10 @@ class AkshareFetcher(BaseFetcher):
         if _is_etf_code(stock_code):
             logger.debug(f"[API跳过] {stock_code} 是 ETF/指数，无筹码分布数据")
             return None
-        
+
         try:
-            # 防封禁策略
-            self._set_random_user_agent()
-            self._enforce_rate_limit()
-            
-            logger.info(f"[API调用] ak.stock_cyq_em(symbol={stock_code}) 获取筹码分布...")
-            import time as _time
-            api_start = _time.time()
-            
-            df = ak.stock_cyq_em(symbol=stock_code)
-            
-            api_elapsed = _time.time() - api_start
-            
+            df, api_elapsed = self._fetch_cyq_em_with_retry(stock_code)
+
             if df.empty:
                 logger.warning(f"[API返回] ak.stock_cyq_em 返回空数据, 耗时 {api_elapsed:.2f}s")
                 return None

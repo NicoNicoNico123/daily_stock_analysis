@@ -54,6 +54,15 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# 港股主要指数代码 -> (Yahoo Finance 符号, 中文名称)
+# 该映射由离线单测 tests/test_yfinance_hk_indices.py 固化，避免在线依赖导致非确定性失败。
+# data_provider/base.py 的筹码本地估算作用域判断也复用该清单排除指数。
+HK_INDEX_YF_SYMBOLS = {
+    'HSI': ('^HSI', '恒生指数'),
+    'HSTECH': ('HSTECH.HK', '恒生科技指数'),
+    'HSCEI': ('^HSCE', '国企指数'),
+}
+
 
 class YfinanceFetcher(BaseFetcher):
     """
@@ -348,6 +357,45 @@ class YfinanceFetcher(BaseFetcher):
             'amplitude': amplitude,
         }
 
+    def get_float_shares(self, stock_code: str) -> Optional[float]:
+        """
+        获取流通股本（单位：股），供筹码分布本地估算反推每日换手率。
+
+        数据来源：yfinance Ticker.info 的 sharesOutstanding（缺失时退回 floatShares）。
+        主要服务港/美/ETF 等实时行情通常不带换手率的市场。
+
+        尽力而为：任何异常都只记录 debug 日志并返回 None，不影响调用方主流程。
+
+        Args:
+            stock_code: 任意市场代码（内部自动转换为 Yahoo Finance 符号）
+
+        Returns:
+            流通股本（股），获取失败返回 None
+        """
+        try:
+            import yfinance as yf
+
+            symbol = self._convert_stock_code(stock_code)
+            ticker = yf.Ticker(symbol)
+            try:
+                info = ticker.info or {}
+            except Exception as exc:
+                logger.debug(f"[Yfinance] {symbol} Ticker.info 不可用: {exc}")
+                info = {}
+
+            raw = info.get('sharesOutstanding')
+            if raw is None:
+                raw = info.get('floatShares')
+            shares = _safe_float(raw)
+            if shares is None or shares <= 0:
+                logger.debug(f"[Yfinance] {symbol} 无可用流通股本字段")
+                return None
+            logger.debug(f"[Yfinance] {symbol} 流通股本={shares:,.0f}")
+            return float(shares)
+        except Exception as exc:
+            logger.debug(f"[Yfinance] 获取 {stock_code} 流通股本失败: {exc}")
+            return None
+
     def get_main_indices(self, region: str = "cn") -> Optional[List[Dict[str, Any]]]:
         """
         获取主要指数行情 (Yahoo Finance)，支持 A 股、美股、港股、日股、韩股与台股。
@@ -432,11 +480,7 @@ class YfinanceFetcher(BaseFetcher):
         # - HSTECH -> HSTECH.HK（不是 ^HSTECH）
         # - HSCEI -> ^HSCE（不是 ^HSCEI）
         # 该映射由离线单测 tests/test_yfinance_hk_indices.py 固化，避免在线依赖导致非确定性失败。
-        hk_indices = {
-            'HSI': ('^HSI', '恒生指数'),
-            'HSTECH': ('HSTECH.HK', '恒生科技指数'),
-            'HSCEI': ('^HSCE', '国企指数'),
-        }
+        hk_indices = HK_INDEX_YF_SYMBOLS
         results = []
         try:
             for code, (yf_symbol, name) in hk_indices.items():

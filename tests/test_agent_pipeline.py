@@ -1770,7 +1770,7 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
             self.assertIsNotNone(result)
             self.assertEqual(result.decision_type, "hold")
             self.assertEqual(result.action, "buy")
-            self.assertEqual(result.action_label, "买入")
+            self.assertEqual(result.action_label, "買入")
 
             explanation = result.dashboard["agent_disagreement_explanation"]
             self.assertNotIn("final_signal", explanation)
@@ -2090,9 +2090,9 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
 
             self.assertIsNotNone(result)
             self.assertEqual(result.decision_type, "hold")
-            self.assertEqual(result.operation_advice, "洗盘观察")
+            self.assertEqual(result.operation_advice, "洗盤觀察")
             self.assertEqual(result.dashboard.get("decision_type"), "hold")
-            self.assertEqual(result.dashboard.get("operation_advice"), "洗盘观察")
+            self.assertEqual(result.dashboard.get("operation_advice"), "洗盤觀察")
             self.assertEqual(result.dashboard.get("sentiment_score"), result.sentiment_score)
             explanation = result.dashboard["agent_disagreement_explanation"]
             self.assertEqual(explanation["risk_control"]["post_risk_signal"], "sell")
@@ -2184,13 +2184,13 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
                 content="{}",
                 dashboard={
                     "sentiment_score": 62,
-                    "trend_prediction": "震荡",
-                    "operation_advice": "减仓",
+                    "trend_prediction": "震盪",
+                    "operation_advice": "減倉",
                     "decision_type": "sell",
                     "confidence_level": "中",
-                    "analysis_summary": "盘中风险偏高",
+                    "analysis_summary": "盤中風險偏高",
                     "dashboard": {
-                        "core_conclusion": {"one_sentence": "盘中风险偏高"},
+                        "core_conclusion": {"one_sentence": "盤中風險偏高"},
                         "intelligence": {"risk_alerts": []},
                     },
                 },
@@ -2217,7 +2217,7 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
                 code="600519",
                 report_type=ReportType.SIMPLE,
                 query_id="q-agent-phase-integrity",
-                stock_name="贵州茅台",
+                stock_name="貴州茅臺",
                 realtime_quote=None,
                 chip_data=None,
                 market_phase_context=phase_context,
@@ -2229,11 +2229,11 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
             self.assertTrue(ok, missing)
             phase_decision = result.dashboard["phase_decision"]
             self.assertEqual(phase_decision["phase_context"]["phase"], "intraday")
-            self.assertEqual(phase_decision["action_window"], "模型未提供阶段化行动窗口")
-            self.assertEqual(phase_decision["immediate_action"], "模型未提供阶段化即时动作")
+            self.assertEqual(phase_decision["action_window"], "模型未提供階段化行動窗口")
+            self.assertEqual(phase_decision["immediate_action"], "模型未提供階段化即時動作")
             self.assertEqual(phase_decision["watch_conditions"], [])
-            self.assertEqual(phase_decision["next_check_time"], "模型未提供下一次检查点")
-            self.assertEqual(phase_decision["confidence_reason"], "模型未提供阶段化置信度理由")
+            self.assertEqual(phase_decision["next_check_time"], "模型未提供下一次檢查點")
+            self.assertEqual(phase_decision["confidence_reason"], "模型未提供階段化置信度理由")
 
     def test_analyze_with_agent_explains_daily_market_softening_before_risk(self):
         """A partial result produced before risk must retain its Pipeline start signal."""
