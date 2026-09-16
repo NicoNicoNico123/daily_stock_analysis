@@ -133,10 +133,60 @@ class YfinanceFetcher(BaseFetcher):
         return is_suffix_market_symbol(stock_code, "tw")
 
     def get_realtime_quote(self, stock_code: str, **kwargs):
-        """快路径实时报价（fast_info）：港/美代码在主力行情源被限流时的秒级兜底。"""
+        """快路径实时报价：优先用日 history 取真实盘中 OHLC，退回 fast_info 纯价格。
+
+        港/美代码在主力行情源被限流时的秒级兜底。带真实 OHLC 的报价可让
+        管线 Issue #234 overlay 构造真实盘中 bar（is_partial_bar），而非
+        退化为 open=high=low=close 的估算假 bar。
+        """
         yf_symbol = self._convert_stock_code(stock_code)
         if not yf_symbol:
             return None
+
+        # 真实 OHLC：日 history 最后一行若为今日（盘中/刚收盘），即为真实 bar
+        try:
+            import yfinance as yf
+            from datetime import datetime as _dt, timezone as _tz
+
+            hist = yf.Ticker(yf_symbol).history(period="5d", interval="1d")
+            if hist is not None and not hist.empty:
+                last = hist.iloc[-1]
+                last_date = last.name.date() if hasattr(last.name, "date") else last.name
+                today_utc = _dt.now(_tz.utc).date()
+                # 严格"最后一行 = 今日（UTC）"才视为真实盘中/当日 bar；
+                # 周末/未开盘时最后一行是昨日，不能冒充今日 bar（否则指标失真）。
+                if last_date == today_utc:
+                    prev_close = (
+                        float(hist.iloc[-2]["Close"]) if len(hist) >= 2 else None
+                    )
+                    from data_provider.realtime_types import (
+                        RealtimeSource as _RS,
+                        UnifiedRealtimeQuote as _Q,
+                    )
+
+                    price = float(last["Close"])
+                    change_pct = (
+                        round((price / prev_close - 1) * 100, 4)
+                        if prev_close
+                        else None
+                    )
+                    return _Q(
+                        code=stock_code,
+                        name="",
+                        source=_RS.YFINANCE,
+                        price=price,
+                        open_price=float(last["Open"]),
+                        high=float(last["High"]),
+                        low=float(last["Low"]),
+                        volume=int(last.get("Volume") or 0),
+                        pre_close=prev_close,
+                        change_pct=change_pct,
+                        market="us" if "." not in yf_symbol else "hk",
+                        currency="HKD" if yf_symbol.endswith(".HK") else "USD",
+                    )
+        except Exception as exc:
+            logger.debug(f"[yfinance快路径] {stock_code} history OHLC 失败，退回 fast_info: {exc}")
+
         return _build_fast_quote(stock_code, yf_symbol)
 
     def _convert_stock_code(self, stock_code: str) -> str:

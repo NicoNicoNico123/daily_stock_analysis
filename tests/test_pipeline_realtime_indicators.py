@@ -31,12 +31,13 @@ def _make_realtime_quote(
     volume: int = 13995600,
     amount: float = None,
     change_pct: float = 0.96,
+    source: RealtimeSource = RealtimeSource.TENCENT,
     **overrides,
 ) -> UnifiedRealtimeQuote:
     return UnifiedRealtimeQuote(
         code="600519",
         name="贵州茅台",
-        source=RealtimeSource.TENCENT,
+        source=source,
         price=price,
         open_price=open_price,
         high=high,
@@ -335,9 +336,10 @@ class TestEnhanceContextRealtimeOverride(unittest.TestCase):
         self.assertEqual(enhanced["realtime"]["fallback_from"], "efinance")
         self.assertTrue(enhanced["today"]["is_partial_bar"])
         self.assertTrue(enhanced["today"]["is_estimated"])
+        # quote 带真实盘中 OHLC：open/high/low 不算估算；close（进行中）与 MA 仍标估算
         self.assertEqual(
             enhanced["today"]["estimated_fields"],
-            ["close", "open", "high", "low", "ma5", "ma10", "ma20", "volume", "pct_chg"],
+            ["close", "ma5", "ma10", "ma20", "volume", "pct_chg"],
         )
         self.assertEqual(enhanced["today"]["fetched_at"], "2026-05-31T10:00:05+00:00")
         self.assertEqual(enhanced["today"]["provider_timestamp"], "2026-05-31T10:00:00+00:00")
@@ -394,6 +396,56 @@ class TestEnhanceContextRealtimeOverride(unittest.TestCase):
             enhanced["news_window_days"],
             self.pipeline.search_service.news_window_days,
         )
+
+    def test_today_not_overridden_for_price_only_fallback_quote(self) -> None:
+        """降级兜底 quote（无任何真实盘中 OHLC）不得合成退化假 bar（open=high=low=price）。"""
+        today = date.today()
+        with patch("src.core.pipeline.get_market_now") as mock_now, patch(
+            "src.core.pipeline.get_market_for_stock", return_value="cn"
+        ):
+            mock_now.return_value = datetime(
+                today.year, today.month, today.day, 10, 0, tzinfo=timezone.utc
+            )
+            context = {
+                "code": "600519",
+                "date": (today - timedelta(days=1)).isoformat(),
+                "today": {
+                    "close": 14.5,
+                    "date": (today - timedelta(days=1)).isoformat(),
+                    "dataSource": "AkshareFetcher",
+                },
+                "yesterday": {"close": 14.5, "volume": 1000000},
+            }
+            quote = _make_realtime_quote(
+                price=14.5,
+                open_price=None,
+                high=None,
+                low=None,
+                volume=None,
+                change_pct=None,
+                source=RealtimeSource.FALLBACK,
+            )
+            trend = TrendAnalysisResult(
+                code="600519",
+                trend_status=TrendStatus.BULL,
+                ma5=14.4,
+                ma10=14.2,
+                ma20=13.9,
+            )
+
+            enhanced = self.pipeline._enhance_context(
+                context,
+                quote,
+                None,
+                trend,
+                "贵州茅台",
+                market_phase_context={"is_partial_bar": False},
+            )
+
+            self.assertEqual(enhanced["today"]["close"], 14.5, "原 today 数据应保持不变")
+            self.assertEqual(enhanced["today"]["dataSource"], "AkshareFetcher")
+            self.assertNotIn("is_estimated", enhanced["today"])
+            self.assertNotIn("estimated_fields", enhanced["today"])
 
     def test_today_not_overridden_when_trend_missing(self) -> None:
         context = {"code": "600519", "today": {"close": 15.0}}

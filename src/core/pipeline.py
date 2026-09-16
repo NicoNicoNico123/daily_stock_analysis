@@ -1173,7 +1173,20 @@ class StockAnalysisPipeline:
 
         # Issue #234：盘中分析使用实时 OHLC 与趋势 MA 覆盖 today。
         # 防护条件：trend_result.ma5 > 0 表示 MA 计算已成功且数据量充足。
-        if realtime_quote and trend_result and trend_result.ma5 > 0:
+        # 额外防护：quote 只有单一价格、没有任何真实盘中 OHLC（如降级兜底价 =
+        # 昨收）时，合成 bar 会退化为 open=high=low=close 的假 bar 扭曲指标，
+        # 此时跳过 overlay，让指标仅基于已收盘日 K 计算。
+        quote_has_real_intraday_ohlc = bool(
+            getattr(realtime_quote, 'open_price', None)
+            or getattr(realtime_quote, 'high', None)
+            or getattr(realtime_quote, 'low', None)
+        )
+        if (
+            realtime_quote
+            and trend_result
+            and trend_result.ma5 > 0
+            and quote_has_real_intraday_ohlc
+        ):
             price = getattr(realtime_quote, 'price', None)
             if price is not None and price > 0:
                 yesterday_close = None
@@ -1210,9 +1223,14 @@ class StockAnalysisPipeline:
                     'realtime_source': source_name,
                     'is_estimated': True,
                 }
-                estimated_fields = [
-                    'close', 'open', 'high', 'low', 'ma5', 'ma10', 'ma20',
-                ]
+                estimated_fields = ['close', 'ma5', 'ma10', 'ma20']
+                # quote 提供了真实盘中 OHLC 的字段不算估算；只有回退推算的字段才标记
+                if not getattr(realtime_quote, 'open_price', None):
+                    estimated_fields.append('open')
+                if not getattr(realtime_quote, 'high', None):
+                    estimated_fields.append('high')
+                if not getattr(realtime_quote, 'low', None):
+                    estimated_fields.append('low')
                 if vol is not None:
                     realtime_today['volume'] = vol
                     estimated_fields.append('volume')

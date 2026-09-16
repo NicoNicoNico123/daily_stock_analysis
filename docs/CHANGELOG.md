@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] TwelveData 美股最后兜底：已配置 TWELVEDATA_API_KEY 时自动加入美股日 K 多源 fallback 链末位与美股实时行情补字段链（免费档 800 credits/day、8 req/min；401/429 单次重试后优雅降级，日志脱敏 apikey），Key 未配置时不注册、零副作用。
 - [修复] 修复港股基本面恒为 fundamentals_not_supported 的问题：Yahoo 港股符号归一化去除前导零（02513.HK → 2513.HK），修复 5 位新上市港股（如智谱）quoteSummary 404 导致的基本面块空数据；分析重跑后基本面恢复正常（来源 yfinance，status ok/partial）。
 - [改进] 港/美实时行情提速：默认港股行情源优先级调整为 futu → longbridge → yfinance → akshare（yfinance 秒级 fast_info 先于 60 秒级新浪分页兜底）；未配置 Longbridge 凭证时跳过该源；离岸（港/美/日/韩/台）行情成功后不再触发补字段二次调用。
+- [修复] 港/美实时行情报价升级为真实盘中 OHLC（yfinance 日 history，严格当日判定），降级兜底纯价格 quote（如东财封禁时的昨收兜底）不再合成 open=high=low=close 的退化今日 bar——避免单一价格扭曲技术指标；overlay 的 estimated_fields 按字段真实来源诚实标注（quote 提供的盘中 OHLC 不再误标估算）。
 - [改进] 报告页标签跟随界面语言而非报告内容语言；ACTION ADVICE 值经决策动作分类本地化（英文界面显示 Reduce 等英文标签）。
 - [新功能] LLM 报告翻译：英文界面下中文报告按需 LLM 翻译并按（报告, 语言）持久化缓存，覆盖概览卡、策略点位、大盘复盘正文与完整报告抽屉，重复访问零额外成本。
 - [修复] Web 报告页区块标签改为跟随界面语言渲染：核心洞察/操作建议、策略点位、资讯动态、数据上下文、运行诊断、透明度、市场阶段/日线未完成、恐贪指数与分享、完整报告抽屉等前端标签不再沿用报告内容语言（英文界面 + 中文报告时标签不再整页中文）；报告正文、狙击点位数值、后端诊断消息与历史记录标题仍保持原内容语言，`report_language` 链路不变。
