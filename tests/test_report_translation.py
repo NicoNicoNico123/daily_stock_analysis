@@ -7,6 +7,7 @@
 """
 
 import os
+import json
 import sys
 import tempfile
 import unittest
@@ -24,7 +25,7 @@ from fastapi import HTTPException
 import src.auth as auth
 from api.v1.endpoints.history import get_history_translation
 from src.analyzer import AnalysisResult
-from src.config import Config
+from src.config import Config, get_config
 from src.storage import DatabaseManager, AnalysisHistory, ReportTranslation
 from src.services.report_translation_service import (
     _parse_translation_payload,
@@ -181,7 +182,8 @@ class ReportTranslationTestCase(unittest.TestCase):
         zh = translate_analysis_report(record_id, "zh", db_manager=self.db)
         self.assertIsNotNone(zh)
         self.assertFalse(zh["cached"])
-        self.assertEqual(zh["summary"]["analysis_summary"], "基本面稳健，短期震荡")
+        # zh 目标语言契约 = 繁体中文（回显路径同样做 s2t 定稿）
+        self.assertEqual(zh["summary"]["analysis_summary"], "基本面穩健，短期震盪")
         self.assertEqual(analyzer._call_litellm.call_count, 0, "同语言回显不调用 LLM")
 
         en = translate_analysis_report(record_id, "en", db_manager=self.db)
@@ -192,8 +194,45 @@ class ReportTranslationTestCase(unittest.TestCase):
         # 各目标语言缓存互不影响
         zh_again = translate_analysis_report(record_id, "zh", db_manager=self.db)
         self.assertIsNotNone(zh_again)
-        self.assertEqual(zh_again["summary"]["analysis_summary"], "基本面稳健，短期震荡")
+        self.assertEqual(zh_again["summary"]["analysis_summary"], "基本面穩健，短期震盪")
         self.assertEqual(analyzer._call_litellm.call_count, 1)
+
+    def test_zh_target_outputs_traditional(self) -> None:
+        """zh 译文（LLM 返回简体时）落库与返回均为繁体，且 s2t 幂等。"""
+        simplified_llm_json = """{
+          "summary": {
+            "analysis_summary": "基本面稳健，短期震荡，筹码集中。",
+            "operation_advice": "持有",
+            "trend_prediction": "看多"
+          },
+          "strategy": {
+            "ideal_buy": "理想买点：125.5 元",
+            "secondary_buy": "120-121 加仓",
+            "stop_loss": "止损：110 元",
+            "take_profit": "目标：150.0 元"
+          }
+        }"""
+        record_id = self._save_history(report_language="en")
+        analyzer = self._patch_llm(text=simplified_llm_json)
+
+        payload = translate_analysis_report(record_id, "zh", db_manager=self.db)
+
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["summary"]["analysis_summary"], "基本面穩健，短期震盪，籌碼集中。")
+        self.assertEqual(payload["strategy"]["ideal_buy"], "理想買點：125.5 元")
+        self.assertEqual(analyzer._call_litellm.call_count, 1)
+
+        cached = self.db.get_report_translation(record_id, "zh")
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached["summary"]["analysis_summary"], "基本面穩健，短期震盪，籌碼集中。")
+
+        from src.utils.traditional import to_traditional
+
+        self.assertEqual(
+            to_traditional(payload["summary"]["analysis_summary"]),
+            payload["summary"]["analysis_summary"],
+            "zh 译文必须已经是繁体（s2t 幂等）",
+        )
 
     def test_same_language_report_skips_llm(self) -> None:
         """报告本身就是目标语言时直接回显原文，不调用 LLM。"""
@@ -347,6 +386,167 @@ class ParseTranslationPayloadTestCase(unittest.TestCase):
         self.assertEqual(payload["summary"]["operation_advice"], "Hold")
         self.assertEqual(payload["strategy"]["ideal_buy"], "Ideal entry: 125.5 CNY")
         self.assertIn("Bullish with a solid base", payload["markdown"])
+
+
+class EnglishQualityRetryTestCase(unittest.TestCase):
+    """英文译文质量规则与重试逻辑测试"""
+
+    def _svc(self):
+        import src.services.report_translation_service as svc
+
+        return svc
+
+    def test_english_prompt_contains_financial_unit_rules(self) -> None:
+        """英文 prompt 必须带货币单位（HK$/CNY）与禁写中文的硬规则。"""
+        svc = self._svc()
+        prompt = svc._build_translation_prompt({"summary": {"analysis_summary": "元"}}, "en")
+        self.assertIn("HK$", prompt)
+        self.assertIn("CNY", prompt)
+        self.assertIn("元", prompt, "货币规则必须显式说明 元 的译法")
+        self.assertIn("NO Chinese characters", prompt)
+        self.assertIn("position", prompt)
+
+        zh_prompt = svc._build_translation_prompt({"summary": {"analysis_summary": "元"}}, "zh")
+        self.assertNotIn("HK$", zh_prompt)
+
+    def test_retry_triggered_and_better_attempt_used(self) -> None:
+        """首次译文残留中文超阈值 -> 重试一次；取残留更少的结果。"""
+        svc = self._svc()
+        high_cjk = {
+            "summary": {"analysis_summary": "基本面稳健，短期震荡，筹码集中，主力资金流出，支撑位失效，等待确认。"},
+            "strategy": {},
+        }
+        low_cjk = {
+            "summary": {"analysis_summary": "Fundamentals stay solid; chip distribution is concentrated."},
+            "strategy": {},
+        }
+        self.assertGreater(svc._payload_cjk_count(high_cjk), svc._EN_CJK_RETRY_THRESHOLD)
+        self.assertLess(svc._payload_cjk_count(low_cjk), svc._EN_CJK_RETRY_THRESHOLD)
+
+        calls = []
+
+        def _fake_invoke(prompt, source_lang_hint, target_lang, stock_code):
+            calls.append(prompt)
+            # 重试请求必须携带更严格的英文质量指令
+            self.assertIn("STRICT QUALITY REQUIREMENT", prompt)
+            self.assertIn("HK$", prompt)
+            return json.dumps(low_cjk, ensure_ascii=False)
+
+        with patch.object(svc, "_invoke_llm", side_effect=_fake_invoke):
+            result = svc._retry_english_translation_if_needed(
+                high_cjk,
+                source_payload={"summary": {"analysis_summary": "基本面稳健"}},
+                stored_language="zh",
+                stock_code="600519",
+            )
+
+        self.assertEqual(result, low_cjk, "必须采用残留中文更少的第二次结果")
+        self.assertEqual(len(calls), 1, "重试只额外调用一次 LLM")
+
+    def test_retry_triggered_by_yuan_even_below_cjk_threshold(self) -> None:
+        """英文译文残留「元」即便 CJK 总量很低也必须重试（用户实测 220.00元 场景）。"""
+        svc = self._svc()
+        low_cjk_with_yuan = {
+            "summary": {"analysis_summary": "Zhipu closed at 680.0元, down 5.69%."},
+            "strategy": {},
+        }
+        fixed = {
+            "summary": {"analysis_summary": "Zhipu closed at HK$680.0, down 5.69%."},
+            "strategy": {},
+        }
+        with patch.object(svc, "_invoke_llm", return_value=json.dumps(fixed, ensure_ascii=False)) as invoke_mock:
+            result = svc._retry_english_translation_if_needed(
+                low_cjk_with_yuan,
+                source_payload={"summary": {"analysis_summary": "智谱收报680.0元。"}},
+                stored_language="zh",
+                stock_code="02513.HK",
+            )
+        invoke_mock.assert_called_once()
+        self.assertEqual(result, fixed)
+
+    def test_retry_skipped_when_clean_even_below_cjk_threshold(self) -> None:
+        """无「元」残留且 CJK 低于阈值时不重试。"""
+        svc = self._svc()
+        clean = {
+            "summary": {"analysis_summary": "Zhipu closed at HK$680.0, down 5.69%."},
+            "strategy": {},
+        }
+        with patch.object(svc, "_invoke_llm") as invoke_mock:
+            result = svc._retry_english_translation_if_needed(
+                clean,
+                source_payload={"summary": {"analysis_summary": "智谱收报680.0港元。"}},
+                stored_language="zh",
+                stock_code="02513.HK",
+            )
+        self.assertEqual(result, clean)
+        invoke_mock.assert_not_called()
+
+    def test_repair_currency_units_by_market(self) -> None:
+        """确定性兜底：残留「N 元」按股票市场改写为 HK$/CNY。"""
+        svc = self._svc()
+        payload = {
+            "summary": {"analysis_summary": "closed at 680.0元, low 670.00 元."},
+            "strategy": {"ideal_buy": "scale in at 1,720.50元"},
+        }
+        hk = svc._repair_currency_units(json.loads(json.dumps(payload)), "02513.HK")
+        self.assertEqual(hk["summary"]["analysis_summary"], "closed at HK$680.0, low HK$670.00.")
+        self.assertEqual(hk["strategy"]["ideal_buy"], "scale in at HK$1,720.50")
+        cn = svc._repair_currency_units(json.loads(json.dumps(payload)), "600519")
+        self.assertEqual(cn["summary"]["analysis_summary"], "closed at 680.0 CNY, low 670.00 CNY.")
+
+    def test_retry_skipped_when_below_threshold(self) -> None:
+        """首次译文残留中文低于阈值时不重试（控制成本）。"""
+        svc = self._svc()
+        clean = {
+            "summary": {"analysis_summary": "Fundamentals stay solid."},
+            "strategy": {},
+        }
+        with patch.object(svc, "_invoke_llm") as invoke_mock:
+            result = svc._retry_english_translation_if_needed(
+                clean,
+                source_payload={"summary": {"analysis_summary": "基本面稳健"}},
+                stored_language="zh",
+                stock_code="600519",
+            )
+        self.assertEqual(result, clean)
+        invoke_mock.assert_not_called()
+
+    def test_retry_keeps_first_when_retry_not_better(self) -> None:
+        """重试结果残留更多时保留首次结果。"""
+        svc = self._svc()
+        high_cjk = {
+            "summary": {"analysis_summary": "基本面稳健，短期震荡，筹码集中，主力资金流出，支撑位失效，等待确认。"},
+            "strategy": {},
+        }
+        worse = {
+            "summary": {"analysis_summary": "基本面稳健，短期震荡，筹码集中，主力资金流出，支撑位失效，等待确认，止损。"},
+            "strategy": {},
+        }
+        with patch.object(svc, "_invoke_llm", return_value=json.dumps(worse, ensure_ascii=False)):
+            with patch.object(svc, "_parse_translation_payload", return_value=worse):
+                result = svc._retry_english_translation_if_needed(
+                    high_cjk,
+                    source_payload={"summary": {"analysis_summary": "基本面稳健"}},
+                    stored_language="zh",
+                    stock_code="600519",
+                )
+        self.assertEqual(result, high_cjk)
+
+    def test_translation_model_override_uses_report_translation_model(self) -> None:
+        """REPORT_TRANSLATION_MODEL 配置时，翻译分析器使用该模型且不影响全局配置。"""
+        svc = self._svc()
+        base_config = get_config()
+        original_model = base_config.litellm_model
+        try:
+            base_config.report_translation_model = "openai/deepseek-chat"
+            translation_config = svc._build_translation_config()
+            self.assertEqual(translation_config.litellm_model, "openai/deepseek-chat")
+            self.assertIsNot(translation_config, base_config)
+            self.assertEqual(base_config.litellm_model, original_model, "不得污染全局配置单例")
+        finally:
+            base_config.report_translation_model = ""
+
+        self.assertIs(svc._build_translation_config(), get_config(), "留空时直接复用主配置")
 
     def test_rejects_non_json_and_empty_payloads(self) -> None:
         self.assertIsNone(_parse_translation_payload(""))

@@ -22,6 +22,7 @@ from src.config import get_config
 from src.notification import NotificationService
 from src.market_analyzer import MarketAnalyzer
 from src.report_language import normalize_report_language
+from src.utils.traditional import to_simplified, to_traditional, to_traditional_tree
 from src.search_service import SearchService
 from src.analyzer import AnalysisResult, GeminiAnalyzer
 from src.llm.generation_backend import GenerationError
@@ -299,6 +300,11 @@ def run_market_review(
             }
         
         if review_report:
+            # 中文复盘定稿 -> 繁体输出：在落库 / 推送 / Markdown 渲染之前统一转换，
+            # 覆盖复盘正文与结构化 payload（sections / 标题 / 板块表格文本）。
+            if normalize_report_language(getattr(runtime_config, "report_language", "zh")) == "zh":
+                review_report = to_traditional(review_report)
+                market_review_payloads = to_traditional_tree(market_review_payloads)
             market_review_payload = _build_combined_market_review_payload(
                 review_report=review_report,
                 payloads=market_review_payloads,
@@ -519,9 +525,11 @@ def _render_market_review_payload_markdown(
     """Render Markdown from the structured market-review payload for file/push compatibility."""
     metadata = _market_review_region_metadata(payload.get("region"))
     body = _render_market_review_payload_body(payload)
+    # 中文复盘定稿 -> 繁体输出：模板标签与 payload 文本在渲染出口统一转换
+    # （单点收口，覆盖落库/推送/文件三条路径；英文/韩文报告中的中文专名同步转换，行为一致）。
     if wrapper_title:
-        return f"{metadata}{wrapper_title}\n\n{body}".strip()
-    return f"{metadata}{body}".strip()
+        return to_traditional(f"{metadata}{wrapper_title}\n\n{body}".strip())
+    return to_traditional(f"{metadata}{body}".strip())
 
 
 def _render_market_review_merge_markdown(
@@ -533,7 +541,7 @@ def _render_market_review_merge_markdown(
     markets = payload.get("markets")
     if isinstance(markets, dict) and markets:
         return _render_market_review_payload_markdown(payload)
-    return _append_missing_sector_payload_block(review_report, payload)
+    return to_traditional(_append_missing_sector_payload_block(review_report, payload))
 
 
 def _render_market_review_payload_body(payload: Dict[str, Any]) -> str:
@@ -669,7 +677,7 @@ def _render_sector_payload_markdown_block(
 
 
 def _markdown_has_sector_table(markdown: Any, *, title_prefix: str = "") -> bool:
-    text = str(markdown or "")
+    text = to_simplified(str(markdown or "")) or ""
     if title_prefix:
         title = title_prefix.strip()
         prefixed_markers = (
@@ -711,6 +719,8 @@ def _find_market_markdown_segment_span(markdown: str, title: str) -> Optional[tu
 
 
 def _markdown_contains_sector_markers(text: str) -> bool:
+    # 中文报告现已输出繁体，注入的板块块可能是繁体；统一归一化到简体再与标记比对。
+    normalized = to_simplified(text) or ""
     markers = (
         "#### 领涨板块",
         "#### 领跌板块",
@@ -724,7 +734,7 @@ def _markdown_contains_sector_markers(text: str) -> bool:
         "| 排名 | 行业板块 |",
         "| Rank | Sector |",
     )
-    return any(marker in text for marker in markers)
+    return any(marker in normalized for marker in markers)
 
 
 def _render_sector_payload_block(payload: Dict[str, Any]) -> str:
@@ -803,9 +813,9 @@ def _persist_market_review_history(
             operation_advice = "리뷰 보기"
             trend_prediction = "시황 리뷰"
         else:
-            stock_name = "大盘复盘"
-            operation_advice = "查看复盘"
-            trend_prediction = "大盘复盘"
+            stock_name = to_traditional("大盘复盘")
+            operation_advice = to_traditional("查看复盘")
+            trend_prediction = to_traditional("大盘复盘")
 
         result = AnalysisResult(
             code=MARKET_REVIEW_HISTORY_CODE,
@@ -908,7 +918,7 @@ def _build_market_review_context_overview(
     label = (
         "Market review" if report_language == "en"
         else "시황 리뷰" if report_language == "ko"
-        else "大盘复盘"
+        else to_traditional("大盘复盘")
     )
     return {
         "pack_version": "market_review/1.0",

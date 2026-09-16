@@ -29,13 +29,18 @@ PROJECT_DISPLAY_NAME = "股票智能分析系统"
 DEFAULT_XIAOHONGSHU_QR_PATH = "src/assets/share_image/xiaohongshu_qr.jpg"
 DEFAULT_XIAOHONGSHU_HANDLE = "@霸天土小豆"
 _MARKET_RE = re.compile(
-    r"(?:大盘复盘|市场复盘|market\s+(?:review|recap)|시황\s*리뷰)", re.IGNORECASE
+    # 中文报告输出为繁体后，标题/正文里的同类字样也会变成繁体，因此两种写法都要识别。
+    r"(?:大盘复盘|大盤復盤|市场复盘|市場復盤|market\s+(?:review|recap)|시황\s*리뷰)",
+    re.IGNORECASE,
 )
 _MARKET_SCOPE_RE = re.compile(
     r"(?:A股|港股|美股|日股|韩股|中国\s*A주|미국|홍콩|일본|한국|\b(?:cn|hk|us|jp|kr)\b|a[-\s]?share|hong\s+kong|japan|korea|u\.?s\.?)",
     re.IGNORECASE,
 )
-_DASHBOARD_RE = re.compile(r"(?:决策仪表盘|decision\s+dashboard)", re.IGNORECASE)
+_DASHBOARD_RE = re.compile(
+    r"(?:决策仪表盘|決策儀表盤|decision\s+dashboard)",
+    re.IGNORECASE,
+)
 _HEADING_RE = re.compile(r"^(#{1,4})\s+(.+?)\s*$", re.MULTILINE)
 _QUOTE_RE = re.compile(r"^\s*>\s+(.+?)\s*$", re.MULTILINE)
 _DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})(?:[ T]\d{2}:\d{2}(?::\d{2})?)?\b")
@@ -52,7 +57,7 @@ _CODE_RE = re.compile(
 _NUMERIC_CODE_RE = re.compile(
     rf"(?:{_SUFFIXED_NUMERIC_CODE_PATTERN}|(?:(?i:sh|sz|bj|hk))?\d{{5,6}}(?:\.[A-Z]{{2}})?)"
 )
-_NA_VALUES = {"", "-", "--", "n/a", "na", "none", "null", "暂无", "暂无数据"}
+_NA_VALUES = {"", "-", "--", "n/a", "na", "none", "null", "暂无", "暂无数据", "暫無", "暫無數據"}
 _POSTER_TEXT = {
     "zh": {
         "brand": "AI 股票分析", "stock_subtitle": "个股决策卡 · 结论、点位与风险一图读懂",
@@ -149,7 +154,7 @@ _MARKET_LABEL_PATTERNS = (
         ),
     ),
     ("日股", re.compile(r"(?:日\s*股|japan|일본)", re.IGNORECASE)),
-    ("韩股", re.compile(r"(?:韩\s*股|korea|한국)", re.IGNORECASE)),
+    ("韩股", re.compile(r"(?:[韩韓]\s*股|korea|한국)", re.IGNORECASE)),
 )
 
 

@@ -50,6 +50,7 @@ from src.report_language import (
     normalize_report_language,
 )
 from src.search_service import SearchService
+from src.utils.traditional import to_traditional, to_traditional_tree
 from src.analysis_context_pack_prompt import format_analysis_context_pack_prompt_section
 from src.analysis_context_pack_overview import render_analysis_context_pack_overview
 from src.market_phase_summary import MARKET_PHASE_SUMMARY_KEY, render_market_phase_summary
@@ -150,6 +151,65 @@ def _supports_explicit_keyword(callable_obj: Any, keyword: str) -> bool:
         return keyword in inspect.signature(callable_obj).parameters
     except (TypeError, ValueError):
         return False
+
+
+# 中文报告输出为繁体：在分析结果定稿（保存 / 推送 / 渲染 Markdown 之前）统一做一次
+# 确定性 s2t 转换。这里只改「报告输出文本」，不改任何参与后续匹配的 taxonomy 字段
+# （action / decision_type 为 ASCII，天然不受影响）。
+_TRADITIONAL_REPORT_TEXT_FIELDS = (
+    "analysis_summary",
+    "operation_advice",
+    "trend_prediction",
+    "confidence_level",
+    "action_label",
+    "trend_analysis",
+    "short_term_outlook",
+    "medium_term_outlook",
+    "technical_analysis",
+    "ma_analysis",
+    "volume_analysis",
+    "pattern_analysis",
+    "fundamental_analysis",
+    "sector_position",
+    "company_highlights",
+    "news_summary",
+    "market_sentiment",
+    "hot_topics",
+    "key_points",
+    "risk_warning",
+    "buy_reason",
+)
+
+
+def _apply_traditional_report_output(result: Any) -> Any:
+    """中文报告定稿后的繁体输出转换；非 zh 报告原样返回。
+
+    转换覆盖：
+    - 概览字段（摘要 / 操作建议 / 趋势预测 / 置信度等）；
+    - dashboard 内的展示文本（核心结论、狙击点位字符串、情报摘要等）。
+
+    必须在「建议 -> action」归一化（populate_decision_action_fields /
+    _refresh_decision_action_for_final_result）之后调用，保证决策 taxonomy
+    仍然由简体原文归一化得出。
+    """
+    if result is None:
+        return result
+    report_language = normalize_report_language(
+        getattr(result, "report_language", None)
+        or getattr(get_config(), "report_language", "zh")
+    )
+    if report_language != "zh":
+        return result
+
+    for field in _TRADITIONAL_REPORT_TEXT_FIELDS:
+        value = getattr(result, field, None)
+        if isinstance(value, str) and value:
+            setattr(result, field, to_traditional(value))
+
+    dashboard = getattr(result, "dashboard", None)
+    if isinstance(dashboard, dict):
+        result.dashboard = to_traditional_tree(dashboard)
+    return result
 
 
 # 防御性 guard：当实例绕过 __init__（如测试中 __new__）构造时，
@@ -949,6 +1009,9 @@ class StockAnalysisPipeline:
 
             if result:
                 self._append_daily_data_source(result, context, analysis_target)
+
+            # Step 7.9: 中文报告定稿 -> 繁体输出（保存 / 推送 / Markdown 渲染之前）
+            _apply_traditional_report_output(result)
 
             # Step 8: 保存分析历史记录
             if result and result.success:
@@ -1843,6 +1906,9 @@ class StockAnalysisPipeline:
                 )
 
             resolved_stock_name = result.name if result and result.name else stock_name
+
+            # Agent 路径同样在保存前做繁体输出定稿（与 legacy 路径 Step 7.9 一致）
+            _apply_traditional_report_output(result)
 
             # 保存新闻情报到数据库（Agent 工具结果仅用于 LLM 上下文，未持久化，Fixes #396）
             # 使用 search_stock_news（与 Agent 工具调用逻辑一致），仅 1 次 API 调用，无额外延迟
