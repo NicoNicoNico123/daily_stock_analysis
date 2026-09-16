@@ -4150,10 +4150,13 @@ class SearchService:
                     continue
 
                 had_provider_success = had_provider_success or bool(response.success)
+                # SearXNG 查询自带引擎级 time_range（时效过滤），无日期结果在构造上就是新鲜的；
+                # 其他渠道返回无日期结果时仍按严格策略丢弃。
                 filtered = self._filter_news_response(
                     response,
                     search_days=search_days,
                     max_results=provider_max_results,
+                    keep_unknown=response.provider == "SearXNG",
                     log_scope=f"{topic_text}:{provider.name}:topic_news",
                 )
                 if filtered.success and filtered.results:
