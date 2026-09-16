@@ -1057,6 +1057,29 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": ["secret_value", "comma_separated_keys"],
     },
+    "EASTMONEY_API_KEY": {
+        "title": "EastMoney API Key",
+        "description": "东方财富妙想资讯搜索 API Key（finshubshub news-search）；留空时该搜索渠道静默停用。",
+        "category": "data_source",
+        "data_type": "string",
+        "ui_control": "password",
+        "is_sensitive": True,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "display_order": 31,
+        "help_key": "settings.data_source.search_api_keys",
+        "examples": [
+            "EASTMONEY_API_KEY=mkt-xxxxxxxx",
+        ],
+        "docs": [
+            {
+                "label": "完整指南：环境变量完整列表",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#环境变量完整列表",
+            },
+        ],
+    },
     "TAVILY_API_KEYS": {
         "title": "Tavily API Keys",
         "description": "Comma-separated Tavily API keys.",
