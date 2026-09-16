@@ -3002,6 +3002,15 @@ class DataFetcherManager:
             # 动态生成熔断器的 key，例如 "TushareFetcher" -> "tushare_chip"
             source_key = f"{fetcher_name.replace('Fetcher', '').lower()}_chip"
 
+            # A 股专属筹码 API（东财 cyq / tushare cyq_chips）对港/美/ETF 天然无数据，
+            # 非 cn 市场直接跳过——避免 0ms 假失败事件污染事件流。
+            market = _market_tag(stock_code)
+            if market != "cn" and fetcher_name in ("AkshareFetcher", "TushareFetcher"):
+                logger.debug(
+                    f"[筹码分布] {market} 市场跳过 A 股专属筹码源 {fetcher_name}"
+                )
+                continue
+
             # 检查熔断器状态
             if not circuit_breaker.is_available(source_key):
                 logger.debug(f"[熔断] {fetcher_name} 筹码接口处于熔断状态，尝试下一个")
@@ -3073,8 +3082,39 @@ class DataFetcherManager:
 
         logger.warning(f"[筹码分布] {stock_code} 所有数据源均失败")
 
-        # 所有数据源失败后的兜底：用日线量价本地估算筹码分布（不落库，仅当次分析输入）
-        return self._get_computed_chip_distribution(stock_code)
+        # 所有数据源失败后的兜底：用日线量价本地估算筹码分布（不落库，仅当次分析输入）。
+        # 计算过程接入 provider_run 事件流，让事件面板可见 computed 兜底的真实结果。
+        record_provider_run_started(
+            data_type="chip",
+            provider="chip_calculator",
+            operation="get_chip_distribution",
+        )
+        computed_start = time.time()
+        computed = self._get_computed_chip_distribution(stock_code)
+        computed_latency = int((time.time() - computed_start) * 1000)
+        if _is_meaningful_chip_distribution(computed):
+            record_provider_run(
+                data_type="chip",
+                provider="chip_calculator",
+                operation="get_chip_distribution",
+                success=True,
+                latency_ms=computed_latency,
+                record_count=1,
+            )
+            logger.info(f"[筹码分布] {stock_code} 本地计算兜底成功 (来源: computed)")
+            return computed
+        record_provider_run(
+            data_type="chip",
+            provider="chip_calculator",
+            operation="get_chip_distribution",
+            success=False,
+            latency_ms=computed_latency,
+            error_type="computed_unavailable",
+            error_message="local computation could not estimate chip distribution",
+            record_count=0,
+        )
+        logger.warning(f"[筹码分布] {stock_code} 本地计算兜底失败")
+        return None
 
     def _get_computed_chip_distribution(self, stock_code: str):
         """
