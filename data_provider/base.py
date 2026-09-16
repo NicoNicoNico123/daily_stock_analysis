@@ -2523,7 +2523,7 @@ class DataFetcherManager:
                     for source in getattr(
                         config,
                         "futu_hk_realtime_source_priority",
-                        "futu,longbridge,akshare,yfinance",
+                        "futu,longbridge,yfinance,akshare",
                     ).split(",")
                     if source.strip()
                 ]
@@ -2548,6 +2548,17 @@ class DataFetcherManager:
                     futu_enabled = FutuFetcher.has_configured_endpoint()
                 except Exception:  # noqa: BLE001 - fail closed: treat futu as disabled
                     futu_enabled = False
+                # Longbridge 未配置凭证时跳过：其 SDK 连接超时（~10s+）会拖慢
+                # 后续 yfinance 快路径，导致估值/筹码阶段因行情预算超时而降级。
+                longbridge_enabled = False
+                try:
+                    config_lb = get_config()
+                    longbridge_enabled = bool(
+                        (getattr(config_lb, "longbridge_app_key", "") or "").strip()
+                        or (getattr(config_lb, "longbridge_access_token", "") or "").strip()
+                    )
+                except Exception:  # noqa: BLE001
+                    longbridge_enabled = False
                 for index, source in enumerate(hk_priority):
                     mapped = source_map.get(source)
                     if mapped is None:
@@ -2557,6 +2568,12 @@ class DataFetcherManager:
                     if fetcher_name == "FutuFetcher" and not futu_enabled:
                         logger.info(
                             "[实时行情] 港股 %s 未配置 FUTU_OPEND_HOST，跳过 futu 源", stock_code
+                        )
+                        continue
+                    if fetcher_name == "LongbridgeFetcher" and not longbridge_enabled:
+                        logger.debug(
+                            "[实时行情] 港股 %s 未配置 Longbridge 凭证，跳过（避免连接超时拖慢后续源）",
+                            stock_code,
                         )
                         continue
                     quote = self._try_fetcher_quote(stock_code, fetcher_name, **fetcher_kw)
@@ -2570,12 +2587,17 @@ class DataFetcherManager:
                     if fallback_from is None:
                         fallback_from = self._realtime_fetcher_token(fetcher_name, **fetcher_kw)
                 if primary_quote is not None:
-                    # 用后续数据源补充缺失字段（volume_ratio / turnover_rate / 估值 / 市值），
-                    # 保持与美股路径一致的 _supplement_quote 补字段能力。
+                    # 用后续数据源补充缺失字段（volume_ratio / turnover_rate / 估值 / 市值）。
+                    # 注意：港股 yfinance 主源（fast_info）本就没有量比/换手率/估值字段，
+                    # 补字段会按优先级再调 akshare（东财限流时 60s+ 且反复触发封禁），
+                    # 对估值/筹码阶段得不偿失，因此离岸市场（港/美/日/韩/台）跳过补字段。
+                    offshore_quote = is_hk or is_us or is_jp or is_kr
                     for source in hk_priority[primary_src_index + 1:]:
                         mapped = source_map.get(source)
                         if mapped is None:
                             continue
+                        if offshore_quote:
+                            break
                         if not self._quote_needs_supplement(primary_quote):
                             break
                         fetcher_name, fetcher_kw = mapped

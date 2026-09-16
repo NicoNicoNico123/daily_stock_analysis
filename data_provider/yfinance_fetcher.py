@@ -57,6 +57,35 @@ logger = logging.getLogger(__name__)
 # 港股主要指数代码 -> (Yahoo Finance 符号, 中文名称)
 # 该映射由离线单测 tests/test_yfinance_hk_indices.py 固化，避免在线依赖导致非确定性失败。
 # data_provider/base.py 的筹码本地估算作用域判断也复用该清单排除指数。
+def _build_fast_quote(stock_code: str, yf_symbol: str):
+    """用 yfinance fast_info 构建秒级实时报价（港/美快路径兜底）；失败返回 None。"""
+    try:
+        import yfinance as yf
+
+        fast = yf.Ticker(yf_symbol).fast_info
+        price = getattr(fast, "last_price", None) or fast.get("last_price")
+        prev = getattr(fast, "previous_close", None) or fast.get("previous_close")
+        if price is None:
+            return None
+        change_pct = None
+        if price and prev:
+            change_pct = round((float(price) / float(prev) - 1) * 100, 4)
+        from data_provider.realtime_types import RealtimeSource, UnifiedRealtimeQuote
+
+        return UnifiedRealtimeQuote(
+            code=stock_code,
+            name="",
+            source=RealtimeSource.YFINANCE,
+            price=float(price),
+            change_pct=change_pct,
+            market="us" if "." not in yf_symbol else ("hk" if yf_symbol.endswith(".HK") else None),
+            currency="HKD" if yf_symbol.endswith(".HK") else "USD",
+        )
+    except Exception as exc:
+        logger.debug(f"[yfinance快路径] {stock_code} 实时报价失败: {exc}")
+        return None
+
+
 HK_INDEX_YF_SYMBOLS = {
     'HSI': ('^HSI', '恒生指数'),
     'HSTECH': ('HSTECH.HK', '恒生科技指数'),
@@ -102,6 +131,13 @@ class YfinanceFetcher(BaseFetcher):
         e.g. 00878 / 006208), wider than the JP `.T` range.
         """
         return is_suffix_market_symbol(stock_code, "tw")
+
+    def get_realtime_quote(self, stock_code: str, **kwargs):
+        """快路径实时报价（fast_info）：港/美代码在主力行情源被限流时的秒级兜底。"""
+        yf_symbol = self._convert_stock_code(stock_code)
+        if not yf_symbol:
+            return None
+        return _build_fast_quote(stock_code, yf_symbol)
 
     def _convert_stock_code(self, stock_code: str) -> str:
         """

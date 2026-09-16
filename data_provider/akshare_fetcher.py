@@ -1843,6 +1843,23 @@ class AkshareFetcher(BaseFetcher):
                         f"[熔断] 数据源 {em_key} 处于熔断状态，尝试使用备用链路"
                     )
 
+        # --- 快路径兜底：yfinance fast_info（秒级）---
+        # 新浪 stock_hk_spot 需要迭代全部分页（~60s），在东财被限流的场景下
+        # 先尝试 yfinance 秒级报价，避免估值/筹码阶段因行情超时被降级。
+        try:
+            from data_provider.yfinance_fetcher import YfinanceFetcher as _Yf
+
+            fast_quote = _Yf().get_realtime_quote(stock_code)
+            if fast_quote is not None:
+                logger.info(
+                    f"[yfinance快路径] {stock_code} 实时报价成功: "
+                    f"price={getattr(fast_quote, 'price', None)}"
+                )
+                circuit_breaker.record_success(sina_key)
+                return fast_quote
+        except Exception as fast_exc:
+            logger.debug(f"[yfinance快路径] 失败，继续新浪备用链路: {fast_exc}")
+
         # --- 备用数据源：新浪 ---
         if not circuit_breaker.is_available(sina_key):
             logger.info(f"[熔断] 数据源 {sina_key} 处于熔断状态，跳过备用链路")

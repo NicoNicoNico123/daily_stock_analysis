@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 东财妙想资讯搜索接入：新增 EASTMONEY_API_KEY 配置的搜索渠道（个股/题材语义查询，优先级在 Bocha 之后）与 eastmoney 情报源类型（含市场资讯模板与 query 字段迁移），Key 未配置时渠道与默认源静默跳过。
 - [新功能] Finnhub 美股日 K 兜底：已配置 FINNHUB_API_KEY 时自动加入美股日 K 多源 fallback 链（60 次/分限流、403/429 优雅降级、日志脱敏 token），免费档被拒时零副作用。
 - [修复] 修复港股基本面恒为 fundamentals_not_supported 的问题：Yahoo 港股符号归一化去除前导零（02513.HK → 2513.HK），修复 5 位新上市港股（如智谱）quoteSummary 404 导致的基本面块空数据；分析重跑后基本面恢复正常（来源 yfinance，status ok/partial）。
+- [改进] 港/美实时行情提速：默认港股行情源优先级调整为 futu → longbridge → yfinance → akshare（yfinance 秒级 fast_info 先于 60 秒级新浪分页兜底）；未配置 Longbridge 凭证时跳过该源；离岸（港/美/日/韩/台）行情成功后不再触发补字段二次调用。
 - [改进] 报告页标签跟随界面语言而非报告内容语言；ACTION ADVICE 值经决策动作分类本地化（英文界面显示 Reduce 等英文标签）。
 - [新功能] LLM 报告翻译：英文界面下中文报告按需 LLM 翻译并按（报告, 语言）持久化缓存，覆盖概览卡、策略点位、大盘复盘正文与完整报告抽屉，重复访问零额外成本。
 - [修复] Web 报告页区块标签改为跟随界面语言渲染：核心洞察/操作建议、策略点位、资讯动态、数据上下文、运行诊断、透明度、市场阶段/日线未完成、恐贪指数与分享、完整报告抽屉等前端标签不再沿用报告内容语言（英文界面 + 中文报告时标签不再整页中文）；报告正文、狙击点位数值、后端诊断消息与历史记录标题仍保持原内容语言，`report_language` 链路不变。
