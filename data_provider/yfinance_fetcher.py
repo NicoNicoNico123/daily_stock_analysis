@@ -162,8 +162,17 @@ class YfinanceFetcher(BaseFetcher):
             logger.debug(f"识别裸港股代码: {stock_code} -> {hk_code}.HK")
             return f"{hk_code}.HK"
 
+        # 港股已带 .HK 后缀：归一化前导零（02513.HK -> 2513.HK）。
+        # Yahoo quoteSummary/history 对带前导零的 5 位港股符号返回 404
+        # （智谱 02513.HK fundamentals_not_supported 的根因）。
+        if code.endswith('.HK'):
+            hk_code = code.split('.', 1)[0].lstrip('0') or '0'
+            hk_code = hk_code.zfill(4)
+            logger.debug(f"归一化港股 Yahoo 符号: {stock_code} -> {hk_code}.HK")
+            return f"{hk_code}.HK"
+
         # 已经包含后缀的情况
-        if '.SS' in code or '.SZ' in code or '.HK' in code or '.BJ' in code:
+        if '.SS' in code or '.SZ' in code or '.BJ' in code:
             return code
 
         # 去除可能的 .SH 后缀

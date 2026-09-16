@@ -203,3 +203,23 @@ class TestGetMainIndicesDispatch(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class HongKongYahooSymbolNormalizationTests(unittest.TestCase):
+    """02513.HK fundamentals_not_supported 回归：Yahoo 港股符号需去前导零。"""
+
+    def test_fundamental_adapter_strips_leading_zeros(self) -> None:
+        from data_provider.yfinance_fundamental_adapter import _convert_to_yf_symbol
+
+        self.assertEqual(_convert_to_yf_symbol("02513.HK"), "2513.HK")
+        self.assertEqual(_convert_to_yf_symbol("00700.HK"), "0700.HK")
+        self.assertEqual(_convert_to_yf_symbol("hk0700"), "0700.HK")
+
+    def test_fetcher_converter_normalizes_dot_hk_suffix(self) -> None:
+        from data_provider.yfinance_fetcher import YfinanceFetcher
+
+        fetcher = YfinanceFetcher()
+        self.assertEqual(fetcher._convert_stock_code("02513.HK"), "2513.HK")
+        self.assertEqual(fetcher._convert_stock_code("00700.HK"), "0700.HK")
+        self.assertEqual(fetcher._convert_stock_code("hk00700"), "0700.HK")
+        self.assertEqual(fetcher._convert_stock_code("02513"), "2513.HK")

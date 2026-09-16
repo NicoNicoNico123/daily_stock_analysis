@@ -129,6 +129,10 @@ def _convert_to_yf_symbol(stock_code: str) -> str:
     if code.startswith("HK"):
         digits = code[2:].lstrip("0") or "0"
         return f"{digits.zfill(4)}.HK"
+    if code.endswith(".HK"):
+        # Yahoo 港股符号去掉前导零（如 02513.HK -> 2513.HK、00700.HK -> 0700.HK）
+        digits = code.split(".", 1)[0].lstrip("0") or "0"
+        return f"{digits.zfill(4)}.HK"
     if "." in code:
         return code
     # Assume US ticker by default for non-HK / non-CN callers
