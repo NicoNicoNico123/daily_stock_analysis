@@ -138,13 +138,14 @@ const LoginPage: React.FC = () => {
           </motion.div>
 
           <div className="mt-8 flex flex-col items-center">
-            <h2 className="text-4xl font-extrabold tracking-tighter text-[var(--login-text-primary)] sm:text-6xl">
+            <h2 className="text-4xl font-extrabold tracking-[-0.04em] text-[var(--login-text-primary)] sm:text-6xl">
               <span className="bg-gradient-to-r from-[var(--login-text-primary)] via-[var(--login-text-primary)] to-[var(--login-text-secondary)] bg-clip-text text-transparent">DAILY </span>
               <span className="bg-gradient-to-r from-[var(--login-brand-start)] to-[var(--login-brand-end)] bg-clip-text text-transparent drop-shadow-[0_0_20px_var(--login-accent-glow)]">STOCK</span>
             </h2>
-            <h3 className="mt-1 text-xl font-bold uppercase tracking-[0.5em] text-[var(--login-text-muted)]">
+            <h3 className="mt-1.5 text-lg font-bold uppercase tracking-[0.42em] text-[var(--login-text-muted)] sm:text-xl">
               Analysis Engine
             </h3>
+            <span aria-hidden="true" className="keyline-gradient mt-5 h-px w-28 opacity-70" />
           </div>
 
           <motion.div 
@@ -262,7 +263,7 @@ const LoginPage: React.FC = () => {
                 type="submit"
                 variant="primary"
                 size="lg"
-                className="group/btn relative h-12 w-full overflow-hidden rounded-xl border-0 bg-gradient-to-r from-[var(--login-brand-button-start)] to-[var(--login-brand-button-end)] font-medium text-[var(--login-button-text)] shadow-lg shadow-[0_18px_36px_hsl(214_100%_8%_/_0.24)] hover:from-[var(--login-brand-button-start-hover)] hover:to-[var(--login-brand-button-end-hover)]"
+                className="group/btn relative h-12 w-full overflow-hidden rounded-xl border border-white/15 bg-gradient-to-r from-[var(--login-brand-button-start)] to-[var(--login-brand-button-end)] font-medium tracking-wide text-[var(--login-button-text)] shadow-lg shadow-[0_18px_36px_hsl(214_100%_8%_/_0.24)] ring-inset ring-white/10 transition-[box-shadow,filter] duration-300 hover:from-[var(--login-brand-button-start-hover)] hover:to-[var(--login-brand-button-end-hover)] hover:brightness-[1.04] hover:shadow-[0_22px_44px_hsl(214_100%_8%_/_0.3)]"
                 disabled={isSubmitting}
               >
                 <div className="relative z-10 flex items-center justify-center gap-2">

@@ -150,7 +150,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
     itemBaseClass,
     'hover:bg-[var(--nav-hover-bg)] hover:text-foreground'
   );
-  const itemActiveClass = 'border-[var(--nav-active-border)] bg-[var(--nav-active-bg)] font-medium text-[hsl(var(--primary))]';
+  const itemActiveClass = 'border-[var(--nav-active-border)] bg-[var(--nav-active-bg)] font-medium text-[hsl(var(--primary))] shadow-[inset_0_1px_0_var(--glass-highlight),0_0_22px_hsl(var(--primary)/0.12)]';
   const itemIconClass = cn(isRail ? 'h-[18px] w-[18px]' : 'h-5 w-5', 'shrink-0');
   const itemLabelClass = cn('truncate', isRail ? 'text-center' : '');
 
@@ -179,7 +179,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
       >
         <div
           className={cn(
-            'flex items-center justify-center bg-primary-gradient text-[hsl(var(--primary-foreground))] shadow-[0_12px_28px_var(--nav-brand-shadow)]',
+            'relative flex items-center justify-center bg-primary-gradient text-[hsl(var(--primary-foreground))] shadow-[0_0_24px_var(--nav-brand-shadow),0_12px_28px_var(--nav-brand-shadow)] ring-1 ring-inset ring-white/20',
             isRail ? 'h-9 w-9 rounded-[1rem]' : 'h-10 w-10 rounded-2xl'
           )}
         >
@@ -209,6 +209,12 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
           >
             {({ isActive }) => (
               <>
+                {isActive ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-[var(--nav-indicator-bg)] shadow-[0_0_12px_var(--nav-indicator-shadow)]"
+                  />
+                ) : null}
                 <Icon className={cn(itemIconClass, isActive ? 'text-[var(--nav-icon-active)]' : 'text-current')} />
                 {!collapsed ? <span className={itemLabelClass}>{label}</span> : null}
                 {badge === 'completion' && completionBadge ? (

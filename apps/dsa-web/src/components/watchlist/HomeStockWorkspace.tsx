@@ -413,7 +413,12 @@ export const HomeStockWorkspace: React.FC<HomeStockWorkspaceProps> = ({
               className="mb-0"
               title={t('watchlist.title')}
               titleClassName="text-sm font-medium"
-              leading={<Star className="h-4 w-4 text-primary" aria-hidden="true" />}
+              leading={(
+                <Star
+                  className="h-4 w-4 text-gold drop-shadow-[0_0_8px_var(--gold-glow)]"
+                  aria-hidden="true"
+                />
+              )}
               actions={(
                 <div className="flex items-center gap-1.5">
                   <span className="text-[11px] text-muted-text">{t('common.itemsCount', { count: watchlistRows.length })}</span>

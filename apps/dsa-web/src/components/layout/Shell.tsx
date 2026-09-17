@@ -37,7 +37,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
   }, [mobileOpen]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen text-foreground">
       <div className="pointer-events-none fixed inset-x-0 top-3 z-40 flex items-start justify-between px-3">
         <button
           type="button"
@@ -59,7 +59,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
       <div className="mx-auto flex min-h-screen w-full max-w-[1680px] px-3 py-3 sm:px-4 sm:py-4 lg:px-5">
         <aside
           className={cn(
-            'sticky top-3 z-40 hidden shrink-0 overflow-visible rounded-[1.5rem] border border-[var(--shell-sidebar-border)] bg-card/72 p-2.5 shadow-soft-card backdrop-blur-sm transition-[width] duration-200 lg:flex',
+            'sticky top-3 z-40 hidden shrink-0 overflow-visible rounded-[1.5rem] border border-[var(--shell-sidebar-border)] bg-[var(--glass-bg)] p-2.5 shadow-[inset_0_1px_0_var(--glass-highlight),var(--shadow-soft-card)] backdrop-blur-md transition-[width] duration-200 lg:flex',
             'max-h-[calc(100vh-1.5rem)] self-start sm:top-4 sm:max-h-[calc(100vh-2rem)]',
             collapsed ? 'w-[64px]' : 'w-[136px]'
           )}

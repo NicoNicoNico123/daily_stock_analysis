@@ -75,7 +75,7 @@ export const AlertTriggerHistory: React.FC<AlertTriggerHistoryProps> = ({ trigge
             </thead>
             <tbody className="divide-y divide-border/40">
               {triggers.map((trigger) => (
-                <tr key={trigger.id} className="align-top">
+                <tr key={trigger.id} className="table-row-terminal align-top">
                   <td className="px-3 py-3">
                     <Badge variant={statusVariant(trigger.status)}>
                       {statusLabel[trigger.status] ?? trigger.status}

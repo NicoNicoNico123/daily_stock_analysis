@@ -13,17 +13,32 @@ interface StrategyItemProps {
   label: string;
   value?: string;
   tone: string;
+  className?: string;
 }
 
 const StrategyItem: React.FC<StrategyItemProps> = ({
   label,
   value,
   tone,
+  className = '',
 }) => (
-  <div className="home-subpanel home-strategy-card p-3" style={{ ['--home-strategy-tone' as string]: `var(${tone})` }}>
+  <div
+    className={`home-subpanel home-strategy-card p-3 ${className}`.trim()}
+    style={{ ['--home-strategy-tone' as string]: `var(${tone})` }}
+  >
     <div className="flex flex-col">
-      <span className="home-strategy-label mb-0.5 text-xs">{label}</span>
-      <span className="home-strategy-value text-lg font-bold font-mono" style={!value ? { color: 'var(--text-muted-text)' } : undefined}>
+      <span className="home-strategy-label mb-1 inline-flex items-center gap-1.5 text-xs">
+        <span
+          aria-hidden="true"
+          className="h-1.5 w-1.5 shrink-0 rounded-full"
+          style={{ background: `var(${tone})`, boxShadow: `0 0 8px var(${tone})` }}
+        />
+        {label}
+      </span>
+      <span
+        className={`home-strategy-value text-lg font-bold font-mono ${value ? '' : 'home-strategy-value-empty'}`}
+        style={!value ? { color: 'var(--text-muted-text)' } : undefined}
+      >
         {value || '—'}
       </span>
     </div>
@@ -77,8 +92,14 @@ export const ReportStrategy: React.FC<ReportStrategyProps> = ({ strategy }) => {
         className="mb-3"
       />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {strategyItems.map((item) => (
-          <StrategyItem key={item.label} {...item} />
+        {strategyItems.map((item, index) => (
+          <div
+            key={item.label}
+            className="h-full animate-float-in"
+            style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
+          >
+            <StrategyItem className="h-full" {...item} />
+          </div>
         ))}
       </div>
     </Card>

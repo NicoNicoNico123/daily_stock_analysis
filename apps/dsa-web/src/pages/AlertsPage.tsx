@@ -345,7 +345,7 @@ const AlertsPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-border/40">
                 {notifications.map((notification) => (
-                  <tr key={notification.id}>
+                  <tr key={notification.id} className="table-row-terminal">
                     <td className="px-3 py-3">{formatNotificationChannel(notification.channel)}</td>
                     <td className="px-3 py-3">{formatNotificationStatus(notification)}</td>
                     <td className="px-3 py-3">{notification.errorCode ?? '--'}</td>

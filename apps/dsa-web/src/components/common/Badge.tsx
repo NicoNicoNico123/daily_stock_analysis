@@ -49,7 +49,8 @@ export const Badge: React.FC<BadgeProps> = ({
       {...rest}
       style={style}
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border font-medium backdrop-blur-sm',
+        'inline-flex items-center gap-1 rounded-full border font-medium backdrop-blur-sm tabular-nums',
+        'shadow-[inset_0_1px_0_var(--glass-highlight)]',
         sizeStyles,
         variantStyles[variant],
         glow && `shadow-lg ${glowStyles[variant]}`,

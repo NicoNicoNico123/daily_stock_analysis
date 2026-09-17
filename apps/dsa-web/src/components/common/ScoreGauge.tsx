@@ -1,8 +1,10 @@
 import type React from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useId } from 'react';
+import { useMotionValue, useMotionValueEvent, useReducedMotion, useSpring } from 'motion/react';
 import { useTheme } from 'next-themes';
 import { getSentimentLabel } from '../../types/analysis';
 import { cn } from '../../utils/cn';
+import { REDUCED_MOTION_SPRING, SPRING_GAUGE } from '../ui/motionTokens';
 import { getReportText } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 
@@ -24,7 +26,7 @@ type GaugeVisualStyle = {
 };
 
 /**
- * Sentiment score gauge with an animated glowing ring.
+ * Sentiment score gauge with a spring-driven glowing arc and needle pip.
  * Dynamically calculates colors based on sentiment score.
  */
 export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
@@ -33,47 +35,25 @@ export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
   showLabel = true,
   className = '',
 }) => {
-  // Animated score state.
+  // Spring fill: the arc (and its colour) chase the score with a real spring,
+  // while the numeral renders the settled value immediately.
+  const prefersReducedMotion = useReducedMotion();
+  const rawScore = useMotionValue(0);
+  const springScore = useSpring(
+    rawScore,
+    prefersReducedMotion ? REDUCED_MOTION_SPRING : SPRING_GAUGE,
+  );
   const [animatedScore, setAnimatedScore] = useState(0);
-  const [displayScore, setDisplayScore] = useState(0);
-  const animationRef = useRef<number | null>(null);
-  const prevScoreRef = useRef(0);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
 
-  // Animate transitions between score updates.
+  useMotionValueEvent(springScore, 'change', (latest: number) => {
+    setAnimatedScore(latest);
+  });
+
   useEffect(() => {
-    const startScore = prevScoreRef.current;
-    const endScore = score;
-    const duration = 1000; // Animation duration in ms.
-    const startTime = performance.now();
-
-    const animate = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      // Use an ease-out cubic curve for a smoother finish.
-      const easeOut = 1 - Math.pow(1 - progress, 3);
-
-      const currentScore = startScore + (endScore - startScore) * easeOut;
-      setAnimatedScore(currentScore);
-      setDisplayScore(Math.round(currentScore));
-
-      if (progress < 1) {
-        animationRef.current = requestAnimationFrame(animate);
-      } else {
-        prevScoreRef.current = endScore;
-      }
-    };
-
-    animationRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [score]);
+    rawScore.set(score);
+  }, [rawScore, score]);
 
   // 表盘标签跟随界面语言，而不是报告内容语言。
   const { language } = useUiLanguage();
@@ -127,7 +107,10 @@ export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
 
   const sentimentKey = getSentimentKey(animatedScore);
   const colors = sentimentConfig[sentimentKey];
-  const uniqueId = `${sentimentKey}-${score}-${animatedScore.toFixed(0)}`;
+  // Stable SVG ids: re-keying the gradient/filter every animation frame forces
+  // needless DOM churn, so the identity comes from React's stable useId.
+  const reactId = useId();
+  const uniqueId = reactId.replace(/[^a-zA-Z0-9_-]/g, '');
   const gaugeTheme: GaugeVisualStyle = isDark
     ? {
         svgFilter: `drop-shadow(0 0 12px ${colors.glowFilter})`,
@@ -223,15 +206,44 @@ export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
             strokeDasharray={`${progress} ${circumference}`}
             transform={`rotate(135 ${width / 2} ${width / 2})`}
           />
+
+          {/* Glowing needle pip riding the arc tip */}
+          {(() => {
+            const tipAngle = (135 + (animatedScore / 100) * 270) * (Math.PI / 180);
+            const tipX = width / 2 + Math.cos(tipAngle) * radius;
+            const tipY = width / 2 + Math.sin(tipAngle) * radius;
+            return (
+              <g>
+                <circle
+                  cx={tipX}
+                  cy={tipY}
+                  r={stroke * 1.15}
+                  fill={isDark ? colors.color : colors.lightColor}
+                  opacity={0.24}
+                />
+                <circle
+                  cx={tipX}
+                  cy={tipY}
+                  r={Math.max(2.4, stroke * 0.34)}
+                  fill={isDark ? '#f8fdff' : '#ffffff'}
+                  filter={`url(#gauge-glow-${uniqueId})`}
+                />
+              </g>
+            );
+          })()}
         </svg>
 
         {/* Center value */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span
-            className={cn('font-bold', fontSize, isDark ? 'text-white' : 'text-foreground')}
+            className={cn(
+              'num font-bold',
+              fontSize,
+              isDark ? 'text-white' : 'text-foreground',
+            )}
             style={gaugeTheme.valueTextShadow ? { textShadow: gaugeTheme.valueTextShadow } : {}}
           >
-            {displayScore}
+            {Math.round(score)}
           </span>
           {showLabel && (
             <span

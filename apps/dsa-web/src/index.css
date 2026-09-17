@@ -70,6 +70,28 @@
   --warning: var(--color-warning);
   --danger: var(--color-danger);
 
+  /* Champagne-gold accent family — reserved for premium highlights and key financial numbers. */
+  --accent-gold: 38 72% 42%;
+  --accent-gold-strong: 40 84% 50%;
+  --accent-gold-deep: 32 70% 36%;
+  --color-gold: hsl(var(--accent-gold));
+  --color-gold-strong: hsl(var(--accent-gold-strong));
+  --gold-glow: hsl(var(--accent-gold) / 0.2);
+  --gold-glow-strong: hsl(var(--accent-gold) / 0.42);
+  --border-gold: hsl(var(--accent-gold) / 0.34);
+  --border-gold-soft: hsl(var(--accent-gold) / 0.2);
+  --gradient-gold: linear-gradient(120deg, hsl(var(--accent-gold-strong)), hsl(var(--accent-gold)) 55%, hsl(var(--accent-gold-deep)));
+  --shadow-gold-soft: 0 10px 26px hsl(var(--accent-gold) / 0.12), 0 2px 6px hsl(var(--accent-gold) / 0.1);
+
+  /* Layered glass surface system (hairline gradient borders + soft ambient shadow). */
+  --glass-bg: hsl(var(--card) / 0.74);
+  --glass-bg-strong: hsl(var(--card) / 0.9);
+  --glass-border: hsl(var(--foreground) / 0.09);
+  --glass-border-strong: hsl(var(--foreground) / 0.14);
+  --glass-highlight: hsl(0 0% 100% / 0.55);
+  --glass-sheen: hsl(0 0% 100% / 0.06);
+  --glass-blur: 16px;
+
   /* Sentiment indicator colors (Fear & Greed Index) - Adjustable via CSS */
   --sentiment-greed: var(--color-cyan);
   --sentiment-neutral: var(--color-purple);
@@ -133,7 +155,7 @@
   --nav-brand-shadow: hsl(var(--primary) / 0.2);
 
   /* Shell Sidebar Custom */
-  --shell-sidebar-border: hsl(193 100% 43% / 0.35);
+  --shell-sidebar-border: hsl(193 100% 43% / 0.26);
 
   /* Home page related (using HSL format) */
   --home-loading-ring-track: hsl(var(--primary) / 0.2);
@@ -302,29 +324,30 @@
 }
 
 .dark {
-  --background: 228 35% 7%;
+  /* Obsidian Terminal canvas: layered near-black navy, hue-locked to the cyan primary. */
+  --background: 222 47% 4%;
   --foreground: 210 33% 98%;
-  --card: 230 24% 10%;
+  --card: 217 47% 7%;
   --card-foreground: 210 33% 98%;
-  --popover: 230 24% 10%;
+  --popover: 218 45% 8%;
   --popover-foreground: 210 33% 98%;
   --primary: 190 100% 50%;
-  --primary-foreground: 228 35% 8%;
-  --secondary: 231 19% 15%;
-  --secondary-foreground: 210 33% 94%;
-  --muted: 230 18% 14%;
-  --muted-foreground: 228 13% 66%;
-  --accent: 231 18% 16%;
+  --primary-foreground: 222 47% 6%;
+  --secondary: 220 40% 11%;
+  --secondary-foreground: 210 24% 94%;
+  --muted: 219 38% 11%;
+  --muted-foreground: 218 14% 66%;
+  --accent: 219 40% 12%;
   --accent-foreground: 210 33% 98%;
   --destructive: 349 100% 63%;
   --destructive-foreground: 210 33% 98%;
-  --border: 226 19% 20%;
-  --input: 226 19% 20%;
+  --border: 217 32% 16%;
+  --input: 217 32% 16%;
   --ring: 190 100% 50%;
-  --elevated: 230 22% 12%;
-  --hover: 231 20% 16%;
-  --secondary-text: 228 16% 72%;
-  --muted-text: 228 10% 48%;
+  --elevated: 218 44% 9%;
+  --hover: 219 42% 13%;
+  --secondary-text: 216 20% 76%;
+  --muted-text: 218 13% 55%;
 
   --color-cyan: hsl(var(--primary));
   --color-cyan-dim: hsl(var(--primary) / 0.8);
@@ -348,6 +371,28 @@
   --success: var(--color-success);
   --warning: var(--color-warning);
   --danger: var(--color-danger);
+
+  /* Champagne-gold accent family (dark) — premium highlights, key financial numbers. */
+  --accent-gold: 42 65% 68%;
+  --accent-gold-strong: 44 82% 78%;
+  --accent-gold-deep: 36 60% 58%;
+  --color-gold: hsl(var(--accent-gold));
+  --color-gold-strong: hsl(var(--accent-gold-strong));
+  --gold-glow: hsl(var(--accent-gold) / 0.24);
+  --gold-glow-strong: hsl(var(--accent-gold) / 0.5);
+  --border-gold: hsl(var(--accent-gold) / 0.32);
+  --border-gold-soft: hsl(var(--accent-gold) / 0.18);
+  --gradient-gold: linear-gradient(120deg, hsl(var(--accent-gold-strong)), hsl(var(--accent-gold)) 55%, hsl(var(--accent-gold-deep)));
+  --shadow-gold-soft: 0 10px 30px hsl(40 60% 20% / 0.32), 0 2px 8px hsl(40 60% 14% / 0.3);
+
+  /* Layered glass surface system (dark): hairline white borders over obsidian. */
+  --glass-bg: hsl(0 0% 100% / 0.035);
+  --glass-bg-strong: hsl(0 0% 100% / 0.055);
+  --glass-border: hsl(0 0% 100% / 0.08);
+  --glass-border-strong: hsl(0 0% 100% / 0.14);
+  --glass-highlight: hsl(0 0% 100% / 0.1);
+  --glass-sheen: hsl(0 0% 100% / 0.04);
+  --glass-blur: 18px;
 
   /* Sentiment indicator colors (Dark theme) - Adjustable via CSS */
   --sentiment-greed: var(--color-cyan);
@@ -409,6 +454,7 @@
   --nav-indicator-shadow: hsl(var(--primary) / 0.8);
   --nav-badge-bg: hsl(var(--primary));
   --nav-brand-shadow: hsl(var(--primary) / 0.24);
+  --shell-sidebar-border: hsl(0 0% 100% / 0.08);
 
   /* Home page related (Dark theme) */
   --home-loading-ring-track: hsl(var(--primary) / 0.2);
@@ -436,35 +482,41 @@
   --home-strategy-secondary: hsl(var(--primary));
   --home-strategy-stop: hsl(346 100% 66%);
   --home-strategy-take: hsl(38 100% 58%);
-  --home-panel-border: hsl(var(--foreground) / 0.1);
-  --home-panel-border-hover: hsl(var(--primary) / 0.34);
-  --home-panel-border-selected: hsl(var(--primary) / 0.46);
-  --home-panel-gradient-start: hsl(var(--primary) / 0.3);
-  --home-panel-gradient-mid: hsl(247 84% 72% / 0.24);
-  --home-panel-gradient-end: hsl(var(--foreground) / 0.08);
+  --home-panel-border: hsl(0 0% 100% / 0.07);
+  --home-panel-border-hover: hsl(var(--primary) / 0.38);
+  --home-panel-border-selected: hsl(var(--primary) / 0.5);
+  --home-panel-gradient-start: hsl(var(--primary) / 0.26);
+  --home-panel-gradient-mid: hsl(247 84% 72% / 0.18);
+  --home-panel-gradient-end: hsl(0 0% 100% / 0.04);
   --home-panel-selected-shadow:
     0 0 0 1px hsl(var(--primary) / 0.14),
     0 4px 16px hsl(var(--primary) / 0.16);
-  --home-panel-subtle-bg: hsl(var(--foreground) / 0.03);
-  --home-panel-subtle-bg-hover: hsl(var(--foreground) / 0.05);
-  --home-history-item-bg: hsl(var(--foreground) / 0.03);
-  --home-history-item-hover-bg: hsl(var(--foreground) / 0.06);
+  --home-panel-subtle-bg: hsl(0 0% 100% / 0.03);
+  --home-panel-subtle-bg-hover: hsl(0 0% 100% / 0.055);
+  --home-history-item-bg: hsl(0 0% 100% / 0.028);
+  --home-history-item-hover-bg: hsl(0 0% 100% / 0.06);
   --home-history-item-selected-bg:
-    linear-gradient(180deg, hsl(247 84% 72% / 0.14), hsl(var(--primary) / 0.1));
-  --home-divider-border: hsl(var(--foreground) / 0.1);
-  --home-surface-button-bg: hsl(var(--foreground) / 0.03);
-  --home-surface-button-bg-hover: hsl(var(--foreground) / 0.06);
-  --home-surface-button-border: hsl(var(--foreground) / 0.1);
-  --home-surface-button-border-hover: hsl(var(--primary) / 0.28);
+    linear-gradient(180deg, hsl(247 84% 72% / 0.12), hsl(var(--primary) / 0.08));
+  --home-divider-border: hsl(0 0% 100% / 0.07);
+  --home-surface-button-bg: hsl(0 0% 100% / 0.04);
+  --home-surface-button-bg-hover: hsl(0 0% 100% / 0.08);
+  --home-surface-button-border: hsl(0 0% 100% / 0.08);
+  --home-surface-button-border-hover: hsl(var(--primary) / 0.34);
   --home-state-icon-muted: hsl(var(--muted-text) / 0.85);
   --home-prose-border: hsl(var(--foreground) / 0.12);
   --home-prose-border-strong: hsl(var(--foreground) / 0.18);
   --home-prose-blockquote-border: hsl(247 84% 72% / 0.3);
   --home-prose-blockquote-bg: hsl(247 84% 72% / 0.1);
 
-  /* Shadows (Dark theme) */
-  --shadow-soft-card: 0 18px 48px hsl(215 25% 10% / 0.4);
-  --shadow-soft-card-strong: 0 24px 56px hsl(215 25% 10% / 0.5);
+  /* Shadows (Dark theme) — soft ambient depth plus a tight key light. */
+  --shadow-soft-card:
+    inset 0 1px 0 hsl(0 0% 100% / 0.04),
+    0 1px 2px hsl(222 70% 2% / 0.55),
+    0 14px 34px hsl(222 80% 2% / 0.42);
+  --shadow-soft-card-strong:
+    inset 0 1px 0 hsl(0 0% 100% / 0.05),
+    0 2px 6px hsl(222 70% 2% / 0.6),
+    0 24px 56px hsl(222 80% 2% / 0.52);
   --settings-surface: hsl(0 0% 100% / 0.02);
   --settings-surface-hover: hsl(0 0% 100% / 0.05);
   --settings-surface-strong: hsl(var(--card) / 0.92);
@@ -579,6 +631,35 @@
     background: hsl(var(--background));
     color: hsl(var(--foreground));
   }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.28);
+    color: hsl(var(--foreground));
+  }
+
+  .dark ::selection {
+    background: hsl(var(--primary) / 0.3);
+    color: hsl(210 33% 99%);
+  }
+
+  ::focus-visible {
+    outline: 2px solid hsl(var(--primary) / 0.6);
+    outline-offset: 2px;
+  }
+
+  .dark ::focus-visible {
+    outline-color: hsl(var(--primary) / 0.7);
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.022em;
+  }
+
+  html {
+    scrollbar-color: hsl(var(--muted-text) / 0.42) transparent;
+  }
 }
 
 @layer components {
@@ -591,6 +672,14 @@
     -webkit-text-fill-color: transparent;
     color: transparent;
   }
+}
+
+/* Obsidian ambient field: faint cyan bloom top-left, champagne bloom top-right. */
+.dark body {
+  background:
+    radial-gradient(1100px 620px at 10% -10%, hsl(var(--primary) / 0.07), transparent 60%),
+    radial-gradient(900px 520px at 100% -5%, hsl(var(--accent-gold) / 0.04), transparent 55%),
+    hsl(var(--background));
 }
 /* ============ Circular Gauge ============ */
 .gauge-ring {
@@ -838,8 +927,8 @@
 
 /* ============ Custom Scrollbar ============ */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -847,12 +936,19 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  background: hsl(var(--foreground) / 0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: hsl(var(--primary) / 0.4);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ============ Animations ============ */
@@ -986,11 +1082,29 @@
 
 /* ============ Glassmorphism Panels ============ */
 .glass-panel {
-  @apply rounded-2xl border border-border/60 bg-card/70 shadow-soft-card backdrop-blur-md transition-all;
+  border-radius: 1rem;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.08);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.08);
+  box-shadow: var(--shadow-soft-card);
+  transition:
+    border-color 0.24s ease,
+    box-shadow 0.24s ease,
+    background-color 0.24s ease;
 }
 
 .glass-panel-lg {
-  @apply rounded-3xl border border-border/60 bg-card/70 shadow-soft-card backdrop-blur-md transition-all;
+  border-radius: 1.5rem;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.08);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.08);
+  box-shadow: var(--shadow-soft-card);
+  transition:
+    border-color 0.24s ease,
+    box-shadow 0.24s ease,
+    background-color 0.24s ease;
 }
 
 /* ============ Utilities ============ */
@@ -1080,6 +1194,69 @@
   box-shadow: 0 0 20px var(--color-purple-glow);
 }
 
+/* ============ Terminal numerals & champagne-gold accents ============ */
+/* Financial figures must align vertically while streaming updates. */
+.num {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings:
+    "tnum" 1,
+    "lnum" 1;
+  letter-spacing: -0.01em;
+}
+
+.font-mono,
+.backtest-metric-row .value,
+.backtest-summary,
+.backtest-table-code,
+.backtest-table-return,
+.home-history-sentiment-badge,
+.home-markdown-prose :where(code),
+.chat-prose code {
+  font-variant-numeric: tabular-nums;
+}
+
+.text-gold {
+  color: var(--color-gold);
+}
+
+.text-gold-strong {
+  color: var(--color-gold-strong);
+}
+
+.gold-text {
+  background: var(--gradient-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.gold-hairline {
+  border-color: var(--border-gold);
+}
+
+.glow-gold {
+  box-shadow: 0 0 18px var(--gold-glow);
+}
+
+.badge-gold {
+  border-color: var(--border-gold);
+  background: hsl(var(--accent-gold) / 0.12);
+  color: var(--color-gold);
+}
+
+/* Hairline gradient keyline used by premium/hero surfaces. */
+.keyline-gradient {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.32) 24%,
+    hsl(var(--accent-gold) / 0.3) 52%,
+    hsl(var(--primary) / 0.32) 78%,
+    transparent 100%
+  );
+}
+
 /* ============ Responsive ============ */
 /* =========================================
    4. NEW UI COMPONENT UTILITIES (from Terminal PR)
@@ -1097,22 +1274,20 @@ textarea {
 }
 
 .terminal-card {
-  --terminal-card-border: var(--border-default);
+  --terminal-card-border: var(--glass-border);
   --terminal-card-border-hover: var(--border-hover);
   --terminal-card-gradient-start: var(--border-accent);
   --terminal-card-gradient-mid: var(--border-purple);
-  --terminal-card-gradient-end: var(--border-dim);
+  --terminal-card-gradient-end: var(--glass-border);
   --terminal-card-shadow: var(--shadow-soft-card);
   --terminal-card-shadow-hover: var(--shadow-soft-card-strong);
   position: relative;
   overflow: hidden;
   border-radius: 1rem;
   border: 1px solid var(--terminal-card-border);
-  background: linear-gradient(
-    180deg,
-    hsl(var(--card) / 0.96),
-    hsl(var(--background) / 0.96)
-  );
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 38%),
+    var(--glass-bg-strong);
   box-shadow: var(--terminal-card-shadow);
 }
 
@@ -1160,8 +1335,8 @@ textarea {
   background: linear-gradient(
     180deg,
     var(--border-accent) 0%,
-    var(--border-purple) 50%,
-    var(--border-dim) 100%
+    var(--border-purple) 46%,
+    var(--glass-border) 100%
   );
   box-shadow: var(--shadow-soft-card);
 }
@@ -1171,8 +1346,12 @@ textarea {
   border-radius: calc(1rem - 1px);
   background: linear-gradient(
     180deg,
-    hsl(var(--elevated) / 0.98),
-    hsl(var(--card) / 0.98)
+    var(--glass-sheen),
+    transparent 40%
+  ), linear-gradient(
+    180deg,
+    hsl(var(--elevated) / 0.96),
+    hsl(var(--card) / 0.96)
   );
 }
 
@@ -1180,11 +1359,16 @@ textarea {
   position: relative;
   overflow: hidden;
   border-radius: 1rem;
-  border: 1px solid var(--border-subtle);
-  background: hsl(var(--card) / 0.72);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-border);
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 34%),
+    var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.06);
+  -webkit-backdrop-filter: blur(14px) saturate(1.06);
   box-shadow: var(--shadow-soft-card);
+  transition:
+    border-color 0.24s ease,
+    box-shadow 0.24s ease;
 }
 
 /*
@@ -1214,8 +1398,8 @@ textarea {
   background: linear-gradient(
     135deg,
     var(--border-accent) 0%,
-    var(--border-purple) 50%,
-    var(--border-subtle) 100%
+    var(--border-purple) 46%,
+    var(--glass-border) 100%
   );
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
@@ -1258,11 +1442,16 @@ textarea {
   position: relative;
   overflow: hidden;
   border-radius: 1rem;
-  border: 1px solid var(--border-subtle);
-  background: hsl(var(--card) / 0.72);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-border);
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 34%),
+    var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.06);
+  -webkit-backdrop-filter: blur(14px) saturate(1.06);
   box-shadow: var(--shadow-soft-card);
+  transition:
+    border-color 0.24s ease,
+    box-shadow 0.24s ease;
 }
 
 .dashboard-card::before {
@@ -1274,8 +1463,8 @@ textarea {
   background: linear-gradient(
     135deg,
     var(--border-accent) 0%,
-    var(--border-purple) 50%,
-    var(--border-subtle) 100%
+    var(--border-purple) 46%,
+    var(--glass-border) 100%
   );
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
@@ -1399,6 +1588,53 @@ textarea {
   opacity: 1;
 }
 
+.dark .home-history-item:hover {
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.05),
+    0 0 0 1px hsl(var(--primary) / 0.08),
+    0 14px 30px hsl(222 90% 2% / 0.45);
+}
+
+.dark .home-history-item-selected {
+  border-color: var(--home-panel-border-selected);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.05),
+    0 0 0 1px hsl(var(--primary) / 0.16),
+    0 0 26px hsl(var(--primary) / 0.14);
+}
+
+/* ============ Terminal table rows ============ */
+.table-row-terminal {
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.table-row-terminal:hover {
+  background: var(--overlay-hover);
+  box-shadow: inset 2px 0 0 0 hsl(var(--primary) / 0.45);
+}
+
+/* Collapsible detail blocks (data context / run diagnostics) get a soft lift. */
+.home-panel-card > details > summary {
+  border-radius: inherit;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.home-panel-card > details > summary:hover {
+  background: var(--overlay-hover);
+}
+
+.home-panel-card > details[open] > summary {
+  background: var(--overlay-selected);
+}
+
+.glass-card:hover {
+  border-color: var(--glass-border-strong);
+}
+
 .home-surface-button {
   border: 1px solid var(--home-surface-button-border);
   background: var(--home-surface-button-bg);
@@ -1420,6 +1656,25 @@ textarea {
 
 .home-state-icon-muted {
   color: var(--home-state-icon-muted);
+}
+
+/* Dark surfaces never inherit the light theme's bright inner keyline. */
+.dark .home-surface-button {
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+.dark .home-surface-button:hover {
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.12),
+    0 10px 22px hsl(222 90% 2% / 0.45);
+}
+
+.dark .home-history-item {
+  box-shadow: 0 8px 20px hsl(222 90% 2% / 0.3);
+}
+
+.dark .home-history-item:hover {
+  transform: translateY(-1px);
 }
 
 .history-selection-badge {
@@ -1448,7 +1703,8 @@ textarea {
   border: 1px solid var(--home-accent-border);
   background: var(--home-accent-bg);
   color: var(--home-accent-text);
-  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.36);
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 
 .home-accent-link {
@@ -1691,12 +1947,20 @@ textarea {
 }
 
 .home-report-hero {
-  --terminal-card-border: var(--home-hero-border);
-  --terminal-card-gradient-start: var(--home-hero-gradient-start);
-  --terminal-card-gradient-mid: var(--home-hero-gradient-mid);
-  --terminal-card-gradient-end: var(--home-hero-gradient-end);
-  --terminal-card-shadow: var(--home-hero-shadow);
-  background: linear-gradient(180deg, hsl(0 0% 100% / 0.99), hsl(214 38% 97% / 0.98));
+  /* Hero keeps .gradient-border-card's 1px keyline and re-tints it cyan → gold. */
+  --border-accent: hsl(var(--primary) / 0.46);
+  --border-purple: hsl(var(--accent-gold) / 0.3);
+  --home-hero-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.6),
+    0 10px 26px hsl(220 24% 34% / 0.1),
+    0 24px 52px hsl(220 24% 30% / 0.07);
+  box-shadow: var(--home-hero-shadow);
+}
+
+.home-report-hero .gradient-border-card-inner {
+  background:
+    radial-gradient(130% 90% at 0% 0%, hsl(var(--primary) / 0.07), transparent 58%),
+    linear-gradient(180deg, hsl(0 0% 100% / 0.99), hsl(214 38% 97% / 0.98));
 }
 
 .home-report-hero::after,
@@ -1729,6 +1993,10 @@ textarea {
   --home-insight-tone: hsl(var(--primary));
   --home-insight-surface: hsl(0 0% 100% / 0.94);
   background: linear-gradient(180deg, var(--home-insight-surface), hsl(214 36% 97% / 0.98));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.7),
+    inset 2px 0 0 0 color-mix(in oklab, var(--home-insight-tone) 55%, transparent),
+    0 10px 24px color-mix(in oklab, var(--home-insight-tone) 12%, transparent);
 }
 
 .home-insight-card .home-insight-icon {
@@ -1765,7 +2033,21 @@ textarea {
 }
 
 .home-strategy-card .home-strategy-value {
-  color: var(--home-strategy-tone);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings:
+    "tnum" 1,
+    "lnum" 1;
+  letter-spacing: -0.015em;
+}
+
+/* Key financial numbers wear the champagne-gold treatment; the tone stays on the label. */
+.home-strategy-card .home-strategy-value:not(.home-strategy-value-empty) {
+  background: var(--gradient-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: none;
 }
 
 .home-strategy-card::after {
@@ -1807,12 +2089,19 @@ textarea {
 }
 
 .dark .home-report-hero {
-  --terminal-card-border: var(--home-panel-border-selected);
-  --terminal-card-gradient-start: hsl(var(--primary) / 0.22);
-  --terminal-card-gradient-mid: hsl(247 84% 72% / 0.18);
-  --terminal-card-gradient-end: hsl(var(--foreground) / 0.08);
-  --terminal-card-shadow: var(--shadow-soft-card);
-  background: linear-gradient(180deg, hsl(var(--card) / 0.96), hsl(var(--background) / 0.94));
+  --border-accent: hsl(var(--primary) / 0.5);
+  --border-purple: hsl(var(--accent-gold) / 0.3);
+  --home-hero-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 2px 8px hsl(222 80% 2% / 0.5),
+    0 28px 64px hsl(222 90% 2% / 0.46);
+}
+
+.dark .home-report-hero .gradient-border-card-inner {
+  background:
+    radial-gradient(120% 90% at 0% 0%, hsl(var(--primary) / 0.12), transparent 58%),
+    radial-gradient(90% 70% at 100% 0%, hsl(var(--accent-gold) / 0.05), transparent 60%),
+    linear-gradient(180deg, hsl(var(--card) / 0.96), hsl(var(--background) / 0.96));
 }
 
 .dark .home-report-hero::after,
@@ -1820,23 +2109,34 @@ textarea {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    hsl(var(--primary) / 0.24) 50%,
+    hsl(var(--primary) / 0.3) 26%,
+    hsl(var(--accent-gold) / 0.28) 54%,
+    hsl(var(--primary) / 0.26) 80%,
     transparent 100%
   );
 }
 
 .dark .home-rail-card {
   --terminal-card-border: var(--home-panel-border);
-  --terminal-card-gradient-start: hsl(var(--primary) / 0.16);
-  --terminal-card-gradient-mid: hsl(247 84% 72% / 0.14);
-  --terminal-card-gradient-end: hsl(var(--foreground) / 0.08);
+  --terminal-card-gradient-start: hsl(var(--primary) / 0.2);
+  --terminal-card-gradient-mid: hsl(247 84% 72% / 0.12);
+  --terminal-card-gradient-end: hsl(0 0% 100% / 0.04);
   --terminal-card-shadow: var(--shadow-soft-card);
-  background: linear-gradient(180deg, hsl(var(--card) / 0.94), hsl(var(--background) / 0.92));
+  background:
+    radial-gradient(110% 80% at 100% 0%, hsl(var(--primary) / 0.08), transparent 60%),
+    linear-gradient(180deg, hsl(var(--card) / 0.9), hsl(var(--background) / 0.9));
 }
 
 .dark .home-insight-card {
-  --home-insight-surface: hsl(var(--card) / 0.9);
-  background: linear-gradient(180deg, var(--home-insight-surface), hsl(var(--elevated) / 0.82));
+  --home-insight-surface: hsl(0 0% 100% / 0.035);
+  background:
+    linear-gradient(180deg, var(--home-insight-surface), hsl(0 0% 100% / 0.015)),
+    hsl(var(--card) / 0.6);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.05),
+    inset 2px 0 0 0 color-mix(in oklab, var(--home-insight-tone) 70%, transparent),
+    0 14px 34px hsl(222 90% 2% / 0.4),
+    0 0 32px color-mix(in oklab, var(--home-insight-tone) 14%, transparent);
 }
 
 .dark .home-insight-card .home-insight-icon {
@@ -1861,7 +2161,11 @@ textarea {
 }
 
 .dark .home-strategy-card {
-  background: linear-gradient(180deg, hsl(var(--card) / 0.92), hsl(var(--elevated) / 0.82));
+  background: linear-gradient(180deg, hsl(0 0% 100% / 0.04), hsl(0 0% 100% / 0.015)), hsl(var(--card) / 0.66);
+}
+
+.dark .home-strategy-card .home-strategy-value:not(.home-strategy-value-empty) {
+  filter: drop-shadow(0 0 12px var(--gold-glow));
 }
 
 .dark .home-strategy-card::after {
@@ -2225,8 +2529,8 @@ textarea {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle closest-side at 100% 0%, hsl(var(--primary) / 0.12), transparent 28%),
-    radial-gradient(circle closest-side at 0% 100%, rgba(111, 97, 241, 0.1), transparent 24%);
+    radial-gradient(circle closest-side at 100% 0%, hsl(var(--primary) / 0.1), transparent 26%),
+    radial-gradient(circle closest-side at 0% 100%, hsl(var(--accent-gold) / 0.05), transparent 22%);
   opacity: 0.9;
 }
 

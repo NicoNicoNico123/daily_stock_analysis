@@ -185,7 +185,7 @@ export const AlertRuleList: React.FC<AlertRuleListProps> = ({
             </thead>
             <tbody className="divide-y divide-border/40">
               {rules.map((rule) => (
-                <tr key={rule.id} className="align-top">
+                <tr key={rule.id} className="table-row-terminal align-top">
                   <td className="px-3 py-3">
                     <div className="font-medium text-foreground">{rule.name}</div>
                     <div className="mt-1 text-xs text-muted-text">{formatUiText(text.source, { source: rule.source })}</div>

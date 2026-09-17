@@ -6,6 +6,7 @@ import type {
   ReportSummary as ReportSummaryType,
 } from '../../types/analysis';
 import { Badge, Button, Card, ScoreGauge } from '../common';
+import { AnimatedNumber, StaggerGroup, StaggerItem } from '../ui/motion';
 import { formatDateTime } from '../../utils/format';
 import { buildDecisionActionLabelMap, getDecisionActionLabel, getLegacyDecisionActionLabel } from '../../utils/decisionAction';
 import { getMarketPhaseSummaryLabel, getPartialBarLabel } from '../../utils/marketPhase';
@@ -247,7 +248,7 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
   );
 
   return (
-    <div className="space-y-5">
+    <StaggerGroup className="space-y-5" stagger={0.06}>
       {/* 主信息区 - 两列布局 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* 左侧：股票信息与结论 */}
@@ -256,24 +257,29 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
           <Card variant="gradient" padding="md" className="home-report-hero">
             <div className="mb-5 flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-[28px] font-bold leading-tight text-foreground">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h2 className="text-[28px] font-bold leading-tight tracking-[-0.02em] text-foreground">
                     {meta.stockName || meta.stockCode}
                   </h2>
                   {/* 价格和涨跌幅 */}
                   {meta.currentPrice != null && (
                     <div className="flex items-baseline gap-2">
-                      <span className="text-xl font-bold font-mono" style={getPriceChangeStyle(meta.changePct)}>
-                        {meta.currentPrice.toFixed(2)}
-                      </span>
-                      <span className="text-sm font-semibold font-mono" style={getPriceChangeStyle(meta.changePct)}>
+                      <AnimatedNumber
+                        value={meta.currentPrice}
+                        format={(latest) => latest.toFixed(2)}
+                        className="text-xl font-bold font-mono text-gold drop-shadow-[0_0_14px_var(--gold-glow)]"
+                      />
+                      <span
+                        className="text-sm font-semibold font-mono num"
+                        style={getPriceChangeStyle(meta.changePct)}
+                      >
                         {formatChangePct(meta.changePct)}
                       </span>
                     </div>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  <span className="home-accent-chip px-2 py-0.5 font-mono text-xs">
+                  <span className="home-accent-chip px-2 py-0.5 font-mono text-xs num">
                     {meta.stockCode}
                   </span>
                   {marketPhaseLabel ? (
@@ -302,7 +308,10 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
 
             {/* 关键结论 */}
             <div className="home-divider border-t pt-5">
-              <span className="label-uppercase">{text.keyInsights}</span>
+              <span className="label-uppercase">
+                <span aria-hidden="true" className="keyline-gradient h-px w-8 shrink-0" />
+                {text.keyInsights}
+              </span>
               <p className="mt-2 max-w-[62ch] whitespace-pre-wrap text-left text-[15px] leading-7 text-foreground">
                 {summary.analysisSummary || text.noAnalysisSummary}
               </p>
@@ -317,7 +326,7 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
             </div>
           </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+          <StaggerItem className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             {/* 操作建议 */}
             <Card
               variant="bordered"
@@ -368,13 +377,17 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
                 </div>
               </div>
             </Card>
-          </div>
+          </StaggerItem>
 
           {preparedRelatedBoards.length > 0 && (
+            <StaggerItem>
             <Card variant="bordered" padding="sm" className="home-panel-card min-w-0 max-w-full text-left">
               <section aria-label={text.relatedBoards} className="min-w-0 max-w-full">
                 <div className="mb-3 flex min-w-0 items-baseline gap-2">
-                  <span className="label-uppercase">{text.boardLinkage}</span>
+                  <span className="label-uppercase">
+                    <span aria-hidden="true" className="keyline-gradient h-px w-8 shrink-0" />
+                    {text.boardLinkage}
+                  </span>
                   <h3 className="mt-0.5 text-base font-semibold text-foreground">{text.relatedBoards}</h3>
                 </div>
 
@@ -383,11 +396,12 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
                 </div>
               </section>
             </Card>
+            </StaggerItem>
           )}
         </div>
 
         {/* 右侧：情绪指标 / 自选操作 */}
-        <div className="flex flex-col space-y-4">
+        <StaggerItem className="flex flex-col space-y-4">
           {watchlist && meta.reportType !== 'market_review' && meta.assetType !== 'index' && (
             <Card variant="bordered" padding="sm" className="home-panel-card">
               <div className="text-center space-y-3">
@@ -414,8 +428,8 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
               <ScoreGauge score={summary.sentimentScore} size="lg" />
             </div>
           </Card>
-        </div>
+        </StaggerItem>
       </div>
-    </div>
+    </StaggerGroup>
   );
 };
