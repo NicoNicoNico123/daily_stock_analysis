@@ -327,6 +327,49 @@ class NewsIntel(Base):
         return f"<NewsIntel(code={self.code}, title={self.title[:20]}...)>"
 
 
+class MacroNewsSnapshot(Base):
+    """
+    宏观市场动态快照模型
+
+    按 (market, snapshot_date) 共享的**市场级公共数据**（与 stock_daily 同等共享语义，
+    不挂 user_id）：同一市场同一天的宏观新闻对所有股票、所有用户、所有进程都是同一份，
+    避免批量分析、多用户并发、服务重启后重复抓取。
+
+    取用语义（stale-while-revalidate）由 ``SearchService.search_macro_news`` 实现：
+    当日快照在 MACRO_NEWS_REFRESH_HOURS 内直接复用；过期则同步刷新并 upsert；
+    抓取失败时回退旧快照。
+    """
+    __tablename__ = 'macro_news_snapshots'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # 市场标识（cn / hk / us）
+    market = Column(String(8), nullable=False, index=True)
+
+    # 快照日期（UTC 日期，YYYY-MM-DD，字符串便于字典序比较与清理）
+    snapshot_date = Column(String(10), nullable=False, index=True)
+
+    # 抓取时间（UTC naive，用于 TTL 判断）
+    fetched_at = Column(DateTime, default=utc_naive_now)
+
+    # 快照内容 JSON：{"query": ..., "provider": ..., "fetched_at": iso, "results": [...]}
+    content_json = Column(Text)
+
+    # 抓取渠道（SearchResponse.provider）
+    source_provider = Column(String(32))
+
+    __table_args__ = (
+        UniqueConstraint('market', 'snapshot_date', name='uix_macro_news_market_date'),
+        Index('ix_macro_news_market_date', 'market', 'snapshot_date'),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<MacroNewsSnapshot(market={self.market}, snapshot_date={self.snapshot_date}, "
+            f"fetched_at={self.fetched_at})>"
+        )
+
+
 class IntelligenceSource(Base):
     """可配置资讯源。"""
 
@@ -3294,6 +3337,180 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             raise
 
         return saved_count
+
+    # === 宏观新闻快照（市场级共享数据，见 MacroNewsSnapshot）===
+
+    def get_macro_news_snapshot(self, market: str, snapshot_date: str) -> Optional[Dict[str, Any]]:
+        """
+        读取指定市场 + 日期的宏观新闻快照
+
+        Args:
+            market: 市场标识（cn / hk / us）
+            snapshot_date: 快照日期（UTC，YYYY-MM-DD）
+
+        Returns:
+            dict: {"market", "snapshot_date", "fetched_at"(datetime|None),
+                   "source_provider", "content"(dict)}
+            无记录 / 参数为空 / 读取失败时返回 None（fail-open，由调用方决定是否重抓）
+        """
+        market_key = (market or '').strip().lower()
+        date_key = (snapshot_date or '').strip()
+        if not market_key or not date_key:
+            return None
+
+        def _read(session: Session) -> Optional[Dict[str, Any]]:
+            record = (
+                session.query(MacroNewsSnapshot)
+                .filter(
+                    MacroNewsSnapshot.market == market_key,
+                    MacroNewsSnapshot.snapshot_date == date_key,
+                )
+                .first()
+            )
+            if record is None:
+                return None
+            content: Any = None
+            try:
+                content = json.loads(record.content_json) if record.content_json else None
+            except (TypeError, ValueError):
+                content = None
+            return {
+                'market': record.market,
+                'snapshot_date': record.snapshot_date,
+                'fetched_at': record.fetched_at,
+                'source_provider': record.source_provider,
+                'content': content if isinstance(content, dict) else {},
+            }
+
+        try:
+            with self.get_session() as session:
+                return _read(session)
+        except Exception as exc:
+            logger.debug(
+                "读取宏观新闻快照失败（fail-open）: market=%s date=%s err=%s",
+                market_key, date_key, exc,
+            )
+            return None
+
+    def upsert_macro_news_snapshot(
+        self,
+        market: str,
+        snapshot_date: str,
+        content: Dict[str, Any],
+        provider: str = '',
+    ) -> bool:
+        """
+        写入 / 覆盖宏观新闻快照（UNIQUE(market, snapshot_date) 冲突时更新）
+
+        多进程并发安全：SQLite WAL + INSERT ... ON CONFLICT DO UPDATE（BEGIN IMMEDIATE
+        写窗口内执行）；两个进程同时首抓同一天同一市场时，后写方覆盖先写方，语义一致。
+
+        Args:
+            market: 市场标识（cn / hk / us）
+            snapshot_date: 快照日期（UTC，YYYY-MM-DD）
+            content: 快照内容（可 JSON 序列化的 dict）
+            provider: 抓取渠道标识
+
+        Returns:
+            bool: 是否写入成功（失败不抛异常，fail-open）
+        """
+        market_key = (market or '').strip().lower()
+        date_key = (snapshot_date or '').strip()
+        if not market_key or not date_key:
+            return False
+        if not isinstance(content, dict) or not content:
+            return False
+
+        payload = self._safe_json_dumps(content)
+        source_provider = (provider or '').strip()[:32]
+        now = utc_naive_now()
+
+        def _write(session: Session) -> bool:
+            if self._is_sqlite_engine:
+                statement = sqlite_insert(MacroNewsSnapshot).values(
+                    market=market_key,
+                    snapshot_date=date_key,
+                    fetched_at=now,
+                    content_json=payload,
+                    source_provider=source_provider,
+                )
+                statement = statement.on_conflict_do_update(
+                    index_elements=['market', 'snapshot_date'],
+                    set_={
+                        'fetched_at': statement.excluded.fetched_at,
+                        'content_json': statement.excluded.content_json,
+                        'source_provider': statement.excluded.source_provider,
+                    },
+                )
+                session.execute(statement)
+            else:
+                record = (
+                    session.query(MacroNewsSnapshot)
+                    .filter(
+                        MacroNewsSnapshot.market == market_key,
+                        MacroNewsSnapshot.snapshot_date == date_key,
+                    )
+                    .first()
+                )
+                if record is None:
+                    record = MacroNewsSnapshot(
+                        market=market_key,
+                        snapshot_date=date_key,
+                    )
+                    session.add(record)
+                record.fetched_at = now
+                record.content_json = payload
+                record.source_provider = source_provider
+            return True
+
+        try:
+            return bool(
+                self._run_write_transaction(
+                    f"upsert_macro_news_snapshot[{market_key}:{date_key}]",
+                    _write,
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "写入宏观新闻快照失败（fail-open）: market=%s date=%s err=%s",
+                market_key, date_key, exc,
+            )
+            return False
+
+    def purge_old_macro_news_snapshots(self, keep_days: int = 7) -> int:
+        """
+        清理 keep_days 天之前的宏观新闻快照（抓取时顺带调用）
+
+        Args:
+            keep_days: 保留天数（最小 1）
+
+        Returns:
+            int: 删除的行数（失败返回 0，fail-open）
+        """
+        try:
+            keep_days = max(1, int(keep_days))
+        except (TypeError, ValueError):
+            keep_days = 7
+        cutoff_date = (
+            datetime.now(timezone.utc) - timedelta(days=keep_days)
+        ).date().isoformat()
+
+        def _write(session: Session) -> int:
+            deleted = (
+                session.query(MacroNewsSnapshot)
+                .filter(MacroNewsSnapshot.snapshot_date < cutoff_date)
+                .delete(synchronize_session=False)
+            )
+            return int(deleted or 0)
+
+        try:
+            return self._run_write_transaction(
+                f"purge_old_macro_news_snapshots[{cutoff_date}]",
+                _write,
+            )
+        except Exception as exc:
+            logger.debug("清理宏观新闻快照失败（fail-open）: err=%s", exc)
+            return 0
 
     def save_fundamental_snapshot(
         self,

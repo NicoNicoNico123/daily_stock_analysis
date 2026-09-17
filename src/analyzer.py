@@ -612,6 +612,22 @@ def _coerce_chip_metric(v: Any) -> Optional[float]:
     return None if math.isnan(numeric) else numeric
 
 
+# 宏观新闻条目标记：与 src/search_service.py 的 MACRO_NEWS_ITEM_PREFIX 保持一致。
+# news_context 中出现该标记时，说明分析输入包含宏观市场动态（非个股新闻），
+# 需要在 prompt 中追加「宏观→行业→公司」多点影响分析的强制指令。
+MACRO_NEWS_ITEM_MARKER = "【宏观】"
+
+MACRO_IMPACT_PROMPT_BLOCK = """
+### 🌐 宏观动态多点影响分析（检测到【宏观】标记，必须执行）
+上方新闻中带【宏观】标记的条目是宏观 / 市场层面动态（如美联储利率决议、政策、大盘走势），**不是该公司的个股新闻**。必须逐点进行影响链分析：
+1. 逐点列出每个宏观事件（写明事件与日期），不得把多个宏观事件混成一点
+2. 每个事件单独给出完整影响路径：宏观事件 → 市场/行业传导（流动性、资金面、板块估值、利率敏感度等）→ 该公司（业务、订单、成本、估值）
+3. 每条路径标注影响方向（利好 / 利空 / 中性）与置信度（高 / 中 / 低）
+4. 找不到合理传导路径的宏观事件，必须明确说明“与该公司无直接传导”，严禁强行关联
+5. 宏观新闻与个股新闻结论冲突时，**以个股证据优先**，并说明取舍理由
+6. 宏观条目同样受时间窗口约束：输出到 `latest_news` / `risk_alerts` / `positive_catalysts` 时必须带具体日期
+"""
+
 _BULLISH_TREND_HINTS: Tuple[str, ...] = (
     "多头排列",
     "持续上涨",
@@ -4398,6 +4414,10 @@ class GeminiAnalyzer:
 {news_context}
 ```
 """
+            # 宏观市场动态（【宏观】标记条目）出现时，追加多点影响分析的强制指令。
+            # 未包含宏观条目时 prompt 保持原样，不影响既有行为。
+            if MACRO_NEWS_ITEM_MARKER in news_context:
+                prompt += MACRO_IMPACT_PROMPT_BLOCK
         else:
             prompt += """
 未搜索到该股票近期的相关新闻。请主要依据技术面数据进行分析。

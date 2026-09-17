@@ -996,6 +996,11 @@ class Config:
     # === 新闻与分析筛选配置 ===
     news_max_age_days: int = 3   # 新闻最大时效（天）
     news_strategy_profile: str = "short"  # 新闻窗口策略档位：ultra_short/short/medium/long
+    # 宏观市场动态检索（美联储利率/政策/大盘走势），用于「宏观→行业→公司」多点影响分析
+    macro_news_enabled: bool = True
+    macro_news_max_results: int = 5  # 单次宏观新闻合并后的最大条数
+    # 宏观新闻快照刷新间隔（小时）；0 表示当日只抓一次、永不刷新
+    macro_news_refresh_hours: int = 6
     news_intel_retention_days: int = 30  # 本地资讯池保留天数
     news_intel_fetch_timeout_sec: float = 8.0  # 单个资讯源拉取超时
     news_intel_max_items_per_source: int = 50  # 单次每个资讯源最多采集条数
@@ -1896,6 +1901,13 @@ class Config:
             news_max_age_days=parse_env_int(os.getenv('NEWS_MAX_AGE_DAYS'), 3, field_name='NEWS_MAX_AGE_DAYS', minimum=1),
             news_strategy_profile=cls._parse_news_strategy_profile(
                 os.getenv('NEWS_STRATEGY_PROFILE', 'short')
+            ),
+            macro_news_enabled=parse_env_bool(os.getenv('MACRO_NEWS_ENABLED'), default=True),
+            macro_news_max_results=parse_env_int(
+                os.getenv('MACRO_NEWS_MAX_RESULTS'), 5, field_name='MACRO_NEWS_MAX_RESULTS', minimum=1
+            ),
+            macro_news_refresh_hours=parse_env_int(
+                os.getenv('MACRO_NEWS_REFRESH_HOURS'), 6, field_name='MACRO_NEWS_REFRESH_HOURS', minimum=0
             ),
             news_intel_retention_days=parse_env_int(
                 os.getenv('NEWS_INTEL_RETENTION_DAYS'),

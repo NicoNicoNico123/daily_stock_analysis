@@ -1978,9 +1978,21 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
                 stock_name="科创芯片ETF",
                 max_results=5
             )
-            pipeline.db.save_news_intel.assert_called_once()
-            saved_kwargs = pipeline.db.save_news_intel.call_args.kwargs
-            self.assertEqual(saved_kwargs["name"], "科创芯片ETF")
+            pipeline.db.save_news_intel.assert_called()
+            saved_calls = {
+                call.kwargs["dimension"]: call.kwargs
+                for call in pipeline.db.save_news_intel.call_args_list
+            }
+            # 个股新闻情报必须用分析结果中解析出的股票名称落库
+            self.assertIn("latest_news", saved_calls)
+            self.assertEqual(saved_calls["latest_news"]["name"], "科创芯片ETF")
+            # 宏观新闻情报是市场级共享数据，独立维度持久化（不影响个股维度契约）
+            self.assertIn("macro_news", saved_calls)
+            self.assertEqual(saved_calls["macro_news"]["code"], "588200")
+            pipeline.search_service.search_macro_news.assert_called_once_with(
+                market="cn",
+                max_results=mock_cfg.macro_news_max_results,
+            )
 
     def test_analyze_with_agent_keeps_dashboard_top_level_fields_after_stability(self):
         """Decision stability downgrade in agent flow should sync dashboard and top-level decision fields."""

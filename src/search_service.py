@@ -17,7 +17,7 @@ import re
 import threading
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import List, Dict, Any, Optional, Tuple
@@ -242,6 +242,8 @@ class SearchResult:
     relevance_score: Optional[int] = None
     relevance_category: Optional[str] = None
     relevance_reasons: Optional[List[str]] = None
+    # 结果类别标记（如 macro=宏观市场动态），新增可选字段，不影响既有调用方
+    category: Optional[str] = None
     
     def to_text(self) -> str:
         """转换为文本格式"""
@@ -257,7 +259,7 @@ class SearchResult:
         return f"【{self.source}】{self.title}{date_str}\n{self.snippet}{relevance_str}"
 
 
-@dataclass 
+@dataclass
 class SearchResponse:
     """搜索响应"""
     query: str
@@ -266,6 +268,8 @@ class SearchResponse:
     success: bool = True
     error_message: Optional[str] = None
     search_time: float = 0.0  # 搜索耗时（秒）
+    # 宏观新闻快照回退标记：True 表示返回的是过期旧快照（stale-while-revalidate 回退）
+    stale: bool = False
     
     def to_context(self, max_results: int = 5) -> str:
         """将搜索结果转换为可用于 AI 分析的上下文"""
@@ -277,6 +281,145 @@ class SearchResponse:
             lines.append(f"\n{i}. {result.to_text()}")
         
         return "\n".join(lines)
+
+
+# === 宏观市场动态（MACRO news）===
+# 用于「宏观事件 → 行业传导 → 该公司」多点影响分析的市场级检索查询。
+# 每个市场固定两条查询；未列出的市场不做宏观检索（返回空结果）。
+MACRO_NEWS_QUERIES: Dict[str, Tuple[str, str]] = {
+    "us": ("美联储利率决议 最新动态", "美股市场 今日走势 原因"),
+    "hk": ("港股市场 今日走势", "美联储加息 港股 影响"),
+    "cn": ("今日 A 股市场动向 原因", "中国 最新经济政策 解读"),
+}
+
+# 宏观结果类别标记（SearchResult.category）
+MACRO_NEWS_RESULT_CATEGORY = "macro"
+# 宏观段落在 prompt / 报告中的标题
+MACRO_NEWS_SECTION_TITLE = "【宏观市场动态（与该股票的多点影响分析）】"
+# 单条宏观新闻前缀：让 LLM 明确知道它不是个股新闻
+MACRO_NEWS_ITEM_PREFIX = "【宏观】"
+# 宏观快照默认刷新间隔（小时）；0 表示当日只抓一次、永不刷新
+MACRO_NEWS_DEFAULT_REFRESH_HOURS = 6
+# 宏观快照保留天数（抓取时顺带清理更早的快照）
+MACRO_NEWS_SNAPSHOT_RETENTION_DAYS = 7
+
+
+def macro_snapshot_date_utc(now: Optional[datetime] = None) -> str:
+    """宏观快照日期键（UTC，YYYY-MM-DD）。"""
+    current = now or datetime.now(timezone.utc)
+    return current.date().isoformat()
+
+
+def _macro_result_from_payload(payload: Any) -> Optional[SearchResult]:
+    """从快照 JSON 反序列化一条宏观搜索结果。"""
+    if not isinstance(payload, dict):
+        return None
+    title = str(payload.get("title") or "").strip()
+    url = str(payload.get("url") or "").strip()
+    if not title and not url:
+        return None
+    published = str(payload.get("published_date") or "").strip() or None
+    return SearchResult(
+        title=title,
+        snippet=str(payload.get("snippet") or ""),
+        url=url,
+        source=str(payload.get("source") or "").strip(),
+        published_date=published,
+        # 不动 relevance_category：那是关联度分桶语义，宏观标记走独立 category 字段
+        category=MACRO_NEWS_RESULT_CATEGORY,
+    )
+
+
+def macro_snapshot_payload_from_response(response: 'SearchResponse') -> Dict[str, Any]:
+    """把宏观搜索响应序列化为可持久化的快照内容 dict。"""
+    return {
+        "query": response.query,
+        "provider": response.provider,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "results": [
+            {
+                "title": item.title,
+                "snippet": item.snippet,
+                "url": item.url,
+                "source": item.source,
+                "published_date": item.published_date,
+                "category": MACRO_NEWS_RESULT_CATEGORY,
+            }
+            for item in response.results
+        ],
+    }
+
+
+def macro_response_from_snapshot_payload(
+    snapshot: Optional[Dict[str, Any]],
+    *,
+    limit: int = 5,
+    stale: bool = False,
+) -> Optional[SearchResponse]:
+    """从 ``get_macro_news_snapshot`` 返回的快照重建宏观 SearchResponse。
+
+    Returns:
+        SearchResponse（stale=True 表示命中过期旧快照回退）；无可用内容时返回 None。
+    """
+    if not isinstance(snapshot, dict):
+        return None
+    content = snapshot.get("content")
+    if not isinstance(content, dict):
+        return None
+    raw_results = content.get("results") or []
+    results: List[SearchResult] = []
+    seen: set = set()
+    for payload in raw_results:
+        item = _macro_result_from_payload(payload)
+        if item is None:
+            continue
+        dedupe_key = (item.url or "").strip() or f"title:{item.title}"
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        results.append(item)
+        if len(results) >= max(1, int(limit)):
+            break
+    if not results:
+        return None
+    provider = str(content.get("provider") or snapshot.get("source_provider") or "snapshot")
+    query = str(content.get("query") or snapshot.get("snapshot_date") or "macro")
+    return SearchResponse(
+        query=query,
+        results=results,
+        provider=provider,
+        success=True,
+        stale=stale,
+    )
+
+
+def format_macro_news_section(response: Optional['SearchResponse']) -> Optional[str]:
+    """把宏观新闻响应渲染为可拼接进 news_context 的段落。
+
+    返回 None 表示没有可用宏观新闻（调用方应保持原有 news_context 不变）。
+    """
+    if response is None or not response.success or not response.results:
+        return None
+    lines = [
+        MACRO_NEWS_SECTION_TITLE,
+        (
+            "以下条目均为宏观 / 市场层面动态（非该公司的个股新闻），每条以【宏观】开头，"
+            "用于「宏观事件 → 行业传导 → 该公司」的多点影响分析："
+        ),
+    ]
+    for idx, item in enumerate(response.results, 1):
+        title = (item.title or "").strip()
+        source = (item.source or "").strip()
+        date_str = f" ({item.published_date})" if item.published_date else ""
+        header_parts = [f"{idx}. {MACRO_NEWS_ITEM_PREFIX}"]
+        if source:
+            header_parts.append(f"【{source}】")
+        header_parts.append(f"{title}{date_str}")
+        lines.append("".join(header_parts))
+        snippet = (item.snippet or "").strip()
+        if snippet:
+            lines.append(f"   摘要：{snippet[:220]}")
+    return "\n".join(lines)
 
 
 class BaseSearchProvider(ABC):
@@ -2635,6 +2778,8 @@ class SearchService:
         eastmoney_api_key: Optional[str] = None,
         news_max_age_days: int = 3,
         news_strategy_profile: str = "short",
+        macro_refresh_hours: int = MACRO_NEWS_DEFAULT_REFRESH_HOURS,
+        macro_snapshot_store: Optional[Any] = None,
     ):
         """
         初始化搜索服务
@@ -2652,7 +2797,20 @@ class SearchService:
             eastmoney_api_key: 东方财富妙想资讯搜索 API Key
             news_max_age_days: 新闻最大时效（天）
             news_strategy_profile: 新闻窗口策略档位（ultra_short/short/medium/long）
+            macro_refresh_hours: 宏观新闻快照刷新间隔（小时），0 表示当日只抓一次
+            macro_snapshot_store: 宏观快照存储（需提供 get_macro_news_snapshot /
+                upsert_macro_news_snapshot / purge_old_macro_news_snapshots）；
+                默认 None 时惰性使用 ``src.storage.get_db()`` 单例
         """
+        try:
+            self.macro_refresh_hours = max(0, int(macro_refresh_hours))
+        except (TypeError, ValueError):
+            self.macro_refresh_hours = MACRO_NEWS_DEFAULT_REFRESH_HOURS
+        # 宏观快照存储：默认惰性解析 src.storage.get_db()，测试可注入内存版
+        self._macro_snapshot_store = macro_snapshot_store
+        # 同市场抓取的单飞锁（进程内），避免线程池并发分析时重复抓同一份宏观新闻
+        self._macro_inflight: Dict[str, threading.Lock] = {}
+        self._macro_inflight_guard = threading.RLock()
         self._constructor_kwargs: Dict[str, Any] = {
             "bocha_keys": list(bocha_keys or []),
             "tavily_keys": list(tavily_keys or []),
@@ -2666,6 +2824,9 @@ class SearchService:
             "eastmoney_api_key": eastmoney_api_key if isinstance(eastmoney_api_key, str) else None,
             "news_max_age_days": int(news_max_age_days),
             "news_strategy_profile": news_strategy_profile,
+            # 快照存储对象不可跨进程序列化，刻意不进 _constructor_kwargs；
+            # 子进程重建的实例会走惰性 get_db() 兜底
+            "macro_refresh_hours": self.macro_refresh_hours,
         }
         self._providers: List[BaseSearchProvider] = []
         self.news_max_age_days = max(1, news_max_age_days)
@@ -4248,6 +4409,215 @@ class SearchService:
         finally:
             if cache_owner and cache_event is not None:
                 self._release_cache_fill(cache_key, cache_event)
+
+    def reset_macro_cache_for_tests(self) -> None:
+        """清空宏观新闻抓取的单飞锁表（仅供测试使用）。
+
+        宏观新闻的共享缓存是持久化快照表 ``macro_news_snapshots``（跨进程共享），
+        进程内只保留抓取单飞锁；测试需要隔离时调用本方法即可。
+        """
+        with self._macro_inflight_guard:
+            self._macro_inflight.clear()
+
+    def _macro_store(self):
+        """解析宏观快照存储：优先注入对象，否则惰性取 DatabaseManager 单例。
+
+        任何失败都返回 None（fail-open：退化为直接抓取，不阻断分析）。
+        """
+        if self._macro_snapshot_store is not None:
+            return self._macro_snapshot_store
+        try:
+            from src.storage import get_db
+
+            return get_db()
+        except Exception as exc:
+            logger.debug("宏观快照存储不可用（fail-open 直接抓取）: %s", exc)
+            return None
+
+    def _macro_inflight_lock(self, market_key: str) -> threading.Lock:
+        with self._macro_inflight_guard:
+            lock = self._macro_inflight.get(market_key)
+            if lock is None:
+                lock = threading.Lock()
+                self._macro_inflight[market_key] = lock
+            return lock
+
+    def _macro_snapshot_is_fresh(self, snapshot: Dict[str, Any], snapshot_date: str) -> bool:
+        """判断当日快照是否仍在 MACRO_NEWS_REFRESH_HOURS 内。
+
+        refresh_hours = 0 表示当日只抓一次：只要存在当日快照就视为新鲜。
+        """
+        if self.macro_refresh_hours <= 0:
+            return True
+        fetched_at_raw = None
+        content = snapshot.get("content")
+        if isinstance(content, dict):
+            fetched_at_raw = content.get("fetched_at")
+        if not fetched_at_raw:
+            fetched_at_raw = snapshot.get("fetched_at")
+        fetched_at = None
+        if isinstance(fetched_at_raw, datetime):
+            fetched_at = fetched_at_raw
+        elif isinstance(fetched_at_raw, str) and fetched_at_raw.strip():
+            try:
+                fetched_at = datetime.fromisoformat(fetched_at_raw.strip())
+            except ValueError:
+                fetched_at = None
+        if fetched_at is None:
+            return False
+        if fetched_at.tzinfo is not None:
+            fetched_at = fetched_at.astimezone(timezone.utc).replace(tzinfo=None)
+        # naive 值按 UTC 处理（快照列由 storage.utc_naive_now 写入）
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        age_seconds = (now_utc - fetched_at).total_seconds()
+        if age_seconds < 0:
+            # 时钟回拨/多机部署偏差：按新鲜处理，避免反复重抓
+            return True
+        return age_seconds < self.macro_refresh_hours * 3600
+
+    def _fetch_macro_news(self, queries: Tuple[str, ...], limit: int) -> SearchResponse:
+        """按市场内置查询逐条走 topic 渠道链，合并去重并打上 macro 标记。"""
+        merged_results: List[SearchResult] = []
+        seen_keys: set = set()
+        providers: List[str] = []
+        had_provider_success = False
+        for query in queries:
+            # focus_keywords 直接作为查询串，避免 topic 路径追加个股向的「A股 最新消息 催化」后缀
+            response = self.search_topic_news(
+                topic=query,
+                max_results=limit,
+                focus_keywords=[query],
+            )
+            had_provider_success = had_provider_success or bool(response.success)
+            if response.provider and response.provider not in providers:
+                providers.append(response.provider)
+            for item in response.results or []:
+                title = (item.title or "").strip()
+                url = (item.url or "").strip()
+                if not title and not url:
+                    continue
+                dedupe_key = url or f"title:{title}"
+                if dedupe_key in seen_keys:
+                    continue
+                seen_keys.add(dedupe_key)
+                # replace() 生成副本，避免污染 search_topic_news 自身 TTL 缓存里的对象
+                merged_results.append(replace(item, category=MACRO_NEWS_RESULT_CATEGORY))
+            if len(merged_results) >= limit:
+                break
+
+        return SearchResponse(
+            query=" / ".join(queries),
+            results=merged_results[:limit],
+            provider=" + ".join(providers) if providers else (
+                "Filtered" if had_provider_success else "None"
+            ),
+            success=had_provider_success,
+            error_message=(
+                None if merged_results
+                else ("宏观新闻过滤后无有效结果" if had_provider_success else "所有搜索引擎都不可用或搜索失败")
+            ),
+        )
+
+    def search_macro_news(self, market: str, max_results: int = 5) -> SearchResponse:
+        """搜索宏观市场热门新闻（美联储利率、政策、大盘走势等）。
+
+        用于「宏观事件 → 行业传导 → 该公司」的多点影响分析：
+        - 每个市场内置两条查询，逐条复用 :meth:`search_topic_news` 的同一条渠道链，
+          再按 URL 合并去重（不重复实现渠道逻辑），结果逐条打 ``category='macro'``
+        - **持久化共享快照层**（``macro_news_snapshots`` 表，键 UNIQUE(market, 日期)）：
+          宏观新闻按「市场 + 日期」对所有股票、所有用户、所有进程都是同一份。
+          stale-while-revalidate：当日快照在 MACRO_NEWS_REFRESH_HOURS（0=当日只抓一次）
+          内直接返回，零 API 调用；过期则同步刷新并 upsert；抓取失败时回退旧快照
+          （response.stale=True），无快照才返回空——永不阻断分析
+        - 同一进程内用单飞锁避免线程池并发分析重复抓取；跨进程（spawn 批量子进程）
+          首抓可能重复调用一次 API，由 UNIQUE upsert 保证最终一致，属可接受开销
+        - 未配置查询的市场（jp/kr/tw/未知）返回空结果，不做检索
+
+        Args:
+            market: 市场标识（cn / hk / us）
+            max_results: 合并后返回的最大条数
+
+        Returns:
+            SearchResponse（success=False 表示该市场无宏观新闻可用）
+        """
+        market_key = (market or "").strip().lower()
+        queries = MACRO_NEWS_QUERIES.get(market_key)
+        query_label = " / ".join(queries) if queries else (market_key or "unknown")
+
+        def _empty(error_message: str) -> SearchResponse:
+            return SearchResponse(
+                query=query_label,
+                results=[],
+                provider="None",
+                success=False,
+                error_message=error_message,
+            )
+
+        if not queries:
+            return _empty(f"市场 {market_key or 'unknown'} 未配置宏观新闻查询")
+        if not self.is_available:
+            return _empty("未配置搜索能力")
+        try:
+            limit = max(1, int(max_results))
+        except (TypeError, ValueError):
+            limit = 5
+
+        store = self._macro_store()
+        snapshot_date = macro_snapshot_date_utc()
+        snapshot: Optional[Dict[str, Any]] = None
+        if store is not None:
+            snapshot = store.get_macro_news_snapshot(market_key, snapshot_date)
+            if snapshot and self._macro_snapshot_is_fresh(snapshot, snapshot_date):
+                fresh = macro_response_from_snapshot_payload(snapshot, limit=limit)
+                if fresh is not None:
+                    return fresh
+
+        # 需要刷新（或无快照）：同市场单飞，避免并发分析重复抓
+        lock = self._macro_inflight_lock(market_key)
+        refreshed: Optional[SearchResponse] = None
+        with lock:
+            # 双检：等锁期间其他线程可能已写入当日快照
+            if store is not None:
+                snapshot = store.get_macro_news_snapshot(market_key, snapshot_date) or snapshot
+                if snapshot and self._macro_snapshot_is_fresh(snapshot, snapshot_date):
+                    fresh = macro_response_from_snapshot_payload(snapshot, limit=limit)
+                    if fresh is not None:
+                        return fresh
+            try:
+                refreshed = self._fetch_macro_news(queries, limit)
+            except Exception as exc:
+                logger.warning("宏观新闻检索失败（fail-open）: %s", exc)
+                refreshed = None
+
+            if refreshed is not None and refreshed.results and store is not None:
+                try:
+                    store.upsert_macro_news_snapshot(
+                        market=market_key,
+                        snapshot_date=snapshot_date,
+                        content=macro_snapshot_payload_from_response(refreshed),
+                        provider=refreshed.provider,
+                    )
+                    store.purge_old_macro_news_snapshots(
+                        keep_days=MACRO_NEWS_SNAPSHOT_RETENTION_DAYS
+                    )
+                except Exception as exc:
+                    logger.debug("宏观新闻快照写入失败（fail-open）: %s", exc)
+                return refreshed
+
+        # 抓取失败 / 零命中：有当日旧快照就回退旧快照（标记 stale）
+        if snapshot:
+            fallback = macro_response_from_snapshot_payload(
+                snapshot,
+                limit=limit,
+                stale=True,
+            )
+            if fallback is not None:
+                logger.info("宏观新闻刷新失败，回退当日旧快照: market=%s", market_key)
+                return fallback
+
+        if refreshed is not None:
+            return refreshed
+        return _empty("所有搜索引擎都不可用或搜索失败")
 
     def search_stock_news(
         self,

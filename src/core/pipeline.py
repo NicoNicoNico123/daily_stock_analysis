@@ -49,7 +49,7 @@ from src.report_language import (
     localize_trend_prediction,
     normalize_report_language,
 )
-from src.search_service import SearchService
+from src.search_service import SearchService, format_macro_news_section
 from src.utils.traditional import to_traditional, to_traditional_tree
 from src.analysis_context_pack_prompt import format_analysis_context_pack_prompt_section
 from src.analysis_context_pack_overview import render_analysis_context_pack_overview
@@ -383,6 +383,7 @@ class StockAnalysisPipeline:
                 eastmoney_api_key=getattr(self.config, "eastmoney_api_key", None),
                 news_max_age_days=self.config.news_max_age_days,
                 news_strategy_profile=getattr(self.config, "news_strategy_profile", "short"),
+                macro_refresh_hours=getattr(self.config, "macro_news_refresh_hours", 6),
             )
         except Exception as exc:
             logger.warning("搜索服务初始化失败，将以无搜索模式运行: %s", exc, exc_info=True)
@@ -824,6 +825,23 @@ class StockAnalysisPipeline:
                     if news_context
                     else persisted_intelligence_context
                 )
+
+            # Step 4.6: 宏观市场动态（美联储/政策/大盘走势）。
+            # 按「市场 + 日期」走持久化共享快照，同一市场一天只抓一次；功能关闭或
+            # 无搜索渠道时完全不生效。拿到的条数计入 news_result_count，保证
+            # 「是否用到消息面证据」的披露判定覆盖宏观这一路。
+            macro_news_section, macro_news_count = self._build_macro_news_section(
+                code=code,
+                market=market,
+                stock_name=stock_name,
+            )
+            if macro_news_section:
+                news_context = (
+                    f"{news_context}\n\n{macro_news_section}"
+                    if news_context
+                    else macro_news_section
+                )
+                news_result_count = (news_result_count or 0) + macro_news_count
 
             # Step 5: 获取分析上下文（技术面数据）
             self._emit_progress(58, f"{stock_name}：正在整理分析上下文")
@@ -1653,6 +1671,57 @@ class StockAnalysisPipeline:
                     else persisted_intelligence_context
                 )
                 logger.info(f"[{code}] Agent mode: local intelligence evidence injected into news_context")
+
+            # Agent 模式：宏观市场动态（「宏观→行业→公司」多点影响分析输入）。
+            # 共享快照保证每轮每市场只抓一次；抓到的同一份响应既注入 news_context
+            # 供 Agent 取证，也持久化 dimension="macro_news" 供后续检索
+            # （对齐 #396 的情报持久化语义）。
+            macro_market = (
+                "cn"
+                if is_index
+                else (get_market_for_stock(normalize_stock_code(code)) or "cn")
+            )
+            macro_news_section: Optional[str] = None
+            macro_response = None
+            if (
+                self.search_service is not None
+                and getattr(self.search_service, "is_available", False)
+                and getattr(self.config, "macro_news_enabled", True)
+            ):
+                try:
+                    macro_response = self.search_service.search_macro_news(
+                        market=macro_market,
+                        max_results=getattr(self.config, "macro_news_max_results", 5),
+                    )
+                except Exception as e:
+                    logger.warning(f"[{code}] Agent 模式宏观新闻检索失败（fail-open）: {e}")
+                    macro_response = None
+                if macro_response is not None:
+                    macro_news_section = format_macro_news_section(macro_response)
+            if macro_news_section:
+                existing = initial_context.get("news_context")
+                initial_context["news_context"] = (
+                    f"{existing}\n\n{macro_news_section}"
+                    if existing
+                    else macro_news_section
+                )
+                logger.info(f"[{code}] Agent mode: macro news evidence injected into news_context")
+                if macro_response is not None and macro_response.success and macro_response.results:
+                    try:
+                        query_context = self._build_query_context(query_id=query_id)
+                        self.db.save_news_intel(
+                            code=code,
+                            name=stock_name,
+                            dimension="macro_news",
+                            query=macro_response.query,
+                            response=macro_response,
+                            query_context=query_context
+                        )
+                        logger.info(
+                            f"[{code}] Agent 模式: 宏观新闻情报已保存 {len(macro_response.results)} 条"
+                        )
+                    except Exception as e:
+                        logger.warning(f"[{code}] Agent 模式保存宏观新闻情报失败: {e}")
 
             # Issue #1066: ensure deep history is in DB before agent tools run
             if analysis_target is None:
@@ -3165,6 +3234,50 @@ class StockAnalysisPipeline:
         except Exception as exc:
             logger.debug("读取本地资讯证据失败（fail-open）: %s", exc)
             return None
+
+    def _build_macro_news_section(
+        self,
+        *,
+        code: str,
+        market: Optional[str],
+        stock_name: Optional[str] = None,
+    ) -> Tuple[Optional[str], int]:
+        """构建宏观市场动态段落（「宏观→行业→公司」多点影响分析的输入证据）。
+
+        宏观新闻按「市场 + 日期」持久化为共享快照，同一市场一天只抓一次（可配
+        MACRO_NEWS_REFRESH_HOURS 刷新）；本方法只做功能开关与格式化。
+
+        Returns:
+            (段落文本, 宏观新闻条数)；无可用宏观新闻时返回 (None, 0)。
+        """
+        search_service = self.search_service
+        if search_service is None or not getattr(search_service, "is_available", False):
+            return None, 0
+        if not getattr(self.config, "macro_news_enabled", True):
+            return None, 0
+        max_results = getattr(self.config, "macro_news_max_results", 5)
+        try:
+            response = search_service.search_macro_news(
+                market=market or "cn",
+                max_results=max_results,
+            )
+        except Exception as exc:
+            logger.warning(
+                "%s(%s) 宏观新闻检索失败（fail-open，不影响分析）: %s",
+                stock_name or code, code, exc,
+            )
+            return None, 0
+        section = format_macro_news_section(response)
+        if not section:
+            return None, 0
+        logger.info(
+            "%s(%s) 宏观市场动态: %s 条%s",
+            stock_name or code,
+            code,
+            len(response.results),
+            "（stale 旧快照回退）" if getattr(response, "stale", False) else "",
+        )
+        return section, len(response.results)
 
     def _build_legacy_analysis_artifacts(
         self,
