@@ -77,3 +77,21 @@ class DataCapabilityOverviewResponse(BaseModel):
     datasets: List[DataDatasetQuality] = Field(default_factory=list)
     priorities: List[DataPriorityView] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
+
+
+class DailyKlinePoint(BaseModel):
+    """Single daily K-line point for charting."""
+
+    date: str = Field(..., description="交易日 YYYY-MM-DD，升序")
+    open: float = Field(..., description="开盘价")
+    high: float = Field(..., description="最高价")
+    low: float = Field(..., description="最低价")
+    close: float = Field(..., description="收盘价")
+    volume: Optional[float] = Field(None, description="成交量（缺失时为 null）")
+
+
+class DailyKlineResponse(BaseModel):
+    """Daily K-line response for the report price chart."""
+
+    code: str = Field(..., description="规范化后的股票代码")
+    points: List[DailyKlinePoint] = Field(default_factory=list, description="日 K 数据点，按日期升序")

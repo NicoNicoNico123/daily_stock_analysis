@@ -142,6 +142,8 @@ const vendorChunkByPackage: Record<string, string> = {
   'motion-utils': 'vendor-motion',
   'lucide-react': 'vendor-icons',
   recharts: 'vendor-charts',
+  // 报告页 K 线图（lightweight-charts）按需加载，单独成 chunk 避免进入首屏 vendor 包
+  'lightweight-charts': 'vendor-price-chart',
   'victory-vendor': 'vendor-charts',
   '@reduxjs/toolkit': 'vendor-charts',
   'decimal.js-light': 'vendor-charts',

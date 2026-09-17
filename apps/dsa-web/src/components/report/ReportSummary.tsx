@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import type { AnalysisResult, AnalysisReport } from '../../types/analysis';
 import { ReportOverview } from './ReportOverview';
 import { ReportStrategy } from './ReportStrategy';
+import { PriceChartPanel } from './PriceChartPanel';
 import { ReportNews } from './ReportNews';
 import { ReportDetails } from './ReportDetails';
 import { ReportDiagnostics } from './ReportDiagnostics';
@@ -110,6 +111,13 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
 
       {/* 策略點位區 */}
       <ReportStrategy strategy={localizedStrategy} />
+
+      {/* K 線圖區（策略点位 + 走勢預測示意）；levels 传入报告详情的原始策略字段 */}
+      <PriceChartPanel
+        code={meta.stockCode}
+        levels={localizedStrategy}
+        trendPrediction={localizedSummary?.trendPrediction}
+      />
 
       {/* 資訊區 */}
       <ReportNews recordId={recordId} limit={8} />

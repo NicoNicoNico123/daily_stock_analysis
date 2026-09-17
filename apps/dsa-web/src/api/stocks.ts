@@ -1,4 +1,5 @@
 import apiClient from './index';
+import { toCamelCase } from './utils';
 
 export type ExtractItem = {
   code?: string | null;
@@ -10,6 +11,20 @@ export type ExtractFromImageResponse = {
   codes: string[];
   items?: ExtractItem[];
   rawText?: string;
+};
+
+export type DailyKlinePoint = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number | null;
+};
+
+export type DailyKlineResponse = {
+  code: string;
+  points: DailyKlinePoint[];
 };
 
 export const stocksApi = {
@@ -50,5 +65,17 @@ export const stocksApi = {
       return { codes: data.codes ?? [], items: data.items };
     }
     throw new Error('請提供文件或粘貼文本');
+  },
+
+  /**
+   * 获取个股日 K 线（报告页价格图用）
+   * @param code 股票代码（如 600519 / hk00700 / AAPL）
+   * @param days 日线天数，后端上限 250
+   */
+  async getDailyKline(code: string, days = 120): Promise<DailyKlineResponse> {
+    const response = await apiClient.get<Record<string, unknown>>('/api/v1/data/daily-kline', {
+      params: { code, days },
+    });
+    return toCamelCase<DailyKlineResponse>(response.data);
   },
 };
