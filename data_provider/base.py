@@ -2545,6 +2545,7 @@ class DataFetcherManager:
                 primary_quote = None
                 primary_token = None
                 primary_src_index = -1
+                primary_fetcher_name = None
                 fallback_from = None
                 # Futu only participates when an OpenD endpoint is configured.
                 # Skipping an unconfigured source here (instead of letting
@@ -2590,6 +2591,7 @@ class DataFetcherManager:
                         primary_quote = quote
                         primary_token = self._realtime_fetcher_token(fetcher_name, **fetcher_kw)
                         primary_src_index = index
+                        primary_fetcher_name = fetcher_name
                         logger.info("[实时行情] 港股 %s 成功获取 (来源: %s)", stock_code, fetcher_name)
                         break
                     # 该源失败：记住它的 token，供后续成功源作为 fallback_from 使用。
@@ -2599,13 +2601,14 @@ class DataFetcherManager:
                     # 用后续数据源补充缺失字段（volume_ratio / turnover_rate / 估值 / 市值）。
                     # 注意：港股 yfinance 主源（fast_info）本就没有量比/换手率/估值字段，
                     # 补字段会按优先级再调 akshare（东财限流时 60s+ 且反复触发封禁），
-                    # 对估值/筹码阶段得不偿失，因此离岸市场（港/美/日/韩/台）跳过补字段。
-                    offshore_quote = is_hk or is_us or is_jp or is_kr
+                    # 得不偿失，因此 yfinance 主源时跳过补字段；
+                    # futu/longbridge 主源（真实 OHLC quote）仍允许 akshare 补换手率。
+                    yfinance_primary = primary_fetcher_name == "YfinanceFetcher"
                     for source in hk_priority[primary_src_index + 1:]:
                         mapped = source_map.get(source)
                         if mapped is None:
                             continue
-                        if offshore_quote:
+                        if yfinance_primary:
                             break
                         if not self._quote_needs_supplement(primary_quote):
                             break
