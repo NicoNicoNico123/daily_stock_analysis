@@ -53,14 +53,41 @@ export interface LineDatum {
 }
 
 export interface ForecastCone {
-  /** 乐观路径：最后一根收盘价 -> 止盈位 */
+  /** 乐观路径：最后一根收盘价 -> 止盈位（含起点，便于与 K 线衔接） */
   bull: LineDatum[];
-  /** 悲观路径：最后一根收盘价 -> 止损位 */
+  /** 悲观路径：最后一根收盘价 -> 止损位（含起点） */
   bear: LineDatum[];
 }
 
 /** 走勢預測覆蓋的日曆天數 */
 export const FORECAST_CALENDAR_DAYS = 10;
+
+/** 日 K 拉取上限，与 GET /api/v1/data/daily-kline 的 days 上限对齐 */
+export const KLINE_FETCH_DAYS = 250;
+
+export const CHART_RANGE_DAYS = [60, 120, 250] as const;
+export type ChartRangeDays = (typeof CHART_RANGE_DAYS)[number];
+
+export const MA_PERIODS = [5, 10, 20] as const;
+export type MaPeriod = (typeof MA_PERIODS)[number];
+
+export interface OhlcHud {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  changePct: number | null;
+}
+
+export type TradeMarkerKey = PriceLevelKey | 'analysisDate';
+
+export interface TradeMarkerSpec {
+  time: string;
+  position: 'belowBar' | 'aboveBar' | 'inBar';
+  shape: 'arrowUp' | 'arrowDown' | 'circle';
+  key: TradeMarkerKey;
+}
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -249,11 +276,16 @@ const buildPath = (
   return path;
 };
 
+const originPoint = (date: string, value: number): LineDatum => ({
+  time: date,
+  value: Number(value.toFixed(4)),
+});
+
 /**
  * 从最后一根收盘价出发，生成未来 N 个日历日的乐观/悲观预测路径。
  *
- * 两条路径都以最后一根 K 线为起点，终点分别是止盈位与止损位；
- * 偏多时乐观路径略加斜率（视觉上让预测锥向上倾斜），纯属示意。
+ * 两条路径都以最后一根 K 线为起点（含当日收盘，便于与蜡烛衔接），
+ * 终点分别是止盈位与止损位；偏多时乐观路径略加斜率，纯属示意。
  */
 export const buildForecastCone = ({
   lastDate,
@@ -273,11 +305,157 @@ export const buildForecastCone = ({
   const bearEnd = stop === null ? lastClose : stop;
   // 偏多时把乐观路径终点略微抬高（约 5%），让预测锥呈现向上倾斜的示意
   const biasMultiplier = upwardBias && target !== null && target > lastClose ? 1.05 : 1;
+  const origin = originPoint(lastDate, lastClose);
 
   return {
-    bull: buildPath(lastDate, lastClose, Number((bullEnd * biasMultiplier).toFixed(4)), calendarDays),
-    bear: buildPath(lastDate, lastClose, bearEnd, calendarDays),
+    bull: [origin, ...buildPath(lastDate, lastClose, Number((bullEnd * biasMultiplier).toFixed(4)), calendarDays)],
+    bear: [origin, ...buildPath(lastDate, lastClose, bearEnd, calendarDays)],
   };
+};
+
+/**
+ * 分析师预测主线：连接最后收盘价与策略目标（止盈优先，否则止损）。
+ * 与预测锥分离，便于在图上用实线强调“分析给出的价格路径”。
+ */
+export const buildAnalystForecastLine = ({
+  lastDate,
+  lastClose,
+  takeProfit,
+  stopLoss,
+  upwardBias = false,
+  calendarDays = FORECAST_CALENDAR_DAYS,
+}: ForecastConeParams): LineDatum[] => {
+  if (!DATE_PATTERN.test(lastDate) || !Number.isFinite(lastClose)) {
+    return [];
+  }
+
+  const target = parseLevelValue(takeProfit);
+  const stop = parseLevelValue(stopLoss);
+  let end: number | null = null;
+  if (upwardBias && target !== null) {
+    end = target;
+  } else if (!upwardBias && stop !== null && target === null) {
+    end = stop;
+  } else if (target !== null && stop !== null) {
+    end = upwardBias ? target : Number(((target + stop) / 2).toFixed(4));
+  } else if (target !== null) {
+    end = target;
+  } else if (stop !== null) {
+    end = stop;
+  }
+
+  if (end === null) {
+    return [];
+  }
+
+  return [originPoint(lastDate, lastClose), ...buildPath(lastDate, lastClose, end, calendarDays)];
+};
+
+/** 简单收盘价均线；长度不足时返回空数组。 */
+export const buildMovingAverage = (candles: CandlestickDatum[], period: number): LineDatum[] => {
+  if (period <= 0 || candles.length < period) {
+    return [];
+  }
+
+  const line: LineDatum[] = [];
+  let windowSum = 0;
+  candles.forEach((candle, index) => {
+    windowSum += candle.close;
+    if (index >= period) {
+      windowSum -= candles[index - period].close;
+    }
+    if (index >= period - 1) {
+      line.push({
+        time: candle.time,
+        value: Number((windowSum / period).toFixed(4)),
+      });
+    }
+  });
+  return line;
+};
+
+/** 取序列末尾 N 条（区间切换用，不重新请求）。 */
+export const sliceLatest = <T>(items: T[], count: number): T[] => {
+  if (count <= 0 || items.length <= count) {
+    return items;
+  }
+  return items.slice(items.length - count);
+};
+
+/** 保留 time >= startTime 的点（均线按全样本计算后再裁到可见区间）。 */
+export const filterFromTime = <T extends { time: string }>(items: T[], startTime?: string | null): T[] => {
+  if (!startTime) {
+    return items;
+  }
+  return items.filter((item) => item.time >= startTime);
+};
+
+export const buildOhlcHud = (
+  candle: CandlestickDatum,
+  previousClose?: number | null,
+): OhlcHud => {
+  const changePct = (
+    previousClose
+    && Number.isFinite(previousClose)
+    && previousClose !== 0
+  )
+    ? Number((((candle.close - previousClose) / previousClose) * 100).toFixed(2))
+    : null;
+
+  return {
+    time: candle.time,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    changePct,
+  };
+};
+
+/**
+ * 在最后一根 K 线上放置买卖箭头：理想买入口在下方，止盈/卖出价在上方。
+ * 没有策略点位时返回空，由调用方回退到分析日圆点。
+ */
+export const buildTradeMarkers = (
+  lastTime: string,
+  levels: ParsedPriceChartLevels,
+): TradeMarkerSpec[] => {
+  if (!DATE_PATTERN.test(lastTime)) {
+    return [];
+  }
+
+  const markers: TradeMarkerSpec[] = [];
+  if (levels.idealBuy !== null) {
+    markers.push({
+      time: lastTime,
+      position: 'belowBar',
+      shape: 'arrowUp',
+      key: 'idealBuy',
+    });
+  } else if (levels.secondaryBuy !== null) {
+    markers.push({
+      time: lastTime,
+      position: 'belowBar',
+      shape: 'circle',
+      key: 'secondaryBuy',
+    });
+  }
+  if (levels.takeProfit !== null) {
+    markers.push({
+      time: lastTime,
+      position: 'aboveBar',
+      shape: 'arrowDown',
+      key: 'takeProfit',
+    });
+  } else if (levels.stopLoss !== null) {
+    markers.push({
+      time: lastTime,
+      position: 'aboveBar',
+      shape: 'arrowDown',
+      key: 'stopLoss',
+    });
+  }
+  return markers;
 };
 
 /** 未来预测路径的最后一个日期（用于让时间轴预留空间）。 */

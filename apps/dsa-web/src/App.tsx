@@ -25,6 +25,7 @@ const TokenUsagePage = lazy(() => import('./pages/TokenUsagePage'));
 const StockScreeningPage = lazy(() => import('./pages/StockScreeningPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
+const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallbackPage'));
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -53,6 +54,15 @@ const AppContent: React.FC = () => {
           {t('common.retry')}
         </button>
       </div>
+    );
+  }
+
+  // OAuth 回调落地页：无论当前是否已登录都可达（后端已在此前设置会话 cookie）
+  if (location.pathname === '/oauth/callback') {
+    return (
+      <StandaloneRouteBoundary>
+        <OAuthCallbackPage />
+      </StandaloneRouteBoundary>
     );
   }
 

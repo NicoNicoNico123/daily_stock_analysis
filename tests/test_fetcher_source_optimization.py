@@ -106,6 +106,7 @@ class TestFetcherSourceOptimization(unittest.TestCase):
             longbridge_app_secret="",
             longbridge_access_token="",
             longbridge_oauth_client_id="",
+            tvscreener_enabled=False,
         )
 
         with patch.dict(
@@ -202,6 +203,7 @@ class TestFetcherSourceOptimization(unittest.TestCase):
             longbridge_app_secret="",
             longbridge_access_token="",
             longbridge_oauth_client_id="client-1",
+            tvscreener_enabled=False,
         )
 
         with patch("data_provider.efinance_fetcher.EfinanceFetcher", return_value=_StubFetcher("EfinanceFetcher", 0)), patch(

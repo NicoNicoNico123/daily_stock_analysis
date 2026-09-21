@@ -8,15 +8,26 @@ import { ApiErrorAlert, Card } from '../common';
 import { DashboardPanelHeader, DashboardStateBlock } from '../dashboard';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import {
+  buildAnalystForecastLine,
   buildCandlesticks,
   buildForecastCone,
   buildLevelLines,
+  buildMovingAverage,
+  buildOhlcHud,
+  buildTradeMarkers,
   buildVolumeHistogram,
+  CHART_RANGE_DAYS,
+  filterFromTime,
   isUpwardBias,
+  KLINE_FETCH_DAYS,
   parseLevels,
+  sliceLatest,
   type CandlestickDatum,
+  type ChartRangeDays,
   type LineDatum,
+  type OhlcHud,
   type PriceLevelLine,
+  type TradeMarkerSpec,
 } from '../../utils/priceChart';
 
 /** 策略点位：报告详情中的结构化字段（后端以字符串落库，数值或字符串均可解析） */
@@ -34,11 +45,10 @@ interface PriceChartPanelProps {
   levels?: PriceChartLevelValues | null;
   /** 趋势预测文本（仅用于预测锥的视觉倾向） */
   trendPrediction?: string | null;
-  /** 日线天数（默认 120） */
+  /** 日线拉取天数（默认 250，与后端上限对齐；可见区间可再裁切） */
   days?: number;
 }
 
-/** 主题感知的图表配色（全部来自 CSS tokens，带兜底色） */
 interface ChartPalette {
   up: string;
   down: string;
@@ -48,10 +58,40 @@ interface ChartPalette {
   levels: Record<PriceLevelLine['key'], string>;
   bull: string;
   bear: string;
+  analyst: string;
+  ma5: string;
+  ma10: string;
+  ma20: string;
 }
 
-/** CSS token 不可用时的兜底色（深色 / 浅色各一套） */
-const FALLBACK_COLORS: Record<'dark' | 'light', Omit<ChartPalette, 'levels' | 'bull' | 'bear'> & Record<PriceLevelLine['key'], string>> = {
+type MaVisibility = {
+  ma5: boolean;
+  ma10: boolean;
+  ma20: boolean;
+};
+
+type FallbackSwatch = {
+  up: string;
+  down: string;
+  text: string;
+  grid: string;
+  border: string;
+  idealBuy: string;
+  secondaryBuy: string;
+  stopLoss: string;
+  takeProfit: string;
+  ma5: string;
+  ma10: string;
+  ma20: string;
+};
+
+const RANGE_LABEL_KEYS: Record<ChartRangeDays, 'report.priceChartRange60' | 'report.priceChartRange120' | 'report.priceChartRange250'> = {
+  60: 'report.priceChartRange60',
+  120: 'report.priceChartRange120',
+  250: 'report.priceChartRange250',
+};
+
+const FALLBACK_COLORS: Record<'dark' | 'light', FallbackSwatch> = {
   dark: {
     up: '#ef4444',
     down: '#22c55e',
@@ -62,6 +102,9 @@ const FALLBACK_COLORS: Record<'dark' | 'light', Omit<ChartPalette, 'levels' | 'b
     secondaryBuy: '#06b6d4',
     stopLoss: '#f43f5e',
     takeProfit: '#eab308',
+    ma5: '#f59e0b',
+    ma10: '#38bdf8',
+    ma20: '#c084fc',
   },
   light: {
     up: '#dc2626',
@@ -73,12 +116,39 @@ const FALLBACK_COLORS: Record<'dark' | 'light', Omit<ChartPalette, 'levels' | 'b
     secondaryBuy: '#0891b2',
     stopLoss: '#e11d48',
     takeProfit: '#ca8a04',
+    ma5: '#d97706',
+    ma10: '#0284c7',
+    ma20: '#7c3aed',
   },
 };
+
+const EMPTY_CONE: { bull: LineDatum[]; bear: LineDatum[] } = { bull: [], bear: [] };
+const DEFAULT_MA: MaVisibility = { ma5: true, ma10: true, ma20: true };
+const CHART_HEIGHT_FALLBACK = 460;
 
 const readCssVar = (element: HTMLElement, name: string, fallback: string): string => {
   const value = window.getComputedStyle(element).getPropertyValue(name).trim();
   return value || fallback;
+};
+
+const withAlpha = (color: string, alpha: number): string => {
+  const hslMatch = color.match(/^hsla?\((.+)\)$/i);
+  if (hslMatch) {
+    const inner = hslMatch[1].trim();
+    if (inner.includes('/')) {
+      return `hsl(${inner.replace(/\/\s*[\d.]+\s*%?\s*$/, `/ ${alpha}`)})`;
+    }
+    return `hsl(${inner} / ${alpha})`;
+  }
+  const hex = color.match(/^#([0-9a-f]{6})$/i);
+  if (hex) {
+    const value = Number.parseInt(hex[1], 16);
+    const red = (value >> 16) & 255;
+    const green = (value >> 8) & 255;
+    const blue = value & 255;
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+  }
+  return color;
 };
 
 const buildPalette = (container: HTMLElement, theme: 'dark' | 'light'): ChartPalette => {
@@ -91,8 +161,6 @@ const buildPalette = (container: HTMLElement, theme: 'dark' | 'light'): ChartPal
   };
 
   return {
-    // 本项目沿用 A 股配色习惯：--home-price-up 为涨、--home-price-down 为跌，
-    // 与报告页其它价格数字的颜色语义保持一致。
     up: readCssVar(container, '--home-price-up', fallback.up),
     down: readCssVar(container, '--home-price-down', fallback.down),
     text: readCssVar(container, '--text-secondary-text', fallback.text),
@@ -101,31 +169,59 @@ const buildPalette = (container: HTMLElement, theme: 'dark' | 'light'): ChartPal
     levels,
     bull: levels.idealBuy,
     bear: levels.stopLoss,
+    analyst: levels.takeProfit,
+    ma5: fallback.ma5,
+    ma10: fallback.ma10,
+    ma20: fallback.ma20,
   };
 };
 
-const EMPTY_CONE: { bull: LineDatum[]; bear: LineDatum[] } = { bull: [], bear: [] };
-
 interface LevelChipProps {
   label: string;
-  colorVar: string;
-  value: number | null;
+  colorVar?: string;
+  color?: string;
+  value?: number | null;
+  dashed?: boolean;
 }
 
-const LevelChip: React.FC<LevelChipProps> = ({ label, colorVar, value }) => (
+const LevelChip: React.FC<LevelChipProps> = ({ label, colorVar, color, value, dashed = false }) => (
   <span className="home-accent-chip inline-flex items-center gap-1.5 px-2 py-0.5 text-xs text-muted-text">
     <span
       aria-hidden="true"
-      className="h-1.5 w-1.5 shrink-0 rounded-full"
-      style={{ background: `var(${colorVar})`, boxShadow: `0 0 8px var(${colorVar})` }}
+      className={`h-1.5 w-1.5 shrink-0 rounded-full ${dashed ? 'opacity-80' : ''}`}
+      style={{
+        background: color || `var(${colorVar})`,
+        boxShadow: `0 0 8px ${color || `var(${colorVar})`}`,
+      }}
     />
     {label}
-    {value !== null ? <span className="font-mono">{value.toFixed(2)}</span> : null}
+    {value !== null && value !== undefined ? <span className="font-mono">{value.toFixed(2)}</span> : null}
   </span>
 );
 
+const ToolbarButton: React.FC<{
+  pressed: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  tone?: string;
+}> = ({ pressed, onClick, children, tone }) => (
+  <button
+    type="button"
+    aria-pressed={pressed}
+    onClick={onClick}
+    className={`tv-desk-tool ${pressed ? 'is-active' : ''}`}
+    style={tone ? { ['--tv-tool-tone' as string]: tone } : undefined}
+  >
+    {children}
+  </button>
+);
+
+const formatHudPrice = (value: number): string => (
+  Number.isInteger(value) ? value.toFixed(2) : value.toFixed(value < 10 ? 3 : 2)
+);
+
 /**
- * 报告页 K 线图面板（lightweight-charts v5）。
+ * 报告页交易台式 K 线图（lightweight-charts v5）。
  *
  * 图表库按需异步加载：加载或渲染失败时降级为最近收盘价摘要，
  * 任何图表异常都不会影响报告页其它区块。
@@ -134,7 +230,7 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
   code,
   levels,
   trendPrediction,
-  days = 120,
+  days = KLINE_FETCH_DAYS,
 }) => {
   const { t } = useUiLanguage();
   const { resolvedTheme } = useTheme();
@@ -143,6 +239,9 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ParsedApiError | null>(null);
   const [renderFailed, setRenderFailed] = useState(false);
+  const [rangeDays, setRangeDays] = useState<ChartRangeDays>(120);
+  const [showMa, setShowMa] = useState<MaVisibility>(DEFAULT_MA);
+  const [hoverHud, setHoverHud] = useState<OhlcHud | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -166,6 +265,7 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
     setPoints([]);
     setError(null);
     setRenderFailed(false);
+    setHoverHud(null);
 
     if (code) {
       void fetchKline();
@@ -174,27 +274,69 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
 
   const parsedLevels = useMemo(() => parseLevels(levels ?? {}), [levels]);
   const candles = useMemo<CandlestickDatum[]>(() => buildCandlesticks(points), [points]);
+  const visibleCandles = useMemo(() => sliceLatest(candles, rangeDays), [candles, rangeDays]);
+  const visibleStart = visibleCandles[0]?.time;
   const levelLines = useMemo<PriceLevelLine[]>(() => buildLevelLines(parsedLevels), [parsedLevels]);
   const upwardBias = useMemo(() => isUpwardBias(trendPrediction), [trendPrediction]);
+  const lastCandle = visibleCandles[visibleCandles.length - 1];
+  const previousClose = visibleCandles.length > 1
+    ? visibleCandles[visibleCandles.length - 2].close
+    : candles.length > 1
+      ? candles[candles.length - 2].close
+      : null;
+
   const cone = useMemo(() => {
-    const last = candles[candles.length - 1];
-    if (!last) {
+    if (!lastCandle) {
       return EMPTY_CONE;
     }
     return buildForecastCone({
-      lastDate: last.time,
-      lastClose: last.close,
+      lastDate: lastCandle.time,
+      lastClose: lastCandle.close,
       takeProfit: parsedLevels.takeProfit,
       stopLoss: parsedLevels.stopLoss,
       upwardBias,
     });
-  }, [candles, parsedLevels.stopLoss, parsedLevels.takeProfit, upwardBias]);
+  }, [lastCandle, parsedLevels.stopLoss, parsedLevels.takeProfit, upwardBias]);
 
-  const hasData = candles.length > 0;
+  const analystLine = useMemo(() => {
+    if (!lastCandle) {
+      return [] as LineDatum[];
+    }
+    return buildAnalystForecastLine({
+      lastDate: lastCandle.time,
+      lastClose: lastCandle.close,
+      takeProfit: parsedLevels.takeProfit,
+      stopLoss: parsedLevels.stopLoss,
+      upwardBias,
+    });
+  }, [lastCandle, parsedLevels.stopLoss, parsedLevels.takeProfit, upwardBias]);
+
+  const maLines = useMemo(() => ({
+    ma5: filterFromTime(buildMovingAverage(candles, 5), visibleStart),
+    ma10: filterFromTime(buildMovingAverage(candles, 10), visibleStart),
+    ma20: filterFromTime(buildMovingAverage(candles, 20), visibleStart),
+  }), [candles, visibleStart]);
+
+  const tradeMarkers = useMemo<TradeMarkerSpec[]>(
+    () => (lastCandle ? buildTradeMarkers(lastCandle.time, parsedLevels) : []),
+    [lastCandle, parsedLevels],
+  );
+
+  const lastHud = useMemo(
+    () => (lastCandle ? buildOhlcHud(lastCandle, previousClose) : null),
+    [lastCandle, previousClose],
+  );
+  const hud = hoverHud ?? lastHud;
+
+  const hasData = visibleCandles.length > 0;
   const theme = resolvedTheme === 'light' ? 'light' : 'dark';
+  const visiblePoints = useMemo(() => {
+    if (!visibleStart) {
+      return points;
+    }
+    return points.filter((point) => typeof point.date === 'string' && point.date >= visibleStart);
+  }, [points, visibleStart]);
 
-  // 图表渲染：异步加载 lightweight-charts，所有副作用在 try/catch 内兜底；
-  // 依赖中的 theme 用于主题切换时重建图表以同步 CSS token 配色。
   useEffect(() => {
     if (!hasData || renderFailed) {
       return;
@@ -224,25 +366,46 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
         }
 
         const palette = buildPalette(containerRef.current, theme);
-
         const chart = createChart(container, {
           width: container.clientWidth || undefined,
-          height: 360,
+          height: container.clientHeight || CHART_HEIGHT_FALLBACK,
           layout: {
             background: { type: ColorType.Solid, color: 'transparent' },
             textColor: palette.text,
             attributionLogo: false,
+            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
           },
           grid: {
-            vertLines: { color: palette.grid },
-            horzLines: { color: palette.grid },
+            vertLines: { color: withAlpha(palette.grid, 0.55) },
+            horzLines: { color: withAlpha(palette.grid, 0.55) },
           },
-          rightPriceScale: { borderColor: palette.border },
-          timeScale: { borderColor: palette.border, rightOffset: 3, barSpacing: 6 },
-          crosshair: { mode: CrosshairMode.Normal },
+          rightPriceScale: {
+            borderColor: palette.border,
+            scaleMargins: { top: 0.08, bottom: 0.22 },
+          },
+          timeScale: {
+            borderColor: palette.border,
+            rightOffset: 14,
+            barSpacing: 7,
+            minBarSpacing: 4,
+          },
+          crosshair: {
+            mode: CrosshairMode.MagnetOHLC,
+            vertLine: {
+              color: withAlpha(palette.text, 0.45),
+              width: 1,
+              style: LineStyle.Dashed,
+              labelBackgroundColor: palette.border,
+            },
+            horzLine: {
+              color: withAlpha(palette.text, 0.45),
+              width: 1,
+              style: LineStyle.Dashed,
+              labelBackgroundColor: palette.border,
+            },
+          },
         });
         if (cancelled) {
-          // 依赖已在异步加载期间变化（如快速切换报告）：立即释放，避免残留画布
           chart.remove();
           return;
         }
@@ -255,9 +418,8 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
           wickUpColor: palette.up,
           wickDownColor: palette.down,
         });
-        candleSeries.setData(candles);
+        candleSeries.setData(visibleCandles);
 
-        // 成交量：独立 overlay 价格刻度，压缩在图表底部 18%
         const volumeSeries = chart.addSeries(HistogramSeries, {
           priceFormat: { type: 'volume' },
           priceScaleId: 'volume',
@@ -266,10 +428,29 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
         });
         volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
         volumeSeries.setData(
-          buildVolumeHistogram(points, { up: palette.up, down: palette.down }),
+          buildVolumeHistogram(visiblePoints, { up: withAlpha(palette.up, 0.55), down: withAlpha(palette.down, 0.55) }),
         );
 
-        // 策略点位线：仅绘制非空点位，标题跟随界面语言
+        const overlayLine = {
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        } as const;
+
+        const addMa = (data: LineDatum[], color: string) => {
+          if (data.length === 0) {
+            return;
+          }
+          chart.addSeries(LineSeries, {
+            ...overlayLine,
+            color,
+            lineWidth: 1,
+          }).setData(data);
+        };
+        if (showMa.ma5) addMa(maLines.ma5, palette.ma5);
+        if (showMa.ma10) addMa(maLines.ma10, palette.ma10);
+        if (showMa.ma20) addMa(maLines.ma20, palette.ma20);
+
         const levelTitles: Record<PriceLevelLine['key'], string> = {
           idealBuy: t('report.priceChartLevelBuy'),
           secondaryBuy: t('report.priceChartLevelSecondary'),
@@ -280,51 +461,99 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
           candleSeries.createPriceLine({
             price: line.price,
             color: palette.levels[line.key],
-            lineWidth: 1,
+            lineWidth: line.key === 'idealBuy' || line.key === 'takeProfit' ? 2 : 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
             title: levelTitles[line.key],
           });
         });
 
-        // 走勢預測示意：从最后一根收盘价出发的乐观 / 悲观路径（预测锥）
         const forecastOptions = {
+          ...overlayLine,
           lineWidth: 1 as const,
           lineStyle: LineStyle.LargeDashed,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
         };
         if (cone.bull.length > 0) {
-          chart
-            .addSeries(LineSeries, { ...forecastOptions, color: palette.bull })
-            .setData(cone.bull);
+          chart.addSeries(LineSeries, { ...forecastOptions, color: palette.bull }).setData(cone.bull);
         }
         if (cone.bear.length > 0) {
-          chart
-            .addSeries(LineSeries, { ...forecastOptions, color: palette.bear })
-            .setData(cone.bear);
+          chart.addSeries(LineSeries, { ...forecastOptions, color: palette.bear }).setData(cone.bear);
+        }
+        if (analystLine.length > 0) {
+          chart.addSeries(LineSeries, {
+            ...overlayLine,
+            color: palette.analyst,
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            lastValueVisible: true,
+            title: t('report.priceChartForecastAnalyst'),
+          }).setData(analystLine);
         }
 
-        // 分析日标记（最后一根 K 线）
-        const last = candles[candles.length - 1];
-        const markers = createSeriesMarkers(candleSeries, [
-          {
-            time: last.time,
-            position: 'belowBar',
-            shape: 'circle',
-            color: palette.text,
-            text: t('report.priceChartAnalysisDate'),
-            size: 1,
-          },
-        ]);
+        const markerColor: Record<TradeMarkerSpec['key'], string> = {
+          idealBuy: palette.levels.idealBuy,
+          secondaryBuy: palette.levels.secondaryBuy,
+          stopLoss: palette.levels.stopLoss,
+          takeProfit: palette.levels.takeProfit,
+          analysisDate: palette.text,
+        };
+        const markerText: Record<TradeMarkerSpec['key'], string> = {
+          idealBuy: t('report.priceChartBuyMarker'),
+          secondaryBuy: t('report.priceChartLevelSecondary'),
+          stopLoss: t('report.priceChartLevelStop'),
+          takeProfit: t('report.priceChartSellMarker'),
+          analysisDate: t('report.priceChartAnalysisDate'),
+        };
+        const markerPayload = tradeMarkers.length > 0
+          ? tradeMarkers.map((marker) => ({
+            time: marker.time,
+            position: marker.position,
+            shape: marker.shape,
+            color: markerColor[marker.key],
+            text: markerText[marker.key],
+            size: 2 as const,
+          }))
+          : lastCandle
+            ? [{
+              time: lastCandle.time,
+              position: 'belowBar' as const,
+              shape: 'circle' as const,
+              color: palette.text,
+              text: t('report.priceChartAnalysisDate'),
+              size: 1 as const,
+            }]
+            : [];
+        const markers = createSeriesMarkers(candleSeries, markerPayload);
+
+        const candleIndex = new Map(visibleCandles.map((candle, index) => [candle.time, index]));
+        chart.subscribeCrosshairMove((param) => {
+          const point = param.seriesData.get(candleSeries) as CandlestickDatum | undefined;
+          if (!point || typeof param.time !== 'string') {
+            setHoverHud(null);
+            return;
+          }
+          const index = candleIndex.get(param.time);
+          const previous = index !== undefined && index > 0 ? visibleCandles[index - 1].close : previousClose;
+          setHoverHud(buildOhlcHud({
+            time: param.time,
+            open: point.open,
+            high: point.high,
+            low: point.low,
+            close: point.close,
+          }, previous));
+        });
 
         chart.timeScale().fitContent();
 
         const resizeObserver = new ResizeObserver((entries) => {
-          const width = entries[0]?.contentRect.width;
-          if (typeof width === 'number' && width > 0) {
-            chart.applyOptions({ width: Math.floor(width) });
+          const rect = entries[0]?.contentRect;
+          if (!rect) {
+            return;
+          }
+          const nextWidth = Math.floor(rect.width);
+          const nextHeight = Math.floor(rect.height);
+          if (nextWidth > 0 && nextHeight > 0) {
+            chart.applyOptions({ width: nextWidth, height: nextHeight });
           }
         });
         resizeObserver.observe(container);
@@ -349,12 +578,28 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
       teardown?.();
       teardown = null;
     };
-  }, [candles, cone, hasData, levelLines, points, renderFailed, t, theme]);
+  }, [
+    analystLine,
+    cone,
+    hasData,
+    lastCandle,
+    levelLines,
+    maLines,
+    previousClose,
+    renderFailed,
+    showMa,
+    t,
+    theme,
+    tradeMarkers,
+    visibleCandles,
+    visiblePoints,
+  ]);
 
   if (!code) {
     return null;
   }
 
+  const hudUp = hud?.changePct !== null && hud?.changePct !== undefined && hud.changePct >= 0;
   const levelChips: Array<{
     key: PriceLevelLine['key'];
     label: string;
@@ -388,12 +633,23 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
   ];
 
   return (
-    <Card variant="bordered" padding="md" className="home-panel-card">
+    <Card variant="bordered" padding="md" className="home-panel-card tv-desk">
       <DashboardPanelHeader
         eyebrow={t('report.priceChartTitle')}
-        title={t('report.priceChartRange', { days })}
+        title={t('report.priceChartRange', { days: rangeDays })}
         actions={(
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="tv-desk-tools" role="group" aria-label={t('report.priceChartTitle')}>
+              {CHART_RANGE_DAYS.map((daysOption) => (
+                <ToolbarButton
+                  key={daysOption}
+                  pressed={rangeDays === daysOption}
+                  onClick={() => setRangeDays(daysOption)}
+                >
+                  {t(RANGE_LABEL_KEYS[daysOption])}
+                </ToolbarButton>
+              ))}
+            </div>
             {isLoading ? (
               <div className="home-spinner h-3.5 w-3.5 animate-spin border-2" aria-hidden="true" />
             ) : null}
@@ -408,19 +664,61 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
         )}
       />
 
+      {hud ? (
+        <div
+          data-testid="price-chart-hud"
+          className="tv-desk-hud mb-3 font-mono text-xs"
+        >
+          <span className="tv-desk-hud-time">{hud.time}</span>
+          <span><em>{t('report.priceChartHudOpen')}</em> {formatHudPrice(hud.open)}</span>
+          <span><em>{t('report.priceChartHudHigh')}</em> {formatHudPrice(hud.high)}</span>
+          <span><em>{t('report.priceChartHudLow')}</em> {formatHudPrice(hud.low)}</span>
+          <span className={hudUp ? 'is-up' : 'is-down'}>
+            <em>{t('report.priceChartHudClose')}</em> {formatHudPrice(hud.close)}
+            {hud.changePct !== null ? ` ${hud.changePct >= 0 ? '+' : ''}${hud.changePct.toFixed(2)}%` : ''}
+          </span>
+        </div>
+      ) : null}
+
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="tv-desk-tools" role="group" aria-label={t('report.priceChartMa5')}>
+          <ToolbarButton
+            pressed={showMa.ma5}
+            tone={FALLBACK_COLORS[theme].ma5}
+            onClick={() => setShowMa((current) => ({ ...current, ma5: !current.ma5 }))}
+          >
+            {t('report.priceChartMa5')}
+          </ToolbarButton>
+          <ToolbarButton
+            pressed={showMa.ma10}
+            tone={FALLBACK_COLORS[theme].ma10}
+            onClick={() => setShowMa((current) => ({ ...current, ma10: !current.ma10 }))}
+          >
+            {t('report.priceChartMa10')}
+          </ToolbarButton>
+          <ToolbarButton
+            pressed={showMa.ma20}
+            tone={FALLBACK_COLORS[theme].ma20}
+            onClick={() => setShowMa((current) => ({ ...current, ma20: !current.ma20 }))}
+          >
+            {t('report.priceChartMa20')}
+          </ToolbarButton>
+        </div>
         {levelChips.map((chip) => (
-          <LevelChip key={chip.key} label={chip.label} colorVar={chip.colorVar} value={chip.value} />
+          <LevelChip key={chip.key} label={chip.label} colorVar={chip.colorVar} value={chip.value} dashed />
         ))}
-        <span className="home-accent-chip inline-flex items-center gap-1.5 px-2 py-0.5 text-xs text-muted-text">
-          <span
-            aria-hidden="true"
-            className="h-1.5 w-1.5 shrink-0 rounded-full"
-            style={{ background: 'var(--home-strategy-take)', boxShadow: '0 0 8px var(--home-strategy-take)' }}
-          />
-          {t('report.priceChartForecast')}
-        </span>
+        <LevelChip
+          label={t('report.priceChartForecastAnalyst')}
+          colorVar="--home-strategy-take"
+        />
+        <LevelChip
+          label={t('report.priceChartForecast')}
+          colorVar="--home-strategy-buy"
+          dashed
+        />
       </div>
+
+      <p className="mb-3 text-[11px] leading-5 text-muted-text">{t('report.priceChartHint')}</p>
 
       {error && !isLoading ? (
         <ApiErrorAlert
@@ -449,19 +747,21 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
           <p className="text-xs text-muted-text">
             {t('report.priceChartRecentCloses')}:{' '}
             <span className="font-mono">
-              {candles.slice(-5).map((candle) => candle.close.toFixed(2)).join(' · ')}
+              {visibleCandles.slice(-5).map((candle) => candle.close.toFixed(2)).join(' · ')}
             </span>
           </p>
         </div>
       ) : null}
 
       {!isLoading && !error && hasData && !renderFailed ? (
-        <div
-          ref={containerRef}
-          className="h-[360px] w-full"
-          role="img"
-          aria-label={t('report.priceChartTitle')}
-        />
+        <div className="tv-desk-frame">
+          <div
+            ref={containerRef}
+            className="tv-desk-canvas h-[22.5rem] w-full md:h-[28.75rem]"
+            role="img"
+            aria-label={t('report.priceChartTitle')}
+          />
+        </div>
       ) : null}
     </Card>
   );

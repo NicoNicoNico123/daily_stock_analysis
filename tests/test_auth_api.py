@@ -28,6 +28,8 @@ from src.config import Config
 
 def _reset_auth_globals() -> None:
     auth._auth_enabled = None
+    auth._multi_user_enabled = None
+    auth._registration_enabled = None
     auth._session_secret = None
     auth._password_hash_salt = None
     auth._password_hash_stored = None

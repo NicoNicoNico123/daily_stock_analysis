@@ -20,6 +20,12 @@ EXEMPT_PATHS = frozenset({
     "/api/v1/auth/login",
     "/api/v1/auth/register",
     "/api/v1/auth/status",
+    # 邮箱验证链接与 OAuth 授权/回调必须在未登录状态可达（回调自身校验一次性 state）
+    "/api/v1/auth/verify-email",
+    "/api/v1/auth/oauth/google/authorize",
+    "/api/v1/auth/oauth/google/callback",
+    "/api/v1/auth/oauth/facebook/authorize",
+    "/api/v1/auth/oauth/facebook/callback",
     "/api/health",
     "/api/v1/health",
     "/health",

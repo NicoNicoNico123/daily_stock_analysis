@@ -225,11 +225,41 @@ Full environment variables, model routing, notification channels, data-source pr
 The Web workspace supports settings, task monitoring, manual analysis, history reports, full Markdown reports, Agent strategy chat, backtest, portfolio management, smart import, and light/dark themes.
 
 ```bash
-python main.py --webui
-python main.py --webui-only
+python main.py --serve-only
 ```
 
 Visit `http://127.0.0.1:8000`. Authentication, smart import, autocomplete, report copying, and cloud-server access are documented in [Local WebUI Management](./full-guide_EN.md#local-webui-management-interface).
+
+### Local preview: admin and test user
+
+Login page: `http://127.0.0.1:8000/login`. The repo **does not ship a default password**. The table below is a local-preview example that you must set on your machine before signing in. **Do not use it on a public host or commit it.**
+
+| Role | Username | Password (local example, min 6 chars) | How to apply |
+|------|----------|----------------------------------------|--------------|
+| Admin | `admin` | `dsa-admin-local` | `python -m src.auth reset_password`, then enter this password |
+| Test user | `testuser` | `dsa-user-local` | After signing in as `admin`, create a `user` role account on **Users** (`/users`) |
+
+1. Set these in `.env` (restart if the server is already running):
+
+```bash
+ADMIN_AUTH_ENABLED=true
+MULTI_USER_ENABLED=true
+```
+
+2. Set the admin password and start the server:
+
+```bash
+python -m src.auth reset_password
+python main.py --serve-only
+```
+
+If you already had a single-user admin password, enabling multi-user migrates it into `admin`; skip `reset_password` and use that existing password.
+
+3. Open `http://127.0.0.1:8000/login` with the **admin** row above.
+4. Open `/users` and create the **test user** from the table.
+5. Sign out from the sidebar user menu, then sign in as `testuser` to preview the non-admin workspace (no Users page, no global system settings; watchlist / history / Chat are isolated).
+
+To reset the admin password, run `python -m src.auth reset_password` again. Isolation, open registration, and quotas are in [Multi-User Mode](./full-guide_EN.md#multi-user-mode-experimental).
 
 ## 🤖 Agent Strategy Chat
 

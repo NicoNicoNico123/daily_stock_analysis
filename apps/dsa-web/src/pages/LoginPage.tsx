@@ -10,9 +10,28 @@ import { isParsedApiError } from '../api/error';
 import { useAuth } from '../hooks';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import { SettingsAlert } from '../components/settings';
+import { OAuthButtons, OAuthDivider } from '../components/auth/OAuthButtons';
+import type { UiTextKey } from '../i18n/uiText';
+
+// 与后端 oauth.py 的错误码保持一致；未知码回退到通用文案（不回显原始 key）
+const OAUTH_ERROR_KEYS = [
+  'oauth_disabled',
+  'not_configured',
+  'state_unavailable',
+  'state_invalid',
+  'code_missing',
+  'token_exchange_failed',
+  'provider_error',
+  'email_missing',
+  'registration_disabled',
+  'quota_exceeded',
+  'storage_error',
+  'user_inactive',
+  'session_failed',
+] as const;
 
 const LoginPage: React.FC = () => {
-  const { login, passwordSet, setupState, multiUser, registrationEnabled } = useAuth();
+  const { login, passwordSet, setupState, multiUser, oauthProviders, registrationEnabled } = useAuth();
   const { t } = useUiLanguage();
   const navigate = useNavigate();
 
@@ -24,6 +43,15 @@ const LoginPage: React.FC = () => {
   const rawRedirect = searchParams.get('redirect') ?? '';
   const redirect =
     rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/';
+  // OAuth 回调失败时后端 302 回 /login?oauthError=<code>
+  const oauthError = searchParams.get('oauthError') ?? '';
+  const oauthErrorText: string = OAUTH_ERROR_KEYS.includes(
+    oauthError as (typeof OAUTH_ERROR_KEYS)[number]
+  )
+    ? t(`auth.oauthError.${oauthError}` as UiTextKey)
+    : oauthError
+      ? t('auth.oauthFailed')
+      : '';
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -195,6 +223,22 @@ const LoginPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
+              {isMultiUser && oauthProviders.length > 0 && (
+                <>
+                  <OAuthButtons providers={oauthProviders} />
+                  <OAuthDivider />
+                </>
+              )}
+
+              {oauthErrorText && (
+                <SettingsAlert
+                  title={t('auth.oauthFailed')}
+                  message={oauthErrorText}
+                  variant="error"
+                  className="!border-[var(--login-error-border)] !bg-[var(--login-error-bg)] !text-[var(--login-error-text)]"
+                />
+              )}
+
               <div className="space-y-4">
                 {isMultiUser && (
                   <Input

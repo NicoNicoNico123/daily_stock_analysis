@@ -25,6 +25,7 @@ from api.v1.endpoints import (
     history,
     intelligence,
     me,
+    oauth,
     portfolio,
     stocks,
     system_config,
@@ -38,6 +39,12 @@ router = APIRouter()
 router.include_router(
     auth.router,
     prefix="/auth",
+    tags=["Auth"]
+)
+
+router.include_router(
+    oauth.router,
+    prefix="/auth/oauth",
     tags=["Auth"]
 )
 

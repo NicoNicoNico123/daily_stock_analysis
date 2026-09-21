@@ -16,6 +16,8 @@ import src.auth as auth
 def _reset_auth_globals() -> None:
     """Reset auth module globals for test isolation."""
     auth._auth_enabled = None
+    auth._multi_user_enabled = None
+    auth._registration_enabled = None
     auth._session_secret = None
     auth._password_hash_salt = None
     auth._password_hash_stored = None
@@ -86,6 +88,10 @@ class AuthSessionTestCase(unittest.TestCase):
         with patch.object(auth, "_is_auth_enabled_from_env", return_value=auth_enabled):
             with patch.object(auth, "_get_data_dir", return_value=self.data_dir):
                 auth._auth_enabled = auth_enabled
+                # 本文件用例均为单管理员语义：显式固定多用户标志，避免开发机
+                # 真实 .env 的 MULTI_USER_ENABLED 泄漏进会话格式断言。
+                auth._multi_user_enabled = False
+                auth._registration_enabled = False
                 if test_fn:
                     return test_fn()
 
@@ -196,6 +202,10 @@ class AuthSetPasswordTestCase(unittest.TestCase):
         with patch.object(auth, "_is_auth_enabled_from_env", return_value=True):
             with patch.object(auth, "_get_data_dir", return_value=self.data_dir):
                 auth._auth_enabled = True
+                # 本文件的用例全部是单管理员语义：显式固定多用户标志，
+                # 避免开发机真实 .env 的 MULTI_USER_ENABLED 泄漏进会话格式断言。
+                auth._multi_user_enabled = False
+                auth._registration_enabled = False
                 return fn()
 
     def test_set_initial_password_success(self) -> None:

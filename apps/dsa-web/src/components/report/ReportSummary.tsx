@@ -11,6 +11,7 @@ import { MarketReviewReportView } from './MarketReviewReportView';
 import { getReportText } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { useReportTranslation } from '../../hooks/useReportTranslation';
+import { StaggerGroup, StaggerItem } from '../ui/motion';
 
 interface ReportSummaryProps {
   data: AnalysisResult | AnalysisReport;
@@ -99,50 +100,66 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
   }
 
   return (
-    <div className="space-y-5 pb-8 animate-fade-in">
+    <StaggerGroup className="space-y-5 pb-8" stagger={0.07}>
       {/* 概覽區（首屏） */}
-      <ReportOverview
-        meta={meta}
-        summary={localizedSummary}
-        details={details}
-        isHistory={isHistory}
-        watchlist={watchlist}
-      />
+      <StaggerItem>
+        <ReportOverview
+          meta={meta}
+          summary={localizedSummary}
+          details={details}
+          isHistory={isHistory}
+          watchlist={watchlist}
+        />
+      </StaggerItem>
+
+      {/* 交易臺 K 線：策略買賣價與分析師預測線是報告視覺中心 */}
+      <StaggerItem>
+        <PriceChartPanel
+          code={meta.stockCode}
+          levels={localizedStrategy}
+          trendPrediction={localizedSummary?.trendPrediction}
+        />
+      </StaggerItem>
 
       {/* 策略點位區 */}
-      <ReportStrategy strategy={localizedStrategy} />
-
-      {/* K 線圖區（策略点位 + 走勢預測示意）；levels 传入报告详情的原始策略字段 */}
-      <PriceChartPanel
-        code={meta.stockCode}
-        levels={localizedStrategy}
-        trendPrediction={localizedSummary?.trendPrediction}
-      />
+      <StaggerItem>
+        <ReportStrategy strategy={localizedStrategy} />
+      </StaggerItem>
 
       {/* 資訊區 */}
-      <ReportNews recordId={recordId} limit={8} />
+      <StaggerItem>
+        <ReportNews recordId={recordId} limit={8} />
+      </StaggerItem>
 
       {/* 輸入數據塊低敏摘要 */}
-      <AnalysisContextSummary
-        overview={details?.analysisContextPackOverview}
-      />
+      <StaggerItem>
+        <AnalysisContextSummary
+          overview={details?.analysisContextPackOverview}
+        />
+      </StaggerItem>
 
       {/* 運行診斷摘要 */}
-      <ReportDiagnostics
-        recordId={recordId}
-        summary={diagnosticSummary}
-        onOpenRunFlow={onOpenRunFlow}
-      />
+      <StaggerItem>
+        <ReportDiagnostics
+          recordId={recordId}
+          summary={diagnosticSummary}
+          onOpenRunFlow={onOpenRunFlow}
+        />
+      </StaggerItem>
 
       {/* 透明度與追溯區 */}
-      <ReportDetails details={details} recordId={recordId} />
+      <StaggerItem>
+        <ReportDetails details={details} recordId={recordId} />
+      </StaggerItem>
 
       {/* 分析模型標記（Issue #528）— 報告末尾 */}
       {shouldShowModel && (
-        <p className="px-1 text-xs text-muted-text">
-          {text.analysisModel}: {modelUsed}
-        </p>
+        <StaggerItem>
+          <p className="px-1 text-xs text-muted-text">
+            {text.analysisModel}: {modelUsed}
+          </p>
+        </StaggerItem>
       )}
-    </div>
+    </StaggerGroup>
   );
 };

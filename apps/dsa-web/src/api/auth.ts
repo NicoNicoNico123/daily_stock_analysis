@@ -10,6 +10,10 @@ export type AuthStatusResponse = {
   multiUser?: boolean;
   /** Self-service registration is open (multi-user mode only). */
   registrationEnabled?: boolean;
+  /** Providers fully configured on the backend (multi-user mode only), e.g. ['google','facebook']. */
+  oauthProviders?: string[];
+  /** Email (SMTP) verification mail is available for login-email registration. */
+  emailLoginEnabled?: boolean;
   /** Current session username (multi-user mode only). */
   username?: string;
   /** Current session role (multi-user mode only). */
@@ -27,6 +31,9 @@ export type AuthSessionResponse = {
   ok?: boolean;
   username?: string;
   role?: 'admin' | 'user';
+  email?: string | null;
+  /** Whether a verification mail was queued for the optional login email. */
+  emailVerificationSent?: boolean;
 };
 
 export const authApi = {
@@ -72,10 +79,11 @@ export const authApi = {
   },
 
   /** Multi-user self-service registration; the backend establishes the session on success. */
-  async register(username: string, password: string): Promise<AuthSessionResponse> {
+  async register(username: string, password: string, email?: string): Promise<AuthSessionResponse> {
     const { data } = await apiClient.post<AuthSessionResponse>('/api/v1/auth/register', {
       username,
       password,
+      ...(email ? { email } : {}),
     });
     return data;
   },

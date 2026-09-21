@@ -7,39 +7,46 @@ import logging
 import os
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from api.deps import get_current_user, get_system_config_service, require_admin
 from src.auth import (
     COOKIE_NAME,
-    SESSION_MAX_AGE_HOURS_DEFAULT,
+    authenticate_by_login,
+    build_session_cookie_params,
     change_password,
     change_user_password,
     check_rate_limit,
     check_registration_rate_limit,
     clear_rate_limit,
+    create_email_verification_token,
     create_session,
-    create_user_account,
     get_client_ip,
     get_current_user_from_request,
     get_user_account,
     has_stored_password,
     is_auth_enabled,
+    is_email_delivery_configured,
     is_multi_user_enabled,
     is_password_changeable,
     is_password_set,
     is_registration_enabled,
+    list_configured_oauth_providers,
     login_failure_key,
+    normalize_email,
     record_login_failure,
     record_registration_failure,
     refresh_auth_state,
+    register_user_with_email,
     resolve_session_user,
     rotate_session_secret,
+    send_email_verification,
     set_initial_password,
+    validate_email,
+    verify_email_token,
     verify_password,
     verify_stored_password,
-    verify_user_credentials,
     verify_session,
 )
 from src.config import Config, setup_env
@@ -48,6 +55,14 @@ from src.core.config_manager import ConfigManager
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# 邮箱验证错误码 -> 用户可见文案（Traditional Chinese，与登录/注册文案语境一致）
+_EMAIL_VERIFY_ERRORS = {
+    "invalid_token": "驗證連結無效",
+    "expired_token": "驗證連結已過期，請重新註冊或聯繫管理員",
+    "used_token": "驗證連結已使用過",
+    "user_missing": "找不到對應的登錄郵箱",
+}
 
 
 class LoginRequest(BaseModel):
@@ -66,6 +81,8 @@ class RegisterRequest(BaseModel):
     username: str = Field(default="", description="Username")
     password: str = Field(default="", description="Password")
     password_confirm: str | None = Field(default=None, alias="passwordConfirm", description="Confirm")
+    # 可选登录邮箱；填写后创建 email 登录身份并发送验证邮件（SMTP 已配置时）
+    email: str = Field(default="", description="Optional login email")
 
 
 class ChangePasswordRequest(BaseModel):
@@ -90,28 +107,8 @@ class AuthSettingsRequest(BaseModel):
 
 
 def _cookie_params(request: Request) -> dict:
-    """Build cookie params including Secure based on request."""
-    secure = False
-    if os.getenv("TRUST_X_FORWARDED_FOR", "false").lower() == "true":
-        proto = request.headers.get("X-Forwarded-Proto", "").lower()
-        secure = proto == "https"
-    else:
-        # Check URL scheme when not behind proxy
-        secure = request.url.scheme == "https"
-
-    try:
-        max_age_hours = int(os.getenv("ADMIN_SESSION_MAX_AGE_HOURS", str(SESSION_MAX_AGE_HOURS_DEFAULT)))
-    except ValueError:
-        max_age_hours = SESSION_MAX_AGE_HOURS_DEFAULT
-    max_age = max_age_hours * 3600
-
-    return {
-        "httponly": True,
-        "samesite": "lax",
-        "secure": secure,
-        "path": "/",
-        "max_age": max_age,
-    }
+    """Build cookie params including Secure based on request (shared with OAuth callbacks)."""
+    return build_session_cookie_params(request)
 
 
 def _apply_auth_enabled(enabled: bool, request: Request | None = None) -> bool:
@@ -210,6 +207,9 @@ def _get_auth_status_dict(request: Request | None = None) -> dict:
         # 多用户扩展字段（旧前端可安全忽略）
         "multiUser": multi_user,
         "registrationEnabled": multi_user and is_registration_enabled(),
+        # 第三方登录 / 邮箱登录可用性（多用户模式语义；旧前端可安全忽略）
+        "oauthProviders": list_configured_oauth_providers() if multi_user else [],
+        "emailLoginEnabled": multi_user and is_email_delivery_configured(),
     }
     if current_user:
         status["username"] = current_user.get("username")
@@ -439,13 +439,31 @@ async def auth_register(request: Request, body: RegisterRequest):
     username = (body.username or "").strip()
     password = (body.password or "").strip()
     confirm = (body.password_confirm or "").strip()
+    email = normalize_email(body.email)
     if password and confirm and password != confirm:
         return JSONResponse(
             status_code=400,
             content={"error": "password_mismatch", "message": "两次输入的密码不一致"},
         )
 
-    error_code, user = create_user_account(username, password)
+    email_err = validate_email(email)
+    if email_err:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_email", "message": email_err},
+        )
+
+    error_code, user = register_user_with_email(username, email, password)
+    if error_code == "email_taken":
+        return JSONResponse(
+            status_code=409,
+            content={"error": "email_taken", "message": "电子邮箱已被使用"},
+        )
+    if error_code == "invalid_email":
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_email", "message": "电子邮箱格式不正确"},
+        )
     if error_code == "username_taken":
         return JSONResponse(
             status_code=409,
@@ -472,6 +490,16 @@ async def auth_register(request: Request, body: RegisterRequest):
             content={"error": "internal_error", "message": "Failed to create account"},
         )
 
+    # 邮箱验证（v1 非强制登录门槛）：SMTP 可用时发送一次性验证链接，失败不影响注册结果
+    email_sent = False
+    if email:
+        if is_email_delivery_configured():
+            token = create_email_verification_token(int(user["id"]), email)
+            if token:
+                email_sent = send_email_verification(email, token)
+        if not email_sent:
+            logger.info("[auth] 跳过/未发出验证邮件 user=%s（SMTP 未配置或发送失败）", username)
+
     session_val = create_session(user["id"], user["token_version"])
     if not session_val:
         return JSONResponse(
@@ -483,10 +511,48 @@ async def auth_register(request: Request, body: RegisterRequest):
             "ok": True,
             "username": user["username"],
             "role": user["role"],
+            "email": user.get("email"),
+            "emailVerificationSent": email_sent,
         }
     )
     _set_session_cookie(resp, session_val, request)
     return resp
+
+
+@router.get(
+    "/verify-email",
+    summary="Verify login email",
+    description="One-time signed token from the verification email; marks the email identity verified.",
+)
+async def auth_verify_email(request: Request, token: str = ""):
+    """邮箱验证：令牌单次有效、过期即拒。浏览器点击返回极简 HTML，程序调用返回 JSON。"""
+    error_code, info = verify_email_token(token or "")
+    wants_html = "text/html" in (request.headers.get("accept") or "").lower()
+    if error_code is not None:
+        if wants_html:
+            return HTMLResponse(
+                status_code=400,
+                content=(
+                    "<!doctype html><html lang=\"zh-Hant\"><meta charset=\"utf-8\">"
+                    "<title>郵箱驗證</title><body style=\"font-family:sans-serif;padding:2rem\">"
+                    f"<h2>驗證失敗</h2><p>{_EMAIL_VERIFY_ERRORS.get(error_code, '連結無效')}</p>"
+                    "<p><a href=\"/login\">返回登錄</a></p></body></html>"
+                ),
+            )
+        return JSONResponse(
+            status_code=400,
+            content={"error": error_code, "message": _EMAIL_VERIFY_ERRORS.get(error_code, "連結無效")},
+        )
+    if wants_html:
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html lang=\"zh-Hant\"><meta charset=\"utf-8\">"
+                "<title>郵箱驗證</title><body style=\"font-family:sans-serif;padding:2rem\">"
+                f"<h2>驗證成功</h2><p>{info.get('email')} 已完成驗證。</p>"
+                "<p><a href=\"/login\">前往登錄</a></p></body></html>"
+            ),
+        )
+    return JSONResponse(content={"ok": True, "email": info.get("email")})
 
 
 @router.post(
@@ -563,16 +629,19 @@ async def auth_login(request: Request, body: LoginRequest):
 
 
 def _login_multi_user(request: Request, body: LoginRequest, password: str):
-    """多用户模式登录：username + password，按 (username, ip) 限流，统一错误文案防枚举。"""
-    username = (body.username or "").strip()
-    if not username:
+    """多用户模式登录：username 字段兼任登录名（用户名或邮箱），按 (login_name, ip) 限流。
+
+    统一错误文案防枚举；请求体保持既有 shape，登录名在服务端内部分发。
+    """
+    login_name = (body.username or "").strip()
+    if not login_name:
         return JSONResponse(
             status_code=400,
             content={"error": "username_required", "message": "请输入用户名"},
         )
 
     ip = get_client_ip(request)
-    bucket = login_failure_key(ip, username)
+    bucket = login_failure_key(ip, login_name)
     if not check_rate_limit(bucket):
         return JSONResponse(
             status_code=429,
@@ -582,7 +651,7 @@ def _login_multi_user(request: Request, body: LoginRequest, password: str):
             },
         )
 
-    user = verify_user_credentials(username, password)
+    user = authenticate_by_login(login_name, password)
     if user is None:
         record_login_failure(bucket)
         return JSONResponse(

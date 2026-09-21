@@ -19,6 +19,10 @@ type AuthContextValue = {
   multiUser: boolean;
   /** Self-service registration is open (only meaningful when multiUser). */
   registrationEnabled: boolean;
+  /** OAuth providers configured on the backend (multi-user mode only). */
+  oauthProviders: string[];
+  /** Email verification mail is available (multi-user mode with SMTP configured). */
+  emailLoginEnabled: boolean;
   /** Current session username (multi-user mode only, otherwise null). */
   username: string | null;
   /** Current session role (multi-user mode only, otherwise null). */
@@ -30,7 +34,11 @@ type AuthContextValue = {
     passwordConfirm?: string,
     username?: string
   ) => Promise<{ success: boolean; error?: ParsedApiError }>;
-  register: (username: string, password: string) => Promise<{ success: boolean; error?: ParsedApiError }>;
+  register: (
+    username: string,
+    password: string,
+    email?: string
+  ) => Promise<{ success: boolean; error?: ParsedApiError }>;
   changePassword: (
     currentPassword: string,
     newPassword: string,
@@ -65,6 +73,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [setupState, setSetupState] = useState<'enabled' | 'password_retained' | 'no_password'>('no_password');
   const [multiUser, setMultiUser] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState<string[]>([]);
+  const [emailLoginEnabled, setEmailLoginEnabled] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [role, setRole] = useState<AuthRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,6 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSetupState(status.setupState);
       setMultiUser(status.multiUser ?? false);
       setRegistrationEnabled(status.registrationEnabled ?? false);
+      setOauthProviders(status.oauthProviders ?? []);
+      setEmailLoginEnabled(status.emailLoginEnabled ?? false);
       setUsername(status.username ?? null);
       setRole(status.role ?? null);
       if (status.authEnabled && !status.loggedIn) {
@@ -96,6 +108,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSetupState('no_password');
       setMultiUser(false);
       setRegistrationEnabled(false);
+      setOauthProviders([]);
+      setEmailLoginEnabled(false);
       setUsername(null);
       setRole(null);
       useStockPoolStore.getState().resetDashboardState();
@@ -131,9 +145,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const register = useCallback(
-    async (username: string, password: string): Promise<{ success: boolean; error?: ParsedApiError }> => {
+    async (
+      username: string,
+      password: string,
+      email?: string
+    ): Promise<{ success: boolean; error?: ParsedApiError }> => {
       try {
-        await authApi.register(username, password);
+        await authApi.register(username, password, email);
         // 注册成功即建立会话，重新拉取状态以同步 username / role / loggedIn
         await fetchStatus();
         return { success: true };
@@ -187,6 +205,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setupState,
         multiUser,
         registrationEnabled,
+        oauthProviders,
+        emailLoginEnabled,
         username,
         role,
         isLoading,

@@ -10,13 +10,16 @@ import { isParsedApiError } from '../api/error';
 import { useAuth } from '../hooks';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import { SettingsAlert } from '../components/settings';
+import { OAuthButtons, OAuthDivider } from '../components/auth/OAuthButtons';
 
 // 与后端注册校验保持一致：3-32 位字母、数字、下划线或连字符
 const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 6;
+// 与后端 src/auth.py EMAIL_PATTERN 一致的轻量校验
+const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
 const RegisterPage: React.FC = () => {
-  const { register } = useAuth();
+  const { register, oauthProviders } = useAuth();
   const { t } = useUiLanguage();
   const navigate = useNavigate();
 
@@ -30,6 +33,7 @@ const RegisterPage: React.FC = () => {
     rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/';
 
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -66,6 +70,9 @@ const RegisterPage: React.FC = () => {
     if (registerError.status === 403 && (raw.includes('registration_disabled') || raw.includes('multi_user_disabled'))) {
       return t('register.registrationDisabled');
     }
+    if (registerError.status === 409 && raw.includes('email_taken')) {
+      return t('auth.emailTaken');
+    }
     if (registerError.status === 409 && raw.includes('username_taken')) {
       return t('register.usernameTaken');
     }
@@ -75,6 +82,9 @@ const RegisterPage: React.FC = () => {
       }
       if (raw.includes('invalid_password')) {
         return t('register.passwordInvalid');
+      }
+      if (raw.includes('invalid_email')) {
+        return t('auth.emailInvalid');
       }
       if (raw.includes('password_mismatch')) {
         return t('login.passwordMismatch');
@@ -90,8 +100,13 @@ const RegisterPage: React.FC = () => {
     e.preventDefault();
     setError(null);
     const trimmedUsername = username.trim();
+    const trimmedEmail = email.trim();
     if (!USERNAME_PATTERN.test(trimmedUsername)) {
       setError(t('register.usernameInvalid'));
+      return;
+    }
+    if (trimmedEmail && !EMAIL_PATTERN.test(trimmedEmail)) {
+      setError(t('auth.emailInvalid'));
       return;
     }
     if (password.length < MIN_PASSWORD_LENGTH) {
@@ -104,7 +119,7 @@ const RegisterPage: React.FC = () => {
     }
     setIsSubmitting(true);
     try {
-      const result = await register(trimmedUsername, password);
+      const result = await register(trimmedUsername, password, trimmedEmail || undefined);
       if (result.success) {
         navigate(redirect, { replace: true });
       } else {
@@ -211,7 +226,26 @@ const RegisterPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
+              {oauthProviders.length > 0 && (
+                <>
+                  <OAuthButtons providers={oauthProviders} />
+                  <OAuthDivider />
+                </>
+              )}
+
               <div className="space-y-4">
+                <Input
+                  id="email"
+                  type="email"
+                  appearance="login"
+                  label={t('auth.email')}
+                  placeholder={t('auth.emailPlaceholder')}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={isSubmitting}
+                  autoComplete="email"
+                />
+
                 <Input
                   id="username"
                   type="text"

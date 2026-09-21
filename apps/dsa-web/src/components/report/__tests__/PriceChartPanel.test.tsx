@@ -9,6 +9,30 @@ vi.mock('../../../api/stocks', () => ({
   },
 }));
 
+vi.mock('lightweight-charts', () => {
+  const series = {
+    setData: vi.fn(),
+    createPriceLine: vi.fn(),
+    priceScale: () => ({ applyOptions: vi.fn() }),
+  };
+  return {
+    createChart: vi.fn(() => ({
+      addSeries: vi.fn(() => series),
+      timeScale: () => ({ fitContent: vi.fn() }),
+      applyOptions: vi.fn(),
+      subscribeCrosshairMove: vi.fn(),
+      remove: vi.fn(),
+    })),
+    CandlestickSeries: {},
+    HistogramSeries: {},
+    LineSeries: {},
+    CrosshairMode: { MagnetOHLC: 3, Magnet: 1, Normal: 0 },
+    LineStyle: { Dashed: 2, LargeDashed: 3, Solid: 0 },
+    ColorType: { Solid: 0 },
+    createSeriesMarkers: vi.fn(() => ({ detach: vi.fn() })),
+  };
+});
+
 const renderPanel = (props?: Partial<Parameters<typeof PriceChartPanel>[0]>) =>
   render(
     <PriceChartPanel
@@ -23,6 +47,12 @@ describe('PriceChartPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    class ResizeObserverStub {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub);
   });
 
   it('renders nothing without a stock code', () => {
@@ -36,7 +66,7 @@ describe('PriceChartPanel', () => {
     renderPanel();
 
     expect(await screen.findByText('暫無日 K 數據')).toBeInTheDocument();
-    expect(stocksApi.getDailyKline).toHaveBeenCalledWith('600519', 120);
+    expect(stocksApi.getDailyKline).toHaveBeenCalledWith('600519', 250);
   });
 
   it('renders level chips and the chart area when data resolves', async () => {
@@ -54,9 +84,16 @@ describe('PriceChartPanel', () => {
     expect(screen.getByText('1720.00')).toBeInTheDocument();
     // 二次買入为空：不渲染该点位的数值
     expect(screen.queryByText('二次買入1750.00')).not.toBeInTheDocument();
-    // 走勢預測示意与图表区域（或渲染失败时的降级摘要）必须出现
+    // 走勢預測示意、分析師預測線与图表区域（或渲染失败时的降级摘要）必须出现
     expect(screen.getByText('走勢預測示意')).toBeInTheDocument();
+    expect(screen.getByText('分析師預測')).toBeInTheDocument();
+    expect(screen.getByTestId('price-chart-hud')).toHaveTextContent('11.00');
+    expect(screen.getByRole('button', { name: '120 日' })).toHaveAttribute('aria-pressed', 'true');
     await screen.findByRole('img', { name: 'K 線圖' });
+
+    fireEvent.click(screen.getByRole('button', { name: '60 日' }));
+    expect(screen.getByRole('button', { name: '60 日' })).toHaveAttribute('aria-pressed', 'true');
+    expect(stocksApi.getDailyKline).toHaveBeenCalledTimes(1);
   });
 
   it('renders the error state and retries', async () => {

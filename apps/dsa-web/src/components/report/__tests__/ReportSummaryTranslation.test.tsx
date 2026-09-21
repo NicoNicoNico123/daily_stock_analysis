@@ -14,6 +14,12 @@ vi.mock('../../../api/history', () => ({
   },
 }));
 
+vi.mock('../../../api/stocks', () => ({
+  stocksApi: {
+    getDailyKline: vi.fn().mockResolvedValue({ code: '600519', points: [] }),
+  },
+}));
+
 const baseReport: AnalysisReport = {
   meta: {
     id: 42,

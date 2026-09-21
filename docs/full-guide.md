@@ -36,6 +36,7 @@ daily_stock_analysis/
 - [高级功能](#高级功能)
 - [回测功能](#回测功能)
 - [本地 WebUI 管理界面](#本地-webui-管理界面)
+- [多用户模式（实验性）](#多用户模式实验性)
 
 ---
 
@@ -428,7 +429,10 @@ daily_stock_analysis/
 | `TICKFLOW_KLINE_ADJUST` | TickFlow 日 K 复权模式：`none`、`forward`、`backward`、`forward_additive`、`backward_additive`。 | `none` | 可选 |
 | `TICKFLOW_BATCH_DAILY_ENABLED` | 是否启用 TickFlow 批量日 K 预取；权限不足会短期缓存失败状态，并继续走常规回退。 | `true` | 可选 |
 | `TICKFLOW_BATCH_SIZE` | TickFlow 日 K 与实时行情批量请求的单批最大标的数。 | `100` | 可选 |
-| `FUTU_HK_REALTIME_SOURCE_PRIORITY` | 港股实时行情独立优先级，可选 `futu`、`longbridge`、`akshare`、`yfinance`，按逗号分隔；失败自动回退。 | `futu,longbridge,akshare,yfinance` | 可选 |
+| `FUTU_HK_REALTIME_SOURCE_PRIORITY` | 港股实时行情独立优先级，可选 `futu`、`longbridge`、`akshare`、`yfinance`、`tvscreener`，按逗号分隔；失败自动回退。未列入 `tvscreener` 时，港股仍会在全部已配置源失败后尝试 TradingView screener 快照。 | `futu,longbridge,akshare,yfinance` | 可选 |
+| `TVSCREENER_ENABLED` | 启用 unofficial [tvscreener](https://github.com/deepentropy/tvscreener) 作为报价 / TV 技术指标 / 有限滞后日 K 兜底。无需 API Key；包未安装或设为 `false` 时跳过。 | `true` | 可选 |
+| `TVSCREENER_PRIORITY` | tvscreener 在通用日 K 链中的优先级；数字越小越早尝试，默认 `7`（排在 Tencent/YFinance 之后）。实时行情默认只作最后兜底，除非把 `tvscreener` 写入 `REALTIME_SOURCE_PRIORITY`。 | `7` | 可选 |
+| `TVSCREENER_HISTORY_BARS` | 从 TradingView scanner 滞后字段重建的日 K 根数（5–60）。日期来自交易所日历，不是独立 history API。 | `30` | 可选 |
 | `LONGBRIDGE_OAUTH_CLIENT_ID` | Longbridge OAuth client_id；留空且无 Legacy Access Token 时会兼容使用 `LONGBRIDGE_APP_KEY` | - | 可选 |
 | `LONGBRIDGE_OAUTH_TOKEN_CACHE_B64` | OAuth token 缓存文件的 base64 内容，供 GitHub Actions / Docker 等 headless 环境使用 | - | 可选 |
 | `LONGBRIDGE_APP_KEY` | Longbridge Legacy App Key；无 `LONGBRIDGE_ACCESS_TOKEN` 时也可作为 OAuth client_id 兼容别名 | - | 可选 |
@@ -439,7 +443,7 @@ daily_stock_analysis/
 | `ENABLE_REALTIME_TECHNICAL_INDICATORS` | 盘中实时技术面：启用时用实时价计算 MA5/MA10/MA20 与多头排列（Issue #234）；关闭则用昨日收盘 | `true` | 可选 |
 | `ENABLE_CHIP_DISTRIBUTION` | 启用筹码分布分析（该接口不稳定，云端部署建议关闭）。GitHub Actions 用户需在 Repository Variables 中设置 `ENABLE_CHIP_DISTRIBUTION=true` 方可启用；workflow 默认关闭。东财/Tushare 筹码接口均失败时，会退化为本地估算（多源日 K + 换手率递衰 CYQ 模型，与东财 CYQCalculator 同源），覆盖 A 股（含 ETF/BSE）、港股与美股（指数跳过），结果 `source=computed` 仅作分析输入、不落库。 | `true` | 可选 |
 | `ENABLE_EASTMONEY_PATCH` | 东财接口补丁：东财接口频繁失败（如 RemoteDisconnected、连接被关闭）时建议设为 `true`，注入 NID 令牌与随机 User-Agent 以降低被限流概率 | `false` | 可选 |
-| `REALTIME_SOURCE_PRIORITY` | 实时行情源优先级，逗号分隔，例如 `tencent,akshare_sina,efinance,akshare_em`；需要显式加入 `tickflow` 才会使用 TickFlow 实时行情。 | 见 `.env.example` | 可选 |
+| `REALTIME_SOURCE_PRIORITY` | 实时行情源优先级，逗号分隔，例如 `tencent,akshare_sina,efinance,akshare_em`；需要显式加入 `tickflow` 才会使用 TickFlow 实时行情。`tvscreener` 默认不在该列表中，全部已配置源失败后仍会作为最后兜底尝试。 | 见 `.env.example` | 可选 |
 | `ENABLE_FUNDAMENTAL_PIPELINE` | 基本面聚合总开关；关闭时仅返回 `not_supported` 块，不改变原分析链路 | `true` | 可选 |
 | `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS` | 基本面阶段总时延预算（秒） | `8.0` | 可选 |
 | `FUNDAMENTAL_FETCH_TIMEOUT_SECONDS` | 单能力源调用超时（秒）；市场结构行业/概念排行也复用该预算 | `8.0` | 可选 |
@@ -454,6 +458,7 @@ daily_stock_analysis/
 > - 日股/韩股：当前仅走 Yfinance 基础路径获取日线与实时行情；`institution`、`capital_flow`、`dragon_tiger`、`boards` 等依赖 A 股专属源/离岸完整版的能力会降级为 `not_supported`（详见 [市场支持与边界](market-support.md)）；
 > - 台股：在美股/港股 offshore 基础路径之外，`institution` 区块额外展示三大法人原始买卖超净额（TWSE T86 / TPEx，默认开启、fail-open，取不到数据时维持 `not_supported`）；`capital_flow`、`dragon_tiger`、`boards` 仍为 `not_supported`；
 > - 任何异常走 fail-open，仅记录错误，不影响技术面/新闻/筹码主链路。
+> - 配置 `TVSCREENER_ENABLED=true`（默认）且已安装 `tvscreener` 包后，TradingView screener 会作为可选快照源：A/H/美/日/韩/台实时行情在既有源全部失败后尝试；日 K 按 `TVSCREENER_PRIORITY` 参与通用链，美股专用链排在 TwelveData 之后。tvscreener 提供当前报价、RSI/MACD/均线等 TV 计算指标，以及由滞后字段 + 交易所日历重建的有限日 K（默认 30 根）。它**不是**完整历史行情 API，主链仍是 Efinance/AkShare/YFinance/Finnhub 等。TradingView 拒绝或限流时 fail-open，不阻断分析。
 > - 配置 `TICKFLOW_API_KEY` 后，TickFlow 会作为可选 A 股日 K 数据源和大盘复盘增强源实例化；`TICKFLOW_PRIORITY` 只影响普通 A 股日 K/通用数据源回退链。实时行情优先级由 `REALTIME_SOURCE_PRIORITY` 单独控制，只有显式包含 `tickflow` 时才会使用 TickFlow 实时行情。`REALTIME_SOURCE_PRIORITY` 中排在 `tickflow` 前面的数据源会先被尝试。
 > - 当前 `IndexRegistry` 已登记的全部沪深指数（`sh`/`sz`/`csi` 前缀，具体清单以 [指数自选股配置](#指数自选股配置) 的注册表说明与 `scripts/stock_index_seeds/index_registry.csv` 为准）在使用显式市场输入（也接受 `000016.SH` 等交易所后缀形式）时，不参与通用 priority 排序，固定按 Tencent → AkShare → TickFlow → YFinance 降级；未配置或不可用的来源会跳过。裸 `000016` 等代码仍按股票处理，不触发指数链。该固定链不读取 `EFINANCE_PRIORITY`、`AKSHARE_PRIORITY`、`TUSHARE_PRIORITY`、`TICKFLOW_PRIORITY`、`PYTDX_PRIORITY`、`BAOSTOCK_PRIORITY`、`YFINANCE_PRIORITY` 或 `TENCENT_PRIORITY`，不影响普通股票和实时行情的既有顺序。
 > - 已登记指数名称优先来自本地注册表；只有注册名称无效时才按 Tencent → AkShare → TickFlow 查询，名称链不使用 YFinance。指数日线四源全部失败时返回空结果并记录汇总告警；普通股票仍保持既有的 `DataFetchError` 最终失败契约。
@@ -489,7 +494,10 @@ daily_stock_analysis/
 | `STOCK_LIST` | 自选股代码（逗号分隔） | - |
 | `ADMIN_AUTH_ENABLED` | Web 登录：设为 `true` 启用密码保护；首次访问在网页设置初始密码，可在「系统设置 > 修改密码」修改；忘记密码执行 `python -m src.auth reset_password`。Web 的 `.env` 备份导入导出仅在开启该开关后可用（桌面端不受此限制）。 | `false` |
 | `MULTI_USER_ENABLED` | 多用户模式（实验性）：需与 `ADMIN_AUTH_ENABLED` 同时为 `true` 才生效。开启后每个用户独立账号登录，自选股、分析历史、告警、Chat 会话、个人排程与通知渠道互相隔离；系统配置与用户管理仅管理员可见。首次开启会轮换会话密钥（所有旧会话失效），并把全局 `STOCK_LIST` 一次性回填为管理员的自选股、全局 `SCHEDULE_*` 迁入管理员排程（此后 `.env` 的全局排程不再触发）。 | `false` |
-| `AUTH_REGISTRATION_ENABLED` | 开放注册开关，仅在多用户模式下有意义。默认关闭（由管理员通过用户管理页建号）。公网部署建议配额开启后再开放注册。 | `false` |
+| `AUTH_REGISTRATION_ENABLED` | 开放注册开关，仅在多用户模式下有意义。默认关闭（由管理员通过用户管理页建号）。公网部署建议配额开启后再开放注册。同时约束第三方登录的自动建号。 | `false` |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth 登录（多用户模式）：两项同时配置后登录页出现 Google 按钮；回调地址需登记为 `{对外地址}/api/v1/auth/oauth/google/callback`。建号受 `AUTH_REGISTRATION_ENABLED` 约束；OAuth 账号无法密码登录。 | 空 |
+| `FACEBOOK_OAUTH_APP_ID` / `FACEBOOK_OAUTH_APP_SECRET` | Facebook OAuth 登录（多用户模式）：语义同上，回调地址 `{对外地址}/api/v1/auth/oauth/facebook/callback`。 | 空 |
+| `OAUTH_REDIRECT_BASE` | OAuth 回调与验证邮件使用的对外地址（如 `https://dsa.example.com`）；留空时回退 `http://<WEBUI_HOST>:<WEBUI_PORT>`，反向代理/公网部署建议显式设置。 | 空 |
 | `MULTI_USER_MAX_USERS` | 注册用户总量上限（多用户模式；管理员不受此限）。`0` 或留空 = 不限制 | `0` |
 | `MULTI_USER_DAILY_ANALYSIS_LIMIT` | 每用户每日分析次数上限（手动与排程共用计数；管理员不受限）。`0` = 不限制 | `20` |
 | `MULTI_USER_DAILY_CHAT_LIMIT` | 每用户每日 Agent Chat 对话轮数上限（管理员不受限）。`0` = 不限制 | `100` |
@@ -1670,6 +1678,7 @@ FastAPI 提供 RESTful API 服务，支持配置管理和触发分析。
 - 🗂️ **市场复盘历史独立入口** - 大盘复盘历史通过专用入口与普通个股历史隔离；建议通过 `stock_code=MARKET` + `report_type=market_review` 直接查询与回放大盘复盘记录
 - 🧾 **市场复盘历史可复用** - 大盘复盘任务会持久化到分析历史，`report_type` 为 `market_review`，可直接通过历史列表/详情打开对应 Markdown 或详情页，不会重新触发分析重算
 - 🧭 **市场位置卡片** - A 股普通分析报告会展示市场题材层和个股位置层，区分大盘主线、主关联题材、题材阶段、个股位置和缺失证据
+- 📈 **交易台式日 K** - 个股报告在概览后展示日 K 交易台：本地切换 60/120/250 交易日、MA5/MA10/MA20、OHLC 十字光标、理想买入/止盈卖出价格线与箭头，以及从最后收盘价出发的分析师预测实线和乐观/悲观虚线锥；图表库失败时降级为最近收盘价摘要
 - 🧩 **输入数据块可见** - 普通分析报告会在历史详情、同步响应和 completed 任务状态中返回低敏 `AnalysisContextPack` overview，Web 报告页在策略点位和资讯之后默认折叠展示数据块状态、来源、缺失原因和降级摘要
 - 💬 **问股追问上下文** - 从历史报告进入问股后，后续追问会持续携带当前 `stock_code/stock_name`；切回或重载已有问股会话时，会从已加载的历史用户消息恢复基础当前标的；只有用户明确切换标的时才切换上下文，含比较/对比/vs/差异/相比等明确比较意图或多个非当前明确股票代码的问题不会污染当前标的
 - 🧠 **会话级 Skill 选择** - 问股会话会持久化当前 Skill 选择；刷新或切换会话时恢复各自选择，新会话继续使用服务器默认 Skill
@@ -1859,9 +1868,32 @@ python main.py --serve-only --host 0.0.0.0 --port 8888
 1. `.env` 设置 `ADMIN_AUTH_ENABLED=true` 与 `MULTI_USER_ENABLED=true` 后重启服务。
 2. 升级兼容：已有部署的管理员密码（`data/.admin_password_hash`）会自动迁移为 `admin` 账号，原密码可直接登录；全局 `STOCK_LIST` 一次性回填为管理员的自选股。
 3. 账号来源二选一：
-   - 管理员在「设置 → 用户管理」页面建号（推荐，公网部署默认此方式）；
+   - 管理员在侧栏「用户管理」页面建号（推荐，公网部署默认此方式）；
    - 设置 `AUTH_REGISTRATION_ENABLED=true` 开放自助注册（配合配额护栏使用）。
 4. 注册用户名规则：3-32 位字母、数字、下划线或连字符；登录失败按「用户名 + IP」组合限流（5 次/5 分钟），注册按 IP 限流（5 次/小时）。
+
+### 登录方式（用户名 / 邮箱 / Google / Facebook）
+
+除用户名密码外，多用户模式还支持三种登录入口，全部复用既有会话 cookie 与权限模型（OAuth 建号写入的仍是 `users` 表普通行，禁用、`token_version`、配额与数据隔离行为不变）：
+
+- **登录邮箱（可选）**：注册时可额外填写登录邮箱，此后在登录框输入邮箱或用户名均可。邮箱唯一（含第三方登录占用的邮箱）；`EMAIL_SENDER` + `EMAIL_PASSWORD` 已配置时会发送一次性验证链接（`/api/v1/auth/verify-email?token=...`，24 小时内有效、点击一次即失效），未配置 SMTP 时跳过发送且 v1 不阻断登录。
+- **Google / Facebook OAuth**：`.env` 同时配置 `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` 或 `FACEBOOK_OAUTH_APP_ID` / `FACEBOOK_OAUTH_APP_SECRET` 后，登录页出现「使用 Google/Facebook 繼續」按钮。流程为 Authorization Code：后端生成 HMAC 签名的一次性 `state` -> 跳转服务商 -> 回调换 token 拉取账号信息 -> 按（provider, 外部 ID）查找或创建身份，随后签发会话 cookie 并跳回前端 `/oauth/callback`。服务商后台需把回调地址登记为 `{对外地址}/api/v1/auth/oauth/{provider}/callback`，公网/反向代理部署请设置 `OAUTH_REDIRECT_BASE`。
+- **限制与安全边界**：OAuth 自动建号同样受 `AUTH_REGISTRATION_ENABLED` 与 `MULTI_USER_MAX_USERS` 约束（关闭注册时已有第三方身份仍可登录，新用户不可自动建号）；OAuth 建号的账号密码哈希为随机值，无法用密码登录，找回密码依赖邮箱验证链路；同一邮箱在不同登录方式下是彼此独立的账号（v1 不做跨方式自动合并，避免凭邮箱声明接管已有账号，账号关联管理为后续工作）；`state` 一次性且 10 分钟过期，client secret 只在服务端使用，不出现在日志或响应中。
+
+### 本地预览：管理员与测试账号
+
+本地预览多用户工作台时，用管理员账号建一个普通测试用户即可。仓库没有内置默认密码；README 中的 `dsa-admin-local` / `dsa-user-local` 仅为本机示例，需自行执行 `reset_password` 与用户管理页建号后才生效，不要用于公网或写入 Git。登录页为 `http://127.0.0.1:8000/login`，管理员用户名固定为 `admin`。
+
+1. `.env` 写入 `ADMIN_AUTH_ENABLED=true` 与 `MULTI_USER_ENABLED=true`。本地预览保持 `AUTH_REGISTRATION_ENABLED=false`，由管理员建号。
+2. 若还没有管理员密码，在服务启动前执行 `python -m src.auth reset_password`（密码至少 6 位）。该命令会写入 `data/.admin_password_hash`，并在多用户已开启时同步 `users` 表的 `admin` 行。已有单用户密码时跳过本步，开启多用户后会自动迁入 `admin`。
+3. 启动 `python main.py --serve-only`，浏览器打开 `http://127.0.0.1:8000/login`。
+4. 用用户名 `admin` 与上一步密码登录。管理员可见侧栏「用户管理」、全局系统配置，以及迁入的自选股。
+5. 打开 `/users`，新建角色为 `user` 的测试账号（例如 `testuser`，密码至少 6 位）。
+6. 侧栏用户菜单退出后，用 `testuser` 登录。普通用户看不到用户管理与全局配置，只能改个人设置与自己的密码；自选股、分析历史、告警、Chat 与管理员隔离。大盘复盘仍为全员只读共享。
+
+忘记管理员密码时再次执行 `python -m src.auth reset_password`。前端热更新预览可另开 `cd apps/dsa-web && npm run dev`（`http://127.0.0.1:5173`，`/api` 代理到 8000），登录步骤相同。
+
+首页级步骤见 [README 本地预览](../README.md#-web-界面)。
 
 ### 数据边界
 

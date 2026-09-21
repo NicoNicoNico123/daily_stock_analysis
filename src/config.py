@@ -890,6 +890,9 @@ class Config:
     finnhub_api_key: Optional[str] = None
     alphavantage_api_key: Optional[str] = None
     twelvedata_api_key: Optional[str] = None
+    tvscreener_enabled: bool = True
+    tvscreener_priority: int = 7
+    tvscreener_history_bars: int = 30
     longbridge_app_key: Optional[str] = None
     longbridge_app_secret: Optional[str] = None
     longbridge_access_token: Optional[str] = None
@@ -1282,6 +1285,15 @@ class Config:
     webui_enabled: bool = False
     webui_host: str = "127.0.0.1"
     webui_port: int = 8000
+
+    # === 登录认证扩展（多用户模式；OAuth / 邮箱回调 base）===
+    # OAUTH_REDIRECT_BASE：邮件链接与 OAuth 回调使用的对外地址（反向代理部署必填），
+    # 留空时回退 http://<WEBUI_HOST>:<WEBUI_PORT>
+    oauth_redirect_base: Optional[str] = None
+    google_oauth_client_id: Optional[str] = None
+    google_oauth_client_secret: Optional[str] = None
+    facebook_oauth_app_id: Optional[str] = None
+    facebook_oauth_app_secret: Optional[str] = None
     
     # === 机器人配置 ===
     bot_enabled: bool = True              # 是否启用机器人功能
@@ -1813,6 +1825,17 @@ class Config:
             finnhub_api_key=os.getenv('FINNHUB_API_KEY') or None,
             alphavantage_api_key=os.getenv('ALPHAVANTAGE_API_KEY') or None,
             twelvedata_api_key=os.getenv('TWELVEDATA_API_KEY') or None,
+            tvscreener_enabled=parse_env_bool(os.getenv('TVSCREENER_ENABLED'), default=True),
+            tvscreener_priority=parse_env_int(
+                os.getenv('TVSCREENER_PRIORITY'), 7, field_name='TVSCREENER_PRIORITY', minimum=0
+            ),
+            tvscreener_history_bars=parse_env_int(
+                os.getenv('TVSCREENER_HISTORY_BARS'),
+                30,
+                field_name='TVSCREENER_HISTORY_BARS',
+                minimum=5,
+                maximum=60,
+            ),
             longbridge_app_key=os.getenv('LONGBRIDGE_APP_KEY') or None,
             longbridge_app_secret=os.getenv('LONGBRIDGE_APP_SECRET') or None,
             longbridge_access_token=os.getenv('LONGBRIDGE_ACCESS_TOKEN') or None,
@@ -2213,6 +2236,11 @@ class Config:
             webui_enabled=os.getenv('WEBUI_ENABLED', 'false').lower() == 'true',
             webui_host=os.getenv('WEBUI_HOST', '127.0.0.1'),
             webui_port=parse_env_int(os.getenv('WEBUI_PORT'), 8000, field_name='WEBUI_PORT', minimum=1, maximum=65535),
+            oauth_redirect_base=os.getenv('OAUTH_REDIRECT_BASE'),
+            google_oauth_client_id=os.getenv('GOOGLE_OAUTH_CLIENT_ID'),
+            google_oauth_client_secret=os.getenv('GOOGLE_OAUTH_CLIENT_SECRET'),
+            facebook_oauth_app_id=os.getenv('FACEBOOK_OAUTH_APP_ID'),
+            facebook_oauth_app_secret=os.getenv('FACEBOOK_OAUTH_APP_SECRET'),
             # 机器人配置
             bot_enabled=os.getenv('BOT_ENABLED', 'true').lower() == 'true',
             bot_command_prefix=os.getenv('BOT_COMMAND_PREFIX', '/'),

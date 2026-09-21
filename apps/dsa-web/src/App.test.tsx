@@ -81,6 +81,8 @@ function makeAuthState(overrides: Partial<AuthState> = {}): AuthState {
     setupState: 'no_password',
     multiUser: false,
     registrationEnabled: false,
+    oauthProviders: [],
+    emailLoginEnabled: false,
     username: null,
     role: null,
     isLoading: false,

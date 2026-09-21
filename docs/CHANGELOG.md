@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 多用户模式新增三种登录方式：注册可选登录邮箱并在 SMTP 已配置时发送一次性验证邮件（`/api/v1/auth/verify-email`，未配置 SMTP 时跳过发送、不阻断登录）；登录 `username` 字段兼任用户名或邮箱；新增 Google / Facebook OAuth 登录（`/api/v1/auth/oauth/{provider}/authorize|callback`，HMAC 签名一次性 state、`OAUTH_REDIRECT_BASE` 回调地址、自动建号受 `AUTH_REGISTRATION_ENABLED` 约束、随机密码哈希不可密码登录、secret 不落日志），新增 `GOOGLE_OAUTH_CLIENT_ID/SECRET`、`FACEBOOK_OAUTH_APP_ID/SECRET`、`OAUTH_REDIRECT_BASE` 配置，`/api/v1/auth/status` 新增 `oauthProviders` 与 `emailLoginEnabled`，登录/注册页展示品牌按钮与「或」分隔。
+- [文档] README / 完整指南补充本地 Web 多用户预览：登录页与管理员 `admin` / 测试用户 `testuser` 示例账号表、用户管理页建号、隔离范围与密码重置。
 - [测试] 修复股票名称解析冷启动超时并发测试的同步竞态：在放行后台抓取前确认两个等待者均已结束并返回空结果，避免 Docker 发布门禁偶发失败。
 - [新功能] 新增多用户模式基础（实验性）：users 表与遗留管理员凭据自动迁移、按用户登录/注册会话（MULTI_USER_ENABLED，默认关闭）、管理员用户管理 API 与开放注册开关（AUTH_REGISTRATION_ENABLED，默认关闭）。
 - [新功能] 多用户数据隔离：每用户独立自选股（user_stocks，STOCK_LIST 仅一次性回填 admin）、分析历史/告警规则/筛选记录/回测结果/LLM 用量/会话消息按用户隔离（存量表新增 nullable user_id 列，NULL 行仅 admin 可见，大盘复盘行全员可见）。
@@ -32,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 宏观市场动态多点影响分析：分析每只股票时同时抓取大市宏观热门新闻（美联储利率、政策、大盘走势；us/hk/cn 各 2 条内置查询，走既有题材搜索渠道链后按 URL 去重合并），以【宏观市场动态（与该股票的多点影响分析）】段落拼入 news_context，每条带【宏观】前缀，并在分析 prompt 追加强制指令——逐点输出「宏观事件 → 市场/行业传导 → 该公司」影响路径、方向（利好/利空/中性）与置信度，宏观与个股证据冲突时以个股优先；宏观新闻按「市场 + UTC 日期」持久化为市场级共享快照（新表 `macro_news_snapshots`，UNIQUE(market, snapshot_date)，`DatabaseManager` 新增 get/upsert/purge 三方法），全市场、全用户、全进程复用同一份，stale-while-revalidate 语义由 `MACRO_NEWS_REFRESH_HOURS`（默认 6，0=当日只抓一次）控制，刷新失败回退当日旧快照（`SearchResponse.stale` 标记）；Agent 路径同一份宏观证据注入 news_context 并以 `dimension="macro_news"` 落库；新增 `MACRO_NEWS_ENABLED`（默认 true）与 `MACRO_NEWS_MAX_RESULTS`（默认 5），功能关闭或未配置搜索渠道时零行为变化。
 - [新功能] 报告页 K 线图面板：新增 `GET /api/v1/data/daily-kline?code=&days=`（默认 120 天、上限 250 个交易日，返回 `{code, points:[{date,open,high,low,close,volume}]}` 升序日 K，走既有 `DataFetcherManager` 多源 fallback 与统一认证依赖），Web 个股报告页在策略点位区之后新增 TradingView 风格 K 线图（lightweight-charts v5 按需加载）：日 K + 成交量、理想买入/二次买入/止损/止盈价格线（取自历史详情 strategy 结构化字段）以及以最后一根收盘价为起点的 10 日乐观/悲观预测锥与分析日标记；标签跟随界面语言，图表库加载或渲染失败时降级为最近收盘价摘要，不影响报告页其它区块；大盘复盘页不展示该面板。
 - [测试] 新增 `GET /api/v1/data/daily-kline` 接口测试（升序归一化、脏行剔除、400/404、天数上限）与报告页 K 线图纯转换函数（K 线排序、点位线映射、预测锥端点、空值过滤）及面板状态冒烟测试。
+- [改进] Web 个股报告页升级为交易台式日 K：一次拉取最多 250 根后本地切换 60/120/250 区间，叠加 MA5/MA10/MA20、OHLC 十字光标、理想买入/止盈卖出箭头，以及从最后收盘价连出的分析师预测实线与乐观/悲观虚线锥；报告区加宽并以图表置于策略点位之前，首页空态加入网格动效。
+- [新功能] 接入 unofficial TradingView screener（`tvscreener`）作为可选数据源：无 API Key，默认在既有源失败后提供 A/H/美/日/韩/台实时报价与 TV 计算的 RSI/MACD/均线；日 K 由滞后 scanner 字段加交易所日历重建（默认 30 根）并排在通用链末位 / 美股 TwelveData 之后。`TVSCREENER_ENABLED=false` 或未安装包时跳过，限流/拒绝 fail-open。
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->

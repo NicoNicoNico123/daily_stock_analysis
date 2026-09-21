@@ -122,6 +122,8 @@ class User(Base):
     role = Column(String(16), nullable=False, default=USER_ROLE_USER)
     is_active = Column(Boolean, nullable=False, default=True)
     token_version = Column(Integer, nullable=False, default=0)
+    # 登录用邮箱（可空；email 登录 / OAuth 邮箱归属展示）。存量库由 _ensure_users_email_column 补列
+    email = Column(String(255), nullable=True, unique=True, index=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
@@ -133,6 +135,7 @@ class User(Base):
             "role": self.role,
             "is_active": bool(self.is_active),
             "token_version": int(self.token_version or 0),
+            "email": self.email,
             "created_at": self.created_at,
         }
 
@@ -197,6 +200,66 @@ class UserDailyCounter(Base):
     __table_args__ = (
         UniqueConstraint('user_id', 'counter_date', 'counter_key', name='uix_user_daily_counter_unique'),
     )
+
+
+# 第三方/邮箱登录身份 provider 取值（user_identities.provider）
+IDENTITY_PROVIDER_GOOGLE = "google"
+IDENTITY_PROVIDER_FACEBOOK = "facebook"
+IDENTITY_PROVIDER_EMAIL = "email"
+
+
+class UserIdentity(Base):
+    """外部登录身份（多用户模式：邮箱登录 / Google / Facebook OAuth）。
+
+    - (provider, provider_user_id) 唯一：同一外部账号只能绑定一个 DSA 用户；
+    - provider='email' 表示邮箱登录身份（注册时可选填写邮箱时创建）；
+    - 同一邮箱可以在不同 provider 下各自存在身份行（v1 不做跨 provider 自动合并，
+      避免「凭邮箱声明即接管已有账号」的预注册劫持）。
+    """
+
+    __tablename__ = 'user_identities'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    provider = Column(String(16), nullable=False)
+    provider_user_id = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=True, index=True)
+    # 邮箱验证状态：provider='email' 时表示验证邮件是否已点击确认；OAuth 时取自平台 claim
+    email_verified = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('provider', 'provider_user_id', name='uix_user_identity_provider_unique'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """返回不含敏感字段的身份信息字典。"""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "provider": self.provider,
+            "provider_user_id": self.provider_user_id,
+            "email": self.email,
+            "email_verified": bool(self.email_verified),
+            "created_at": self.created_at,
+        }
+
+
+class EmailVerification(Base):
+    """邮箱验证一次性令牌（只存 SHA-256 哈希，不存原始 token）。
+
+    同一时刻同一用户只保留一条有效记录（重建时旧行被删除），
+    consumed_at 非空表示已使用，过期行由创建时顺带清理。
+    """
+
+    __tablename__ = 'email_verifications'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    expires_at = Column(DateTime, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
 
 class StockDaily(Base):
@@ -1581,6 +1644,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
             self._ensure_users_bootstrap()
+            self._ensure_users_email_column()
             self._ensure_user_scope_columns()
             self._ensure_user_scope_backfill()
             self._ensure_sqlite_file_permissions()
@@ -1724,6 +1788,62 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 return None
 
     # === 用户作用域迁移与回填 ===
+
+    def _ensure_users_email_column(self) -> None:
+        """为存量 users 表补 nullable email 列与唯一索引（幂等，沿用遥测列迁移模式）。
+
+        SQLite 的 UNIQUE 索引允许多个 NULL，因此未填写邮箱的存量用户不受影响。
+        失败不阻断 DB 初始化（邮箱登录在下次启动重试迁移前不可用）。
+        """
+        if not self._is_sqlite_engine:
+            return
+        table_name = User.__tablename__
+        try:
+            inspector = inspect(self._engine)
+            existing = {column["name"] for column in inspector.get_columns(table_name)}
+            existing_indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+        except Exception as exc:
+            logger.warning(
+                "[users] 检查 %s.email 列失败，跳过迁移: %s", table_name, exc
+            )
+            return
+
+        max_retries = self._sqlite_write_retry_max
+        if "email" not in existing:
+            for attempt in range(max_retries + 1):
+                try:
+                    with self._engine.begin() as connection:
+                        connection.exec_driver_sql(
+                            f"ALTER TABLE {table_name} ADD COLUMN email VARCHAR(255)"
+                        )
+                    break
+                except OperationalError as exc:
+                    if self._is_sqlite_duplicate_column_error(exc, "email"):
+                        break
+                    if self._is_sqlite_locked_error(exc) and attempt < max_retries:
+                        delay = self._sqlite_write_retry_base_delay * (2 ** attempt)
+                        if delay > 0:
+                            time.sleep(delay)
+                        continue
+                    logger.warning("[users] %s 增加 email 列失败: %s", table_name, exc)
+                    break
+        if "ix_users_email" not in existing_indexes:
+            for attempt in range(max_retries + 1):
+                try:
+                    with self._engine.begin() as connection:
+                        connection.exec_driver_sql(
+                            f"CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email "
+                            f"ON {table_name} (email)"
+                        )
+                    break
+                except OperationalError as exc:
+                    if self._is_sqlite_locked_error(exc) and attempt < max_retries:
+                        delay = self._sqlite_write_retry_base_delay * (2 ** attempt)
+                        if delay > 0:
+                            time.sleep(delay)
+                        continue
+                    logger.warning("[users] %s 创建 email 唯一索引失败: %s", table_name, exc)
+                    break
 
     _USER_SCOPE_TABLES = (
         # (table, index_name)：多用户模式的 user_id 作用域列 + 查询索引
@@ -1965,6 +2085,151 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             session.commit()
             session.refresh(user)
             return user
+
+    def update_user_email(self, user_id: int, email: Optional[str]) -> bool:
+        """写入/清除 users.email（登录用邮箱）。邮箱冲突或用户不存在返回 False。"""
+        normalized = (email or "").strip().lower() or None
+        with self._SessionLocal() as session:
+            try:
+                user = session.get(User, user_id)
+                if user is None:
+                    return False
+                user.email = normalized
+                session.commit()
+                return True
+            except IntegrityError:
+                session.rollback()
+                return False
+
+    # === 外部登录身份（邮箱 / OAuth） ===
+
+    def get_user_identity(self, provider: str, provider_user_id: str) -> Optional[UserIdentity]:
+        """按 (provider, 外部唯一 ID) 精确查找身份行。"""
+        with self._SessionLocal() as session:
+            return (
+                session.query(UserIdentity)
+                .filter(
+                    UserIdentity.provider == provider,
+                    UserIdentity.provider_user_id == str(provider_user_id),
+                )
+                .first()
+            )
+
+    def get_user_identities(self, user_id: int) -> List[UserIdentity]:
+        """返回用户全部登录身份（按创建顺序）。"""
+        with self._SessionLocal() as session:
+            return (
+                session.query(UserIdentity)
+                .filter(UserIdentity.user_id == user_id)
+                .order_by(UserIdentity.id.asc())
+                .all()
+            )
+
+    def find_user_identity_by_email(self, provider: str, email: str) -> Optional[UserIdentity]:
+        """按 provider + 邮箱查找身份行（用于注册去重与 OAuth 邮箱冲突判断）。"""
+        normalized = (email or "").strip().lower()
+        if not normalized:
+            return None
+        with self._SessionLocal() as session:
+            return (
+                session.query(UserIdentity)
+                .filter(UserIdentity.provider == provider, UserIdentity.email == normalized)
+                .first()
+            )
+
+    def create_user_identity(
+        self,
+        user_id: int,
+        provider: str,
+        provider_user_id: str,
+        email: Optional[str] = None,
+        email_verified: bool = False,
+    ) -> Optional[UserIdentity]:
+        """创建外部身份行；(provider, provider_user_id) 冲突时返回 None。"""
+        with self._SessionLocal() as session:
+            try:
+                identity = UserIdentity(
+                    user_id=user_id,
+                    provider=provider,
+                    provider_user_id=str(provider_user_id),
+                    email=(email or "").strip().lower() or None,
+                    email_verified=bool(email_verified),
+                )
+                session.add(identity)
+                session.commit()
+                session.refresh(identity)
+                return identity
+            except IntegrityError:
+                session.rollback()
+                return None
+
+    def mark_user_identity_verified(self, identity_id: int) -> bool:
+        """标记身份邮箱已验证。身份不存在返回 False。"""
+        with self._SessionLocal() as session:
+            identity = session.get(UserIdentity, identity_id)
+            if identity is None:
+                return False
+            identity.email_verified = True
+            session.commit()
+            return True
+
+    def find_user_by_email(self, email: str) -> Optional[User]:
+        """按 users.email 查找用户（邮箱登录入口；大小写不敏感归一）。"""
+        normalized = (email or "").strip().lower()
+        if not normalized:
+            return None
+        with self._SessionLocal() as session:
+            return session.query(User).filter(User.email == normalized).first()
+
+    # === 邮箱验证令牌 ===
+
+    def create_email_verification(
+        self,
+        user_id: int,
+        token_hash: str,
+        expires_at: datetime,
+    ) -> Optional[EmailVerification]:
+        """写入一次性验证令牌（同一用户旧行先删除）；失败返回 None。"""
+        with self._SessionLocal() as session:
+            try:
+                session.query(EmailVerification).filter(
+                    EmailVerification.user_id == user_id
+                ).delete()
+                row = EmailVerification(
+                    user_id=user_id,
+                    token_hash=token_hash,
+                    expires_at=expires_at,
+                )
+                session.add(row)
+                session.commit()
+                session.refresh(row)
+                return row
+            except IntegrityError as exc:
+                session.rollback()
+                logger.warning("[users] 写入邮箱验证令牌失败: %s", exc)
+                return None
+
+    def get_email_verification(self, token_hash: str) -> Optional[EmailVerification]:
+        """按令牌哈希读取未消费的验证记录。"""
+        with self._SessionLocal() as session:
+            return (
+                session.query(EmailVerification)
+                .filter(
+                    EmailVerification.token_hash == token_hash,
+                    EmailVerification.consumed_at.is_(None),
+                )
+                .first()
+            )
+
+    def consume_email_verification(self, verification_id: int) -> bool:
+        """消费验证令牌（单次有效）。"""
+        with self._SessionLocal() as session:
+            row = session.get(EmailVerification, verification_id)
+            if row is None or row.consumed_at is not None:
+                return False
+            row.consumed_at = utc_naive_now()
+            session.commit()
+            return True
 
     # === 每用户自选股与设置（多用户模式） ===
 

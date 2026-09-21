@@ -105,6 +105,7 @@ class RealtimeSource(Enum):
     YFINANCE = "yfinance"           # Yahoo Finance（港/美快路径兜底）
     LONGBRIDGE = "longbridge"       # 长桥（美股/港股兜底）
     FUTU = "futu"                   # 富途 OpenD（港股）
+    TVSCREENER = "tvscreener"       # TradingView screener snapshot (optional)
     FALLBACK = "fallback"           # 降级兜底
 
 

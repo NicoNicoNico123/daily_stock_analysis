@@ -157,6 +157,15 @@ _PROVIDER_DEFINITIONS: Sequence[_ProviderDefinition] = (
             "kline.daily": ("us",),
         },
     ),
+    _ProviderDefinition(
+        name="tvscreener",
+        label="TradingView Screener",
+        fetcher_name="TvscreenerFetcher",
+        dataset_markets={
+            "quote.realtime": ("cn", "hk", "us", "jp", "kr", "tw"),
+            "kline.daily": ("cn", "hk", "us", "jp", "kr", "tw"),
+        },
+    ),
 )
 
 _PROVIDER_DEFINITION_MAP = {
@@ -184,6 +193,7 @@ _REALTIME_SOURCE_PROVIDER = {
     "yfinance": "yfinance",
     "finnhub": "finnhub",
     "alphavantage": "alphavantage",
+    "tvscreener": "tvscreener",
 }
 
 _AKSHARE_REALTIME_CIRCUIT_KEYS = {
@@ -201,6 +211,7 @@ _CN_REALTIME_SOURCES = {
     "tencent",
     "tushare",
     "tickflow",
+    "tvscreener",
 }
 
 _SCREENING_SOURCES = {"tushare", "sina", "efinance", "akshare_em", "em_datacenter"}
@@ -371,6 +382,8 @@ class DataCapabilityService:
             return _truthy(getattr(self.config, "finnhub_api_key", None))
         if name == "alphavantage":
             return _truthy(getattr(self.config, "alphavantage_api_key", None))
+        if name == "tvscreener":
+            return getattr(self.config, "tvscreener_enabled", True) is True
         return False
 
     def _provider_priority(self, definition: _ProviderDefinition, fetcher: Any) -> Optional[int]:
@@ -809,7 +822,7 @@ class DataCapabilityService:
         self,
         provider_map: Dict[str, Dict[str, Any]],
     ) -> Callable[[str], str]:
-        supported_sources = {"futu", "longbridge", "akshare", "yfinance"}
+        supported_sources = {"futu", "longbridge", "akshare", "yfinance", "tvscreener"}
 
         def resolve(token: str) -> str:
             if token not in supported_sources:
@@ -835,13 +848,13 @@ class DataCapabilityService:
             provider
             for fetcher in fetchers
             if (provider := _FETCHER_TO_PROVIDER.get(str(getattr(fetcher, "name", ""))))
-            in {"longbridge", "finnhub", "alphavantage", "yfinance"}
+            in {"longbridge", "finnhub", "alphavantage", "yfinance", "tvscreener"}
             and self._fetcher_available_for_capability(fetcher, capability="daily_data")
         }
         preferred = (
-            ["longbridge", "finnhub", "alphavantage", "yfinance"]
+            ["longbridge", "finnhub", "alphavantage", "yfinance", "tvscreener"]
             if "longbridge" in available
-            else ["finnhub", "alphavantage", "yfinance", "longbridge"]
+            else ["finnhub", "alphavantage", "yfinance", "longbridge", "tvscreener"]
         )
         return [provider for provider in preferred if provider in available]
 

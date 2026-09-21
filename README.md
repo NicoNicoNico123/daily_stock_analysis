@@ -237,11 +237,41 @@ python main.py --serve-only
 Web 工作台提供配置管理、任务监控、手动分析、历史报告、完整 Markdown 报告、Agent 问股、回测、持仓管理、智能导入和浅色 / 深色主题。启动方式：
 
 ```bash
-python main.py --webui
-python main.py --webui-only
+python main.py --serve-only
 ```
 
 访问 `http://127.0.0.1:8000` 即可使用。认证、智能导入、搜索补全、历史报告复制、云服务器访问等细节见 [本地 WebUI 管理界面](docs/full-guide.md#本地-webui-管理界面)。
+
+### 本地预览：管理员与测试账号
+
+登录页：`http://127.0.0.1:8000/login`。仓库**不会内置默认密码**；下表是本地预览示例，需由你在本机设置后才能登录，**不要用于公网或写入 Git**。
+
+| 角色 | 用户名 | 密码（本地示例，至少 6 位） | 如何生效 |
+|------|--------|------------------------------|----------|
+| 管理员 | `admin` | `dsa-admin-local` | `python -m src.auth reset_password`，按提示输入该密码 |
+| 测试用户 | `testuser` | `dsa-user-local` | 用 `admin` 登录后，在侧栏 **用户管理**（`/users`）新建角色 `user` |
+
+1. 在 `.env` 中写入以下开关（已在跑的服务需要重启）：
+
+```bash
+ADMIN_AUTH_ENABLED=true
+MULTI_USER_ENABLED=true
+```
+
+2. 设置管理员密码并启动服务：
+
+```bash
+python -m src.auth reset_password
+python main.py --serve-only
+```
+
+已有单用户管理员密码时，开启多用户后会自动迁入 `admin`，用原密码即可，不必再执行 `reset_password`。
+
+3. 打开 `http://127.0.0.1:8000/login`，用上表 **管理员** 账号登录。
+4. 打开 `/users`，按上表创建 **测试用户**。
+5. 侧栏用户菜单退出后，再用 `testuser` 登录，对比普通用户工作台（无用户管理、无全局系统配置，自选股 / 历史 / Chat 互相隔离）。
+
+忘记管理员密码：再次执行 `python -m src.auth reset_password`。完整边界、开放注册与配额见 [多用户模式](docs/full-guide.md#多用户模式实验性)。
 
 ## 🤖 Agent 策略问股
 
@@ -298,3 +328,9 @@ python main.py --webui-only
 本项目仅供学习和研究使用，不构成任何投资建议。股市有风险，投资需谨慎。作者不对使用本项目产生的任何损失负责。
 
 ---
+
+ admin  │ adminpass1 │ 管理員                        │
+  ├────────┼────────────┼───────────────────────────────┤
+  │ alice  │ alicepass1 │ 普通用戶（已配自選股 601318） │
+  ├────────┼────────────┼───────────────────────────────┤
+  │ bob    │ bobpass12  │ 普通用戶                      │

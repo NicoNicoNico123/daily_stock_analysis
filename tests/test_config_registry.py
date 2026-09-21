@@ -904,3 +904,20 @@ class TestFutuFieldsRegistered(unittest.TestCase):
             for field in category["fields"]
         }
         self.assertTrue({"FUTU_OPEND_HOST", "FUTU_OPEND_PORT", "FUTU_HK_REALTIME_SOURCE_PRIORITY"} <= keys)
+
+
+class TestTvscreenerFieldsRegistered(unittest.TestCase):
+    def test_tvscreener_fields_are_explicitly_registered(self):
+        for key in (
+            "TVSCREENER_ENABLED",
+            "TVSCREENER_PRIORITY",
+            "TVSCREENER_HISTORY_BARS",
+        ):
+            field = get_field_definition(key)
+            self.assertEqual(field["category"], "data_source")
+            self.assertNotEqual(field["display_order"], 9000)
+
+    def test_history_bars_have_bounds(self):
+        field = get_field_definition("TVSCREENER_HISTORY_BARS")
+        self.assertEqual(field["data_type"], "integer")
+        self.assertEqual(field["validation"], {"min": 5, "max": 60})

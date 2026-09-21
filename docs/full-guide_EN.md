@@ -36,6 +36,7 @@ daily_stock_analysis/
 - [Advanced Features](#advanced-features)
 - [Backtesting](#backtesting)
 - [Local WebUI Management Interface](#local-webui-management-interface)
+- [Multi-User Mode (Experimental)](#multi-user-mode-experimental)
 
 ---
 
@@ -368,12 +369,15 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `TICKFLOW_BATCH_SIZE` | Maximum symbols per TickFlow batch request. | `100` | Optional |
 | `FUTU_OPEND_HOST` | Futu OpenD address; use an IPv4 address or an IPv4-resolvable hostname. Leave empty to disable Futu market data. | empty | Optional |
 | `FUTU_OPEND_PORT` | Futu OpenD TCP port, from `1` to `65535`. | `11111` | Optional |
-| `FUTU_HK_REALTIME_SOURCE_PRIORITY` | HK realtime source order: `futu`, `longbridge`, `akshare`, or `yfinance`, comma-separated. Failed sources fall back automatically. | `futu,longbridge,akshare,yfinance` | Optional |
+| `FUTU_HK_REALTIME_SOURCE_PRIORITY` | HK realtime source order: `futu`, `longbridge`, `akshare`, `yfinance`, or `tvscreener`, comma-separated. Failed sources fall back automatically. If `tvscreener` is omitted, HK quotes still try the TradingView screener snapshot after every configured source fails. | `futu,longbridge,akshare,yfinance` | Optional |
+| `TVSCREENER_ENABLED` | Enable the unofficial [tvscreener](https://github.com/deepentropy/tvscreener) snapshot source for quotes, TV-computed indicators, and lagged daily OHLCV fallback. No API key. Skipped when the package is missing or this flag is `false`. | `true` | Optional |
+| `TVSCREENER_PRIORITY` | tvscreener priority in the generic daily K-line chain; lower values are tried earlier. Default `7` keeps it behind Tencent/YFinance. Realtime quotes use it as last fallback unless `tvscreener` is listed in `REALTIME_SOURCE_PRIORITY`. | `7` | Optional |
+| `TVSCREENER_HISTORY_BARS` | How many lagged scanner sessions to rebuild as a last-resort daily series (5–60). Dates come from the exchange calendar; this is not a full history API. | `30` | Optional |
 | `ENABLE_REALTIME_QUOTE` | Enable real-time quotes (if disabled, uses historical closing prices for analysis) | `true` | Optional |
 | `ENABLE_REALTIME_TECHNICAL_INDICATORS` | Intraday real-time technicals: Calculate MA5/MA10/MA20 and bull trends using real-time prices when enabled (Issue #234); uses yesterday's close if disabled. | `true` | Optional |
 | `ENABLE_CHIP_DISTRIBUTION` | Enable chip distribution analysis (this API is unstable, recommended to disable for cloud deployment). GitHub Actions users must set `ENABLE_CHIP_DISTRIBUTION=true` in Repository Variables to enable; disabled by default in workflows. When both the EastMoney and Tushare chip APIs fail, the system falls back to local estimation (multi-source daily K + turnover-decay CYQ model, same lineage as EastMoney's CYQCalculator) covering A-shares (incl. ETF/BSE), Hong Kong and US stocks (indices are skipped); results carry `source=computed` and are analysis input only, never persisted. | `true` | Optional |
 | `ENABLE_EASTMONEY_PATCH` | Eastmoney API patch: Recommended to set to `true` when Eastmoney APIs fail frequently (e.g., RemoteDisconnected, connection closed). Injects NID tokens and random User-Agents to reduce rate limiting probability. | `false` | Optional |
-| `REALTIME_SOURCE_PRIORITY` | Real-time quote source priority (comma-separated), e.g., `tencent,akshare_sina,efinance,akshare_em`; add `tickflow` explicitly to use TickFlow realtime quotes | See .env.example | Optional |
+| `REALTIME_SOURCE_PRIORITY` | Real-time quote source priority (comma-separated), e.g., `tencent,akshare_sina,efinance,akshare_em`; add `tickflow` explicitly to use TickFlow realtime quotes. `tvscreener` is omitted by default and is still tried as last fallback after every listed source fails. | See .env.example | Optional |
 | `ENABLE_FUNDAMENTAL_PIPELINE` | Master switch for fundamental aggregation; when disabled, returns `not_supported` block only, without altering the original analysis pipeline. | `true` | Optional |
 | `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS` | Total latency budget for the fundamental stage (seconds) | `8.0` | Optional |
 | `FUNDAMENTAL_FETCH_TIMEOUT_SECONDS` | Timeout for a single capability source call; market-structure industry/concept rankings share this budget | `8.0` | Optional |
@@ -426,6 +430,7 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `SAVE_CONTEXT_SNAPSHOT` | Persist analysis-history `context_snapshot`. When false, new history records do not save enhanced_context, market_phase_summary, AnalysisContextPack overview, or diagnostic snapshots, but current-run prompt summaries remain enabled | `true` |
 
 > Behavior notes:
+> - When `TVSCREENER_ENABLED=true` (default) and the `tvscreener` package is installed, the unofficial TradingView screener becomes an optional snapshot source: A/H/US/JP/KR/TW realtime quotes try it after every existing source fails; daily K-lines use `TVSCREENER_PRIORITY` on the generic chain and sit after TwelveData on the US chain. It supplies the current quote, TV-computed RSI/MACD/MAs, and a bounded lagged daily series (default 30 bars, dates from the exchange calendar). It is **not** a full history API; Efinance/AkShare/YFinance/Finnhub remain the primary K-line path. Scanner rejection or rate-limits fail open.
 > - When `TICKFLOW_API_KEY` is configured, TickFlow is instantiated as an optional A-share daily K-line data source and CN market-review enhancer. `TICKFLOW_PRIORITY` only affects the generic A-share daily K-line/provider fallback chain. Realtime quote priority is controlled separately by `REALTIME_SOURCE_PRIORITY`; TickFlow realtime quotes are used only when that list explicitly includes `tickflow`, and any source listed before `tickflow` is tried first.
 > - All SH/SZ indices currently registered in `IndexRegistry` (the `sh`/`sz`/`csi` prefixes; see the [Index watchlist configuration](#index-watchlist-configuration) registry notes and `scripts/stock_index_seeds/index_registry.csv` for the full list) bypass generic priority sorting when given as explicit-market inputs (exchange-suffix forms such as `000016.SH` are also accepted) and use the fixed Tencent → AkShare → TickFlow → YFinance fallback chain; unconfigured or unavailable providers are skipped. Bare `000016`-style inputs remain stocks and do not enter the index chain. This fixed chain ignores `EFINANCE_PRIORITY`, `AKSHARE_PRIORITY`, `TUSHARE_PRIORITY`, `TICKFLOW_PRIORITY`, `PYTDX_PRIORITY`, `BAOSTOCK_PRIORITY`, `YFINANCE_PRIORITY`, and `TENCENT_PRIORITY`. Existing stock and realtime-quote ordering is unchanged.
 > - Registered index names normally come from the local registry. Only an invalid registry name triggers the Tencent → AkShare → TickFlow name fallback; YFinance is not part of the name chain. If all four daily providers fail, an index request returns an empty result with a summary warning, while ordinary stocks retain the existing final `DataFetchError` contract.
@@ -1502,6 +1507,7 @@ FastAPI provides RESTful API service for configuration management and triggering
 - **Market review history dedicated entry** - Market review history is shown in a dedicated history entry and isolated from regular stock history; use `stock_code=MARKET` and `report_type=market_review` to view and replay only market-review records.
 - **Market review history replay** - Market review results are persisted with `report_type=market_review` and can be reopened from history list/detail or Markdown endpoints directly, without re-triggering a fresh analysis run.
 - **Market-position card** - A-share stock reports show a market theme layer and a stock position layer, separating market themes, primary theme, theme phase, stock role, and missing evidence.
+- **Trading-desk daily chart** - Stock reports show a TradingView-style daily chart after the overview: local 60/120/250 session ranges, MA5/MA10/MA20, an OHLC crosshair HUD, ideal-entry / take-profit sell lines and markers, plus a solid analyst forecast from the last close with dashed bull/bear cones. If the chart library fails to load, the panel falls back to recent closes.
 - **Input data-block visibility** - Regular analysis reports expose a low-sensitivity `AnalysisContextPack` overview through history details, sync responses, and completed task status; the Web report page shows the data-block summary collapsed after Strategy and News, with block status, source, missing reasons, and fallback summaries available on expansion.
 - **Ask-stock follow-up context** - When Ask Stock is opened from a historical report, follow-up messages keep sending the active `stock_code/stock_name`; reopening an existing chat can recover the base stock from loaded user messages, and comparison-style prompts do not overwrite the current stock context.
 - **Backtest Validation** - Evaluate historical analysis accuracy, query direction win rate and simulated returns
@@ -1672,8 +1678,31 @@ Multi-user mode lets several people share one DSA deployment: each person signs 
 
 1. Set `ADMIN_AUTH_ENABLED=true` and `MULTI_USER_ENABLED=true` in `.env`, then restart.
 2. Upgrade path: the existing admin password (`data/.admin_password_hash`) migrates automatically into an `admin` account; the global `STOCK_LIST` is backfilled once into the admin's watchlist.
-3. Accounts come from either the admin Users page (recommended for public deployments) or open registration via `AUTH_REGISTRATION_ENABLED=true` (use together with quotas).
+3. Accounts come from either the sidebar Users page (recommended for public deployments) or open registration via `AUTH_REGISTRATION_ENABLED=true` (use together with quotas).
 4. Usernames: 3-32 chars of letters, digits, `_` or `-`. Login failures are rate-limited per (username, IP); registration per IP.
+
+### Sign-in methods (username / email / Google / Facebook)
+
+Besides username + password, multi-user mode supports three more sign-in entries. All of them reuse the existing session cookie and permission model (OAuth sign-ups create ordinary `users` rows, so disabling, `token_version` revocation, quotas and data isolation behave exactly the same):
+
+- **Login email (optional)**: registration accepts an optional login email; afterwards either the email or the username works in the login box. Emails are unique (including those held by third-party identities). When `EMAIL_SENDER` + `EMAIL_PASSWORD` are set, a one-time verification link is mailed (`/api/v1/auth/verify-email?token=...`, valid 24h, single use). Without SMTP the mail is skipped and sign-in is still allowed in v1.
+- **Google / Facebook OAuth**: set `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` or `FACEBOOK_OAUTH_APP_ID` / `FACEBOOK_OAUTH_APP_SECRET` in `.env` and the login page shows "Continue with Google/Facebook". The flow is Authorization Code: the backend issues an HMAC-signed single-use `state`, redirects to the provider, exchanges the code, reads the account info, then finds or creates the identity by (provider, external id) and issues the session cookie before redirecting to the frontend `/oauth/callback` route. Register `{external base URL}/api/v1/auth/oauth/{provider}/callback` as the redirect URI in the provider console; set `OAUTH_REDIRECT_BASE` for public or reverse-proxied deployments.
+- **Limits and security boundaries**: OAuth auto sign-up is gated by the same `AUTH_REGISTRATION_ENABLED` and `MULTI_USER_MAX_USERS` switches (with registration closed, existing third-party identities can still sign in but no new account is created). OAuth-created accounts carry a random unusable password hash, so password sign-in is impossible and recovery relies on the email verification flow. The same email under different methods are separate accounts (v1 does not merge identities across methods to prevent email-declaration account takeover; a linking UI is future work). `state` is single-use and expires in 10 minutes; client secrets never appear in logs or responses.
+
+### Local preview: admin and test user
+
+To preview the multi-user workspace locally, sign in as admin and create one normal test user. The repo does not ship a default password. The README examples `dsa-admin-local` / `dsa-user-local` only work after you run `reset_password` and create the user on the Users page; do not use them on a public host or commit them. Login page: `http://127.0.0.1:8000/login`. The admin username is always `admin`.
+
+1. Set `ADMIN_AUTH_ENABLED=true` and `MULTI_USER_ENABLED=true` in `.env`. Keep `AUTH_REGISTRATION_ENABLED=false` for local preview so the admin creates accounts.
+2. If no admin password exists yet, run `python -m src.auth reset_password` before starting the server (at least 6 characters). This writes `data/.admin_password_hash` and, when multi-user is already on, the `admin` row in the `users` table. Skip this step if you already had a single-user password; enabling multi-user migrates it into `admin`.
+3. Start `python main.py --serve-only` and open `http://127.0.0.1:8000/login`.
+4. Sign in as username `admin` with that password. The admin sees Users, global system settings, and the backfilled watchlist.
+5. Open `/users` and create a `user` role account (for example `testuser`, password at least 6 characters).
+6. Sign out from the sidebar user menu, then sign in as `testuser`. A normal user cannot open Users or global settings, and can only edit personal settings and their own password. Watchlist, history, alerts, and Chat are isolated from the admin. Market review remains globally read-only.
+
+Run `python -m src.auth reset_password` again to reset the admin password. For frontend hot reload, also run `cd apps/dsa-web && npm run dev` (`http://127.0.0.1:5173`, `/api` proxies to port 8000); the login steps are the same.
+
+The homepage-level steps are in the [README Web UI section](README_EN.md#-web-ui).
 
 ### Data boundaries
 

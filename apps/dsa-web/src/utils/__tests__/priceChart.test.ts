@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   addCalendarDays,
+  buildAnalystForecastLine,
   buildCandlesticks,
   buildForecastCone,
   buildLevelLines,
+  buildMovingAverage,
+  buildOhlcHud,
+  buildTradeMarkers,
   buildVolumeHistogram,
+  filterFromTime,
   forecastEndDate,
   isUpwardBias,
   parseLevelValue,
   parseLevels,
+  sliceLatest,
   type PriceChartKlinePoint,
 } from '../priceChart';
 
@@ -135,24 +141,117 @@ describe('buildForecastCone', () => {
   it('builds bull and bear paths from the last close over 10 calendar days', () => {
     const cone = buildForecastCone(base);
 
-    expect(cone.bull).toHaveLength(10);
-    expect(cone.bear).toHaveLength(10);
-    expect(cone.bull[0]).toEqual({ time: '2026-09-11', value: 101 });
-    expect(cone.bull[9]).toEqual({ time: '2026-09-20', value: 110 });
-    expect(cone.bear[9]).toEqual({ time: '2026-09-20', value: 90 });
+    expect(cone.bull).toHaveLength(11);
+    expect(cone.bear).toHaveLength(11);
+    expect(cone.bull[0]).toEqual({ time: '2026-09-10', value: 100 });
+    expect(cone.bull[1]).toEqual({ time: '2026-09-11', value: 101 });
+    expect(cone.bull[10]).toEqual({ time: '2026-09-20', value: 110 });
+    expect(cone.bear[10]).toEqual({ time: '2026-09-20', value: 90 });
   });
 
   it('tilts the cone upward when the prediction is bullish', () => {
     const cone = buildForecastCone({ ...base, upwardBias: true });
 
-    expect(cone.bull[9].value).toBeCloseTo(110 * 1.05, 4);
-    expect(cone.bear[9].value).toBe(90);
+    expect(cone.bull[10].value).toBeCloseTo(110 * 1.05, 4);
+    expect(cone.bear[10].value).toBe(90);
   });
 
   it('falls back to a flat path when a level is missing and ignores invalid input', () => {
-    expect(buildForecastCone({ ...base, takeProfit: null }).bull[9].value).toBe(100);
-    expect(buildForecastCone({ ...base, stopLoss: null }).bear[9].value).toBe(100);
+    expect(buildForecastCone({ ...base, takeProfit: null }).bull[10].value).toBe(100);
+    expect(buildForecastCone({ ...base, stopLoss: null }).bear[10].value).toBe(100);
     expect(buildForecastCone({ ...base, lastDate: 'bad-date' })).toEqual({ bull: [], bear: [] });
     expect(buildForecastCone({ ...base, lastClose: Number.NaN })).toEqual({ bull: [], bear: [] });
+  });
+});
+
+describe('buildAnalystForecastLine', () => {
+  const base = {
+    lastDate: '2026-09-10',
+    lastClose: 100,
+    takeProfit: 110,
+    stopLoss: 90,
+  };
+
+  it('aims at take-profit when the bias is bullish', () => {
+    const line = buildAnalystForecastLine({ ...base, upwardBias: true });
+
+    expect(line[0]).toEqual({ time: '2026-09-10', value: 100 });
+    expect(line[line.length - 1]).toEqual({ time: '2026-09-20', value: 110 });
+  });
+
+  it('uses the midpoint of take-profit and stop when the bias is not bullish', () => {
+    const line = buildAnalystForecastLine(base);
+
+    expect(line[line.length - 1].value).toBe(100);
+  });
+
+  it('returns an empty path when both levels are missing', () => {
+    expect(buildAnalystForecastLine({
+      lastDate: '2026-09-10',
+      lastClose: 100,
+      takeProfit: null,
+      stopLoss: null,
+    })).toEqual([]);
+  });
+});
+
+describe('buildMovingAverage / sliceLatest / filterFromTime', () => {
+  it('emits SMA values starting at the period index', () => {
+    const candles = buildCandlesticks(POINTS);
+    const ma2 = buildMovingAverage(candles, 2);
+
+    expect(ma2).toEqual([
+      { time: '2026-02-02', value: 11.05 },
+      { time: '2026-02-03', value: 12.35 },
+    ]);
+    expect(buildMovingAverage(candles, 5)).toEqual([]);
+  });
+
+  it('slices from the tail and filters by start time', () => {
+    const candles = buildCandlesticks(POINTS);
+    expect(sliceLatest(candles, 2).map((candle) => candle.time)).toEqual(['2026-02-02', '2026-02-03']);
+    expect(sliceLatest(candles, 9)).toEqual(candles);
+    expect(filterFromTime(candles, '2026-02-02').map((candle) => candle.time)).toEqual([
+      '2026-02-02',
+      '2026-02-03',
+    ]);
+  });
+});
+
+describe('buildOhlcHud / buildTradeMarkers', () => {
+  it('computes close-to-close change against the previous bar', () => {
+    expect(buildOhlcHud(
+      { time: '2026-02-03', open: 12, high: 13.2, low: 11.5, close: 12.8 },
+      11.9,
+    )).toEqual({
+      time: '2026-02-03',
+      open: 12,
+      high: 13.2,
+      low: 11.5,
+      close: 12.8,
+      changePct: 7.56,
+    });
+    expect(buildOhlcHud(
+      { time: '2026-02-03', open: 12, high: 13.2, low: 11.5, close: 12.8 },
+      null,
+    ).changePct).toBeNull();
+  });
+
+  it('places a buy arrow below and a sell arrow above the last bar', () => {
+    expect(buildTradeMarkers('2026-02-03', {
+      idealBuy: 12.5,
+      secondaryBuy: 12,
+      stopLoss: 10,
+      takeProfit: 15,
+    })).toEqual([
+      { time: '2026-02-03', position: 'belowBar', shape: 'arrowUp', key: 'idealBuy' },
+      { time: '2026-02-03', position: 'aboveBar', shape: 'arrowDown', key: 'takeProfit' },
+    ]);
+    expect(buildTradeMarkers('bad', {
+      idealBuy: 1,
+      secondaryBuy: null,
+      stopLoss: null,
+      takeProfit: null,
+    })).toEqual([]);
   });
 });

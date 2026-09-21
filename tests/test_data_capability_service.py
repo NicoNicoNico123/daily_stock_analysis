@@ -66,6 +66,7 @@ def _config(**overrides):
         "longbridge_oauth_client_id": None,
         "finnhub_api_key": None,
         "alphavantage_api_key": None,
+        "tvscreener_enabled": False,
         "enable_realtime_quote": True,
         "enable_fundamental_pipeline": True,
         "realtime_source_priority": "tencent,akshare_sina,efinance,akshare_em",

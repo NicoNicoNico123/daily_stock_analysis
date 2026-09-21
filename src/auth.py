@@ -23,13 +23,19 @@ import re
 import secrets
 import sys
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from dotenv import dotenv_values
 from sqlalchemy.exc import IntegrityError
 
-from src.storage import USER_ROLE_ADMIN, USER_ROLE_USER
+from src.storage import (
+    IDENTITY_PROVIDER_EMAIL,
+    USER_ROLE_ADMIN,
+    USER_ROLE_USER,
+    utc_naive_now,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,12 @@ REGISTRATION_RATE_MAX = 5
 SESSION_MAX_AGE_HOURS_DEFAULT = 24
 MIN_PASSWORD_LEN = 6
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{3,32}$")
+# 登录邮箱（RFC-lite）：本地部分 + @ + 域名（至少一个点），长度受 DB 列上限约束
+EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
+EMAIL_MAX_LEN = 255
+# 邮箱验证令牌有效期（小时）与用户名派生上限
+EMAIL_VERIFICATION_TTL_HOURS = 24
+OAUTH_USERNAME_MAX_LEN = 32
 # 会话用户状态缓存 TTL（秒）：避免每请求查 DB；禁用/改密通过 token_version 失效机制兜底
 USER_STATE_CACHE_TTL_SEC = 5.0
 
@@ -483,6 +495,36 @@ def _session_max_age_hours() -> int:
         return SESSION_MAX_AGE_HOURS_DEFAULT
 
 
+def session_max_age_seconds() -> int:
+    """会话 cookie 有效期（秒），与 _session_max_age_hours 同源。"""
+    return _session_max_age_hours() * 3600
+
+
+def is_request_secure(request: Any) -> bool:
+    """判断当前请求是否走 HTTPS（决定会话 cookie 的 Secure 标记）。
+
+    单层可信反向代理下信任 X-Forwarded-Proto；直连时取请求 scheme。
+    """
+    if os.getenv("TRUST_X_FORWARDED_FOR", "false").lower() == "true":
+        proto = getattr(request.headers, "get", lambda *_: "")("X-Forwarded-Proto", "")
+        return str(proto).lower() == "https"
+    try:
+        return request.url.scheme == "https"
+    except AttributeError:
+        return False
+
+
+def build_session_cookie_params(request: Any) -> dict:
+    """会话 cookie 参数（登录、注册与 OAuth 回调共用同一份）。"""
+    return {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": is_request_secure(request),
+        "path": "/",
+        "max_age": session_max_age_seconds(),
+    }
+
+
 def _sign_payload(secret: bytes, payload: str) -> str:
     return hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -766,6 +808,346 @@ def create_user_account(username: str, password: str, role: str = USER_ROLE_USER
         return ("storage_error", None)
     if user is None:
         return ("username_taken", None)
+    return (None, user.to_auth_dict())
+
+
+def normalize_email(email: Optional[str]) -> str:
+    """归一化邮箱：去首尾空白并转小写（存储与查询共用同一形态）。"""
+    return (email or "").strip().lower()
+
+
+def validate_email(email: Optional[str]) -> Optional[str]:
+    """返回错误信息；None 表示合法。空值合法（邮箱是可选字段）。"""
+    normalized = normalize_email(email)
+    if not normalized:
+        return None
+    if len(normalized) > EMAIL_MAX_LEN or not EMAIL_PATTERN.match(normalized):
+        return "电子邮箱格式不正确"
+    return None
+
+
+def register_user_with_email(
+    username: str,
+    email: Optional[str],
+    password: str,
+) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """创建「用户名 + 密码 + 可选登录邮箱」账号，并在填写邮箱时建立 email 登录身份。
+
+    返回 (错误码, 用户字典)；错误码 None 表示成功。
+    错误码：invalid_username / invalid_password / invalid_email / email_taken /
+    username_taken / max_users / storage_error。
+    邮箱唯一性覆盖 users.email 与 user_identities（任意 provider 的既有身份邮箱，
+    避免同一邮箱同时存在密码账号与第三方身份造成的归属歧义）。
+    """
+    normalized_email = normalize_email(email)
+    err = validate_email(normalized_email)
+    if err:
+        return ("invalid_email", None)
+
+    manager = _get_db_manager()
+    if normalized_email:
+        try:
+            if manager.find_user_by_email(normalized_email) is not None:
+                return ("email_taken", None)
+            existing_email_identity = manager.find_user_identity_by_email(
+                "email", normalized_email
+            )
+        except Exception as e:
+            logger.error("Failed to check email uniqueness: %s", e)
+            return ("storage_error", None)
+        if existing_email_identity is not None:
+            return ("email_taken", None)
+
+    # 用户名/密码校验、注册配额与首账号 admin 语义沿用 create_user_account
+    error_code, user = create_user_account(username, password)
+    if error_code or user is None:
+        return (error_code, None)
+
+    if normalized_email:
+        try:
+            if not manager.update_user_email(int(user["id"]), normalized_email):
+                return ("email_taken", None)
+            identity = manager.create_user_identity(
+                int(user["id"]),
+                IDENTITY_PROVIDER_EMAIL,
+                normalized_email,
+                email=normalized_email,
+                email_verified=False,
+            )
+        except Exception as e:
+            logger.error("Failed to attach email identity: %s", e)
+            return ("storage_error", None)
+        if identity is None:
+            # 极小概率并发竞争（唯一索引兜底）；账号本身已建好，用户仍可用用户名登录
+            return ("email_taken", None)
+        user["email"] = normalized_email
+    return (None, user)
+
+
+def authenticate_by_login(login_name: str, password: str) -> Optional[Dict[str, Any]]:
+    """多用户模式登录校验：login_name 可以是用户名或登录邮箱。
+
+    成功返回用户脱敏字典（与 verify_user_credentials 同形态）；失败返回 None。
+    含 @ 时按 users.email 查找，否则按用户名查找；未知身份同样执行等时 PBKDF2。
+    """
+    if not is_multi_user_enabled():
+        return None
+    name = (login_name or "").strip()
+    if not name:
+        # 等时：空身份也执行一次 PBKDF2 派生，避免响应时间泄露登录名是否存在
+        salt, stored = _get_dummy_password_hash()
+        _verify_password_hash(password or "", salt, stored)
+        return None
+    try:
+        manager = _get_db_manager()
+        if "@" in name:
+            user = manager.find_user_by_email(name)
+        else:
+            user = manager.get_user_by_username(name)
+    except Exception as e:
+        logger.error("Failed to query user for login: %s", e)
+        user = None
+    if user is None or not user.is_active:
+        salt, stored = _get_dummy_password_hash()
+        _verify_password_hash(password or "", salt, stored)
+        return None
+    if not _verify_password_hash(password or "", bytes(user.password_salt), bytes(user.password_hash)):
+        return None
+    return user.to_auth_dict()
+
+
+def list_configured_oauth_providers() -> list[str]:
+    """返回已完整配置 client id/secret 的 OAuth provider（稳定顺序）。
+
+    仅在多用户模式下对外暴露；secret 只参与服务端换 token，绝不回传给前端。
+    """
+    if not is_multi_user_enabled():
+        return []
+    providers: list[str] = []
+    for provider, id_key, secret_key in (
+        ("google", "google_oauth_client_id", "google_oauth_client_secret"),
+        ("facebook", "facebook_oauth_app_id", "facebook_oauth_app_secret"),
+    ):
+        try:
+            from src.config import get_config
+
+            config = get_config()
+        except Exception as e:
+            logger.warning("[auth] 读取 OAuth 配置失败: %s", e)
+            return []
+        if getattr(config, id_key, None) and getattr(config, secret_key, None):
+            providers.append(provider)
+    return providers
+
+
+def is_email_delivery_configured() -> bool:
+    """SMTP 是否可用（复用既有 EMAIL_SENDER / EMAIL_PASSWORD 通知配置）。"""
+    try:
+        from src.config import get_config
+
+        config = get_config()
+    except Exception as e:
+        logger.warning("[auth] 读取邮件配置失败: %s", e)
+        return False
+    return bool(getattr(config, "email_sender", None) and getattr(config, "email_password", None))
+
+
+def get_webui_base_url() -> str:
+    """推导邮件链接 / OAuth 回调使用的对外 base URL。
+
+    优先 OAUTH_REDIRECT_BASE（显式覆盖，推荐反向代理部署时设置）；
+    否则用 WEBUI_HOST / WEBUI_PORT 拼接，通配监听地址回退为 localhost。
+    """
+    from src.config import get_config
+
+    try:
+        config = get_config()
+    except Exception as e:
+        logger.warning("[auth] 读取 WebUI base URL 失败，回退 localhost: %s", e)
+        return "http://localhost:8000"
+    override = (getattr(config, "oauth_redirect_base", None) or "").strip().rstrip("/")
+    if override:
+        return override
+    host = (getattr(config, "webui_host", None) or "127.0.0.1").strip()
+    if host in ("0.0.0.0", "::", ""):
+        host = "localhost"
+    port = int(getattr(config, "webui_port", 8000) or 8000)
+    if host.startswith("http://") or host.startswith("https://"):
+        return host.rstrip("/")
+    return f"http://{host}:{port}"
+
+
+def _hash_token(token: str) -> str:
+    """验证令牌只落库 SHA-256 哈希（泄露 DB 也不能直接重放链接）。"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_email_verification_token(user_id: int, email: str) -> Optional[str]:
+    """生成一次性邮箱验证令牌：签名格式 ``nonce.ts.signature``，落库仅存哈希。
+
+    SMTP 未配置 / 会话密钥不可用时返回 None（调用方跳过发送，账号保持未验证）。
+    """
+    secret = _get_session_secret()
+    if not secret:
+        return None
+    nonce = secrets.token_urlsafe(24)
+    ts = str(int(time.time()))
+    sig = _sign_payload(secret, f"emailverify.{nonce}.{ts}")
+    token = f"{nonce}.{ts}.{sig}"
+    try:
+        expires_at = utc_naive_now() + timedelta(hours=EMAIL_VERIFICATION_TTL_HOURS)
+        row = _get_db_manager().create_email_verification(user_id, _hash_token(token), expires_at)
+    except Exception as e:
+        logger.error("Failed to persist email verification token: %s", e)
+        return None
+    if row is None:
+        return None
+    logger.info("[auth] 已生成邮箱验证令牌 user_id=%s email=%s", user_id, normalize_email(email))
+    return token
+
+
+def verify_email_token(token: str) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """校验并消费邮箱验证令牌。返回 (错误码, 信息字典)；错误码 None 表示成功。
+
+    错误码：invalid_token / expired_token / used_token / user_missing。
+    """
+    if not token or token.count(".") != 2:
+        return ("invalid_token", None)
+    secret = _get_session_secret()
+    if not secret:
+        return ("invalid_token", None)
+    nonce, ts_str, sig = token.split(".")
+    if not hmac.compare_digest(_sign_payload(secret, f"emailverify.{nonce}.{ts_str}"), sig):
+        return ("invalid_token", None)
+    try:
+        ts = int(ts_str)
+    except ValueError:
+        return ("invalid_token", None)
+    if time.time() - ts > EMAIL_VERIFICATION_TTL_HOURS * 3600:
+        return ("expired_token", None)
+
+    try:
+        row = _get_db_manager().get_email_verification(_hash_token(token))
+    except Exception as e:
+        logger.error("Failed to load email verification token: %s", e)
+        return ("invalid_token", None)
+    if row is None:
+        return ("used_token", None)
+    if row.expires_at and utc_naive_now() > row.expires_at:
+        return ("expired_token", None)
+
+    manager = _get_db_manager()
+    try:
+        identities = manager.get_user_identities(int(row.user_id))
+    except Exception as e:
+        logger.error("Failed to load identities for verification: %s", e)
+        return ("invalid_token", None)
+    email_identity = next((i for i in identities if i.provider == IDENTITY_PROVIDER_EMAIL), None)
+    if email_identity is None:
+        return ("user_missing", None)
+    if not manager.mark_user_identity_verified(int(email_identity.id)):
+        return ("user_missing", None)
+    if not manager.consume_email_verification(int(row.id)):
+        return ("used_token", None)
+    with _get_lock():
+        _user_state_cache.pop(int(row.user_id), None)
+    return (None, {"user_id": int(row.user_id), "email": email_identity.email})
+
+
+def send_email_verification(email: str, token: str) -> bool:
+    """发送验证邮件（复用既有 SMTP 通知发送链路）。失败不阻断注册流程。"""
+    normalized = normalize_email(email)
+    if not normalized:
+        return False
+    link = f"{get_webui_base_url()}/api/v1/auth/verify-email?token={token}"
+    subject = "DSA 邮箱验证"
+    content = (
+        f"你好，\n\n请点击以下链接完成 DSA 登录邮箱验证（{EMAIL_VERIFICATION_TTL_HOURS} 小时内有效，仅可使用一次）：\n\n"
+        f"{link}\n\n如果这不是你本人的操作，请忽略本邮件。"
+    )
+    try:
+        from src.config import get_config
+        from src.notification_sender.email_sender import EmailSender
+
+        sender = EmailSender(get_config())
+        return sender.send_to_email(content, subject=subject, receivers=[normalized])
+    except Exception as e:
+        logger.error("验证邮件发送失败: %s", e)
+        return False
+
+
+def derive_username_from_email(email: str) -> str:
+    """从邮箱 local-part 派生合法用户名（OAuth 自动注册用）。
+
+    不合法字符转 `_`，超长截断到 32；结果过短时补随机后缀保证满足 3-32 规则。
+    """
+    local_part = normalize_email(email).split("@", 1)[0] or "user"
+    derived = re.sub(r"[^A-Za-z0-9_-]", "_", local_part)[:OAUTH_USERNAME_MAX_LEN]
+    while len(derived) < 3:
+        derived = f"{derived}{secrets.token_hex(2)}"
+    return derived[:OAUTH_USERNAME_MAX_LEN]
+
+
+def create_oauth_user_account(
+    provider: str,
+    provider_user_id: str,
+    email: Optional[str],
+    email_verified: bool,
+) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """OAuth 首次登录自动建号：随机不可用密码哈希（密码登录不可能）+ email 登录身份不创建。
+
+    返回 (错误码, 用户字典)。错误码：registration_disabled / max_users / storage_error。
+    用户名从邮箱 local-part 派生并去重；同一邮箱允许在不同 provider 下各自建号（v1 不做跨 provider 合并）。
+    """
+    if not is_registration_enabled():
+        return ("registration_disabled", None)
+    manager = _get_db_manager()
+    base_name = derive_username_from_email(email or f"{provider}.{provider_user_id}")
+    candidate = base_name
+    for suffix in range(1, 50):
+        try:
+            if manager.get_user_by_username(candidate) is None:
+                break
+        except Exception as e:
+            logger.error("Failed to check username availability: %s", e)
+            return ("storage_error", None)
+        tail = str(suffix) if len(base_name) + len(str(suffix)) <= OAUTH_USERNAME_MAX_LEN else secrets.token_hex(4)
+        candidate = f"{base_name[:OAUTH_USERNAME_MAX_LEN - len(tail)]}{tail}"
+    try:
+        from src.services.user_quota import user_registration_allowed
+
+        allowed, _count = user_registration_allowed(manager)
+        if not allowed:
+            return ("max_users", None)
+        # 随机 salt/hash：任何密码都无法命中该派生结果，账号只能通过 OAuth 登录
+        unusable_salt = secrets.token_bytes(32)
+        unusable_hash = secrets.token_bytes(32)
+        user = manager.create_user(
+            candidate,
+            unusable_salt,
+            unusable_hash,
+            role=USER_ROLE_USER,
+        )
+        identity = manager.create_user_identity(
+            int(user.id),
+            provider,
+            provider_user_id,
+            email=email,
+            email_verified=bool(email_verified),
+        )
+    except IntegrityError:
+        return ("storage_error", None)
+    except Exception as e:
+        logger.error("Failed to create OAuth user account: %s", e)
+        return ("storage_error", None)
+    if identity is None:
+        logger.error("[oauth] 身份行创建失败 provider=%s（该外部账号下次登录重试）", provider)
+        return ("storage_error", None)
+    try:
+        if normalize_email(email):
+            manager.update_user_email(int(user.id), normalize_email(email))
+    except Exception as e:
+        logger.warning("[oauth] 写入 users.email 失败（不影响本次登录）: %s", e)
     return (None, user.to_auth_dict())
 
 

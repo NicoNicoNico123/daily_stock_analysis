@@ -684,6 +684,7 @@ class DataFetcherManager:
         "FinnhubFetcher": {"us"},
         "AlphaVantageFetcher": {"us"},
         "TwelvedataFetcher": {"us"},
+        "TvscreenerFetcher": {"cn", "hk", "us", "jp", "kr", "tw"},
     }
     _daily_source_health = CircuitBreaker(failure_threshold=3, cooldown_seconds=300.0)
     _CN_INDEX_DAILY_SOURCE_ORDER = (
@@ -1909,6 +1910,19 @@ class DataFetcherManager:
         else:
             logger.debug("[数据源初始化] 跳过未配置的 TwelvedataFetcher")
 
+        if getattr(config, "tvscreener_enabled", True) is True:
+            try:
+                from .tvscreener_fetcher import TvscreenerFetcher, is_tvscreener_available
+
+                if is_tvscreener_available():
+                    optional_fetchers.append(TvscreenerFetcher())
+                else:
+                    logger.debug("[数据源初始化] 跳过 TvscreenerFetcher：未安装 tvscreener 包")
+            except Exception as exc:  # noqa: BLE001 - optional source, fail open
+                logger.debug("[数据源初始化] 跳过 TvscreenerFetcher: %s", exc)
+        else:
+            logger.debug("[数据源初始化] 跳过已关闭的 TvscreenerFetcher")
+
         # 初始化数据源列表
         self._ensure_concurrency_guards()
         with self._fetchers_lock:
@@ -2019,11 +2033,25 @@ class DataFetcherManager:
             prefer_lb = self._longbridge_preferred(capability="daily_data") and not is_us_index
             if is_us_index:
                 # 指数始终 YFinance 首选（Longbridge 不提供指数K线）
-                source_order = ["YfinanceFetcher", "FinnhubFetcher"]
+                source_order = ["YfinanceFetcher", "FinnhubFetcher", "TvscreenerFetcher"]
             elif prefer_lb:
-                source_order = ["LongbridgeFetcher", "FinnhubFetcher", "AlphaVantageFetcher", "YfinanceFetcher", "TwelvedataFetcher"]
+                source_order = [
+                    "LongbridgeFetcher",
+                    "FinnhubFetcher",
+                    "AlphaVantageFetcher",
+                    "YfinanceFetcher",
+                    "TwelvedataFetcher",
+                    "TvscreenerFetcher",
+                ]
             else:
-                source_order = ["FinnhubFetcher", "AlphaVantageFetcher", "YfinanceFetcher", "LongbridgeFetcher", "TwelvedataFetcher"]
+                source_order = [
+                    "FinnhubFetcher",
+                    "AlphaVantageFetcher",
+                    "YfinanceFetcher",
+                    "LongbridgeFetcher",
+                    "TwelvedataFetcher",
+                    "TvscreenerFetcher",
+                ]
             # 消费各数据源当前优先级(含 *_PRIORITY 环境变量):默认优先级与内置链路一致,
             # 单项调整(如 YFINANCE_PRIORITY=0)即时生效;指数/Longbridge preferred 的锚定首选不被普通优先级覆盖
             pin_first = bool(is_us_index or prefer_lb)
@@ -2408,6 +2436,7 @@ class DataFetcherManager:
             "FinnhubFetcher": "finnhub",
             "AlphaVantageFetcher": "alphavantage",
             "TwelvedataFetcher": "twelvedata",
+            "TvscreenerFetcher": "tvscreener",
             "EfinanceFetcher": "efinance",
             "TushareFetcher": "tushare",
         }
@@ -2514,6 +2543,18 @@ class DataFetcherManager:
                     quote,
                     realtime_cache_ttl=getattr(config, "realtime_cache_ttl", None),
                 )
+            tv_quote = self._try_tvscreener_quote(
+                stock_code,
+                fallback_from="yfinance",
+                realtime_cache_ttl=getattr(config, "realtime_cache_ttl", None),
+            )
+            if tv_quote is not None:
+                logger.info(
+                    "[实时行情] %s %s 成功获取 (来源: TvscreenerFetcher)",
+                    market_label,
+                    stock_code,
+                )
+                return tv_quote
             if log_final_failure:
                 logger.info(f"[实时行情] {market_label} {stock_code} 无可用数据源")
             return None
@@ -2541,6 +2582,7 @@ class DataFetcherManager:
                     "longbridge": ("LongbridgeFetcher", {}),
                     "akshare": ("AkshareFetcher", {"source": "hk"}),
                     "yfinance": ("YfinanceFetcher", {}),
+                    "tvscreener": ("TvscreenerFetcher", {}),
                 }
                 primary_quote = None
                 primary_token = None
@@ -2619,6 +2661,15 @@ class DataFetcherManager:
                         fallback_from=fallback_from,
                         realtime_cache_ttl=getattr(config, "realtime_cache_ttl", None),
                     )
+                tv_quote = self._try_tvscreener_quote(
+                    stock_code,
+                    fallback_from=fallback_from or primary_token,
+                    realtime_cache_ttl=getattr(config, "realtime_cache_ttl", None),
+                    skip_if_already_tried="tvscreener" in hk_priority,
+                )
+                if tv_quote is not None:
+                    logger.info("[实时行情] 港股 %s 成功获取 (来源: TvscreenerFetcher)", stock_code)
+                    return tv_quote
                 if log_final_failure:
                     logger.info("[实时行情] 港股 %s 无可用数据源", stock_code)
                 return None
@@ -2640,6 +2691,14 @@ class DataFetcherManager:
                     primary_quote = self._supplement_quote(
                         stock_code, primary_quote, extra_src,
                     )
+            if primary_quote is None and not is_us_index:
+                primary_quote = self._try_tvscreener_quote(
+                    stock_code,
+                    fallback_from=fallback_from,
+                    realtime_cache_ttl=None,
+                    skip_if_already_tried=False,
+                    enrich=False,
+                )
             if primary_quote is not None:
                 return self._enrich_realtime_quote(
                     primary_quote,
@@ -2731,6 +2790,18 @@ class DataFetcherManager:
                         )
                         quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
 
+                elif source == "tvscreener":
+                    fetcher = self._get_fetcher_by_name("TvscreenerFetcher", capability="realtime_quote")
+                    if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
+                        quote = self._call_fetcher_method(
+                            fetcher, 'get_realtime_quote', raw_stock_code or stock_code
+                        )
+
                 provider_name = fetcher.name if fetcher is not None else source
                 
                 if quote is not None and quote.has_basic_data():
@@ -2812,6 +2883,16 @@ class DataFetcherManager:
                 realtime_cache_ttl=getattr(config, "realtime_cache_ttl", None),
             )
 
+        tv_quote = self._try_tvscreener_quote(
+            stock_code,
+            fallback_from=failed_sources[0] if failed_sources else None,
+            realtime_cache_ttl=getattr(config, "realtime_cache_ttl", None),
+            skip_if_already_tried="tvscreener" in source_priority,
+        )
+        if tv_quote is not None:
+            logger.info("[实时行情] %s 成功获取 (来源: TvscreenerFetcher)", stock_code)
+            return tv_quote
+
         # 所有数据源都失败，返回 None（降级兜底）
         if log_final_failure:
             if errors:
@@ -2879,6 +2960,29 @@ class DataFetcherManager:
             "LongbridgeFetcher",
             capability=capability,
         ) is not None
+
+    def _try_tvscreener_quote(
+        self,
+        stock_code: str,
+        *,
+        fallback_from: Optional[str] = None,
+        realtime_cache_ttl: Optional[int] = None,
+        skip_if_already_tried: bool = False,
+        enrich: bool = True,
+    ):
+        """Last-resort TradingView screener quote. Returns None when disabled or empty."""
+        if skip_if_already_tried:
+            return None
+        quote = self._try_fetcher_quote(stock_code, "TvscreenerFetcher")
+        if quote is None:
+            return None
+        if not enrich:
+            return quote
+        return self._enrich_realtime_quote(
+            quote,
+            fallback_from=fallback_from,
+            realtime_cache_ttl=realtime_cache_ttl,
+        )
 
     def _try_fetcher_quote(self, stock_code: str, fetcher_name: str, **kw):
         """Try to get a realtime quote from a named fetcher; returns quote or None."""
@@ -3361,7 +3465,13 @@ class DataFetcherManager:
         # 3. 依次尝试各个数据源
         from .akshare_fetcher import _is_us_code
         is_us = _is_us_code(stock_code)
-        _US_CAPABLE_FETCHERS = {"YfinanceFetcher", "LongbridgeFetcher", "FinnhubFetcher", "AlphaVantageFetcher"}
+        _US_CAPABLE_FETCHERS = {
+            "YfinanceFetcher",
+            "LongbridgeFetcher",
+            "FinnhubFetcher",
+            "AlphaVantageFetcher",
+            "TvscreenerFetcher",
+        }
         for fetcher in self._get_fetchers_snapshot():
             if not hasattr(fetcher, 'get_stock_name'):
                 continue
