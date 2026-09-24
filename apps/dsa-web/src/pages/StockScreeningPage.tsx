@@ -1,5 +1,5 @@
 import type React from 'react';
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Bookmark,
@@ -40,6 +40,16 @@ import {
 } from '../api/screening';
 import { formatParsedApiError, getParsedApiError, toApiErrorMessage, type ParsedApiError } from '../api/error';
 import { AppPage, Button, InlineAlert, Select } from '../components/common';
+import { ScreenerDataGrid, ScreenerToolbar } from '../components/screening';
+import { formatCompactCnAmount } from '../utils/format';
+import { useUiLanguage } from '../contexts/UiLanguageContext';
+import { useScreenerGridView } from '../hooks/useScreenerGridView';
+import {
+  buildScreenerCsv,
+  downloadScreenerCsv,
+  getScreenerColumn,
+  type ScreenerColumnDef,
+} from '../utils/screenerColumns';
 
 const MARKETS = [{ id: 'cn', label: 'A 股' }];
 const SCREEN_TASK_STORAGE_KEY = 'dsa.screening.activeScreenTask.v1';
@@ -153,13 +163,6 @@ const formatRecoverableScreenTaskPollingError = (error: ParsedApiError) => {
   return formatParsedApiError(error) || '暫時無法獲取選股任務狀態，稍後將自動重試。';
 };
 
-const formatScore = (score: ScreeningCandidate['score']) => {
-  if (score == null || Number.isNaN(Number(score))) {
-    return '-';
-  }
-  return Number(score).toFixed(2);
-};
-
 const formatNumber = (value: unknown, digits = 2) => {
   if (value == null || value === '' || Number.isNaN(Number(value))) {
     return '-';
@@ -167,19 +170,8 @@ const formatNumber = (value: unknown, digits = 2) => {
   return Number(value).toFixed(digits);
 };
 
-const formatAmount = (value: unknown) => {
-  if (value == null || value === '' || Number.isNaN(Number(value))) {
-    return '-';
-  }
-  const amount = Number(value);
-  if (Math.abs(amount) >= 100_000_000) {
-    return `${(amount / 100_000_000).toFixed(2)} 億`;
-  }
-  if (Math.abs(amount) >= 10_000) {
-    return `${(amount / 10_000).toFixed(2)} 萬`;
-  }
-  return amount.toFixed(2);
-};
+// 緊湊中文金額（億/萬）統一走 utils/format，頁面僅保留 '-' 哨兵語義
+const formatAmount = (value: unknown) => formatCompactCnAmount(Number(value));
 
 const formatPercent = (value: unknown) => {
   if (value == null || value === '' || Number.isNaN(Number(value))) {
@@ -198,6 +190,9 @@ const FACTOR_LABELS: Record<string, string> = {
   size: '規模',
   theme_heat: '題材熱度',
   topic_alignment: '題材匹配',
+  // factorScores 經 deep camelCase 後的運行時鍵
+  themeHeat: '題材熱度',
+  topicAlignment: '題材匹配',
 };
 
 const POST_TAG_LABELS: Record<string, string> = {
@@ -510,26 +505,6 @@ const hasLlmInsight = (item: ScreeningCandidate) =>
       item.llmCatalysts?.length,
   );
 
-const getRiskClassName = (riskLevel: string | undefined) => {
-  if (riskLevel === 'high') {
-    return 'bg-danger/10 text-danger';
-  }
-  if (riskLevel === 'medium') {
-    return 'bg-warning/10 text-warning';
-  }
-  if (riskLevel === 'low') {
-    return 'bg-success/10 text-success';
-  }
-  return 'bg-surface text-secondary-text';
-};
-
-const getRiskLabel = (riskLevel: string | undefined) => {
-  if (riskLevel === 'high') return '高';
-  if (riskLevel === 'medium') return '中';
-  if (riskLevel === 'low') return '低';
-  return '待評估';
-};
-
 const getRouteTimeLabel = (item: ScreeningHotspotDetail['route'][number]) => {
   const rawTime = item.publishedAt || item.date || item.time || '';
   if (!rawTime) {
@@ -833,6 +808,7 @@ const MiniSparkline: React.FC<{ score?: number | null; selected?: boolean }> = (
 
 const StockScreeningPage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useUiLanguage();
   const [restoredTask] = useState<PersistedScreenTask | null>(() => readPersistedScreenTask());
   const [enabled, setEnabled] = useState(false);
   const [available, setAvailable] = useState(false);
@@ -1171,6 +1147,153 @@ const StockScreeningPage: React.FC = () => {
   useEffect(() => {
     selectedHotspotTopicRef.current = selectedHotspotTopic;
   }, [selectedHotspotTopic]);
+
+  // —— 結果表格視圖（TradingView 式欄目 / 排序 / 篩選，持久化版面） ——
+  const gridView = useScreenerGridView(candidates);
+
+  const getScreenerColumnLabel = useCallback(
+    (columnId: string) => {
+      const column = getScreenerColumn(columnId);
+      return column ? t(column.labelKey) : columnId;
+    },
+    [t],
+  );
+
+  const handleExportCsv = useCallback(() => {
+    if (gridView.processedRows.length === 0) {
+      return;
+    }
+    const csv = buildScreenerCsv(
+      gridView.processedRows,
+      gridView.visibleColumns,
+      (column: ScreenerColumnDef) => t(column.labelKey),
+      t('screener.colCode'),
+      t('screener.colName'),
+    );
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    downloadScreenerCsv(csv, `dsa-screener-${stamp}.csv`);
+  }, [gridView.processedRows, gridView.visibleColumns, t]);
+
+  const renderCandidateDetail = (item: ScreeningCandidate) => {
+    const factors = getFactorEntries(item);
+    const llmInsightAvailable = hasLlmInsight(item);
+    const dsaWarnings = item.dsaContext?.warnings || [];
+    const dsaNews = item.dsaNews || [];
+    const dsaEvents = item.dsaEvents || [];
+    return (
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-secondary-text">摘要</p>
+            <p className="mt-1 text-sm leading-6 text-foreground">{getCandidateReason(item)}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-secondary-text">操作信號</p>
+            <p className="mt-1 text-sm text-foreground">{getSignal(item)}</p>
+            <button
+              className="mt-2 rounded-lg border border-cyan/40 px-3 py-1.5 text-xs font-semibold text-cyan transition-colors hover:bg-cyan/10"
+              type="button"
+              onClick={() => handleAnalyzeCandidate(item)}
+            >
+              進一步深度分析
+            </button>
+          </div>
+          {item.dsaAnalysisSummary ? (
+            <div>
+              <p className="text-xs font-semibold text-secondary-text">增強摘要</p>
+              <p className="mt-1 text-sm leading-6 text-foreground">
+                {formatEnrichmentSummary(item.dsaAnalysisSummary)}
+              </p>
+            </div>
+          ) : null}
+          {llmInsightAvailable ? (
+            <div>
+              <p className="text-xs font-semibold text-secondary-text">智能判斷</p>
+              <p className="mt-1 text-sm leading-6 text-foreground">{item.llmThesis || item.reason}</p>
+              <p className="mt-1 text-xs text-secondary-text">
+                板塊 {item.llmSector || '-'} · 主題 {item.llmTheme || '-'} · 置信度 {formatPercent(item.llmConfidence)}
+              </p>
+            </div>
+          ) : null}
+          <div>
+            <p className="text-xs font-semibold text-secondary-text">風險標籤</p>
+            <p className="mt-1 text-sm text-foreground">
+              {[...(item.riskFlags || []), ...(item.llmRisks || [])].length
+                ? [...(item.riskFlags || []), ...(item.llmRisks || [])].join('，')
+                : '無'}
+            </p>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-secondary-text">主要因子</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {factors.length > 0 ? (
+                factors.map(([key, value]) => (
+                  <div key={key} className="rounded-lg border border-border bg-card px-3 py-2">
+                    <span className="block text-xs text-secondary-text">{FACTOR_LABELS[key] || key}</span>
+                    <span className="num text-sm font-semibold text-foreground">{formatNumber(value)}</span>
+                  </div>
+                ))
+              ) : (
+                <span className="text-sm text-secondary-text">無因子明細</span>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-secondary-text">成交額</p>
+            <p className="num mt-1 text-sm text-foreground">{formatAmount(item.amount)}</p>
+          </div>
+          {item.llmWatchItems?.length ? (
+            <div>
+              <p className="text-xs font-semibold text-secondary-text">智能關注項</p>
+              <p className="mt-1 text-sm text-foreground">{item.llmWatchItems.join('，')}</p>
+            </div>
+          ) : null}
+          {item.llmCatalysts?.length ? (
+            <div>
+              <p className="text-xs font-semibold text-secondary-text">催化因素</p>
+              <p className="mt-1 text-sm text-foreground">{item.llmCatalysts.join('，')}</p>
+            </div>
+          ) : null}
+          <div>
+            <p className="text-xs font-semibold text-secondary-text">相關新聞</p>
+            {dsaNews.length > 0 ? (
+              <ul className="mt-1 space-y-1 text-sm text-foreground">
+                {dsaNews.slice(0, 3).map((newsItem, newsIndex) => (
+                  <li key={`${item.code}-dsa-news-${newsIndex}`}>
+                    {newsItem.title || newsItem.snippet || '-'}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-sm text-secondary-text">無</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-secondary-text">公告與事件</p>
+            {dsaEvents.length > 0 ? (
+              <ul className="mt-1 space-y-1 text-sm text-foreground">
+                {dsaEvents.slice(0, 3).map((eventItem, eventIndex) => (
+                  <li key={`${item.code}-dsa-event-${eventIndex}`}>
+                    {eventItem.title || eventItem.snippet || '-'}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-sm text-secondary-text">無</p>
+            )}
+          </div>
+          {dsaWarnings.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold text-secondary-text">數據補充提示</p>
+              <p className="mt-1 text-sm text-secondary-text">{dsaWarnings.join('，')}</p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
 
   useEffect(() => {
     if (!selectedHotspotTopic) {
@@ -1877,194 +2000,62 @@ const StockScreeningPage: React.FC = () => {
       ) : null}
 
       {screenMeta ? (
-        <section className="rounded-2xl border border-border bg-card/95 p-4 shadow-soft-card">
-          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <h2 className="text-base font-semibold text-foreground">選股結果</h2>
-          <div className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-2 text-xs text-secondary-text">
-            <Search className="h-4 w-4 text-cyan" />
-            {candidates.length} 條候選
-          </div>
+        <section className="animate-fade-in rounded-2xl border border-border bg-card/95 p-4 shadow-soft-card">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground">{t('screener.resultTitle')}</h2>
+              {factorRanking ? (
+                <span className="inline-flex items-center rounded-full border border-warning/40 bg-warning/10 px-2.5 py-0.5 text-[11px] font-semibold text-warning">
+                  {t('screener.factorModeBadge')}
+                </span>
+              ) : null}
+            </div>
           </div>
 
-        {candidates.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-surface/70 px-5 py-10 text-center">
-            <p className="text-sm font-medium text-foreground">暫無符合條件的候選</p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-border">
-            <table className="w-full min-w-[860px] border-collapse text-sm">
-              <thead className="bg-surface text-left text-xs text-secondary-text">
-                <tr>
-                  <th className="w-14 px-4 py-3 font-semibold">#</th>
-                  <th className="px-4 py-3 font-semibold">代碼</th>
-                  <th className="px-4 py-3 font-semibold">名稱</th>
-                  <th className="px-4 py-3 font-semibold">行業</th>
-                  <th className="px-4 py-3 font-semibold">價格</th>
-                  <th className="px-4 py-3 font-semibold">漲跌幅</th>
-                  <th className="px-4 py-3 font-semibold">評分</th>
-                  <th className="px-4 py-3 font-semibold">排序依據</th>
-                  <th className="px-4 py-3 font-semibold">風險</th>
-                  <th className="px-4 py-3 font-semibold">詳情</th>
-                </tr>
-              </thead>
-              <tbody>
-                {candidates.map((item) => {
-                  const expanded = expandedCode === item.code;
-                  const factors = getFactorEntries(item);
-                  const llmInsightAvailable = hasLlmInsight(item);
-                  const dsaWarnings = item.dsaContext?.warnings || [];
-                  const dsaNews = item.dsaNews || [];
-                  const dsaEvents = item.dsaEvents || [];
-                  return (
-                    <Fragment key={`${item.rank}-${item.code}`}>
-                      <tr className="border-t border-border align-top transition-colors hover:bg-hover/50">
-                        <td className="px-4 py-3 text-secondary-text">{item.rank}</td>
-                        <td className="px-4 py-3 font-mono font-semibold text-foreground">{item.code}</td>
-                        <td className="px-4 py-3 font-semibold text-foreground">{item.name || '-'}</td>
-                        <td className="px-4 py-3 text-secondary-text">{item.industry || '-'}</td>
-                        <td className="px-4 py-3 text-secondary-text">{formatNumber(item.price)}</td>
-                        <td className="px-4 py-3 text-secondary-text">{formatNumber(item.changePct)}%</td>
-                        <td className="px-4 py-3 font-bold text-cyan">{formatScore(item.score)}</td>
-                        <td className="px-4 py-3 text-secondary-text">{factorRanking ? '因子排序' : formatScore(item.llmScore)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${getRiskClassName(item.riskLevel)}`}>
-                            {getRiskLabel(item.riskLevel)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            className="text-sm font-semibold text-cyan transition-colors hover:text-foreground"
-                            type="button"
-                            onClick={() => setExpandedCode(expanded ? null : item.code)}
-                          >
-                            {expanded ? '收起' : '展開查看'}
-                          </button>
-                        </td>
-                      </tr>
-                      {expanded ? (
-                        <tr className="border-t border-border bg-surface/45">
-                          <td colSpan={10} className="px-4 py-4">
-                            <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-                              <div className="space-y-3">
-                                <div>
-                                  <p className="text-xs font-semibold text-secondary-text">摘要</p>
-                                  <p className="mt-1 text-sm leading-6 text-foreground">{getCandidateReason(item)}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs font-semibold text-secondary-text">操作信號</p>
-                                  <p className="mt-1 text-sm text-foreground">{getSignal(item)}</p>
-                                  <button
-                                    className="mt-2 rounded-lg border border-cyan/40 px-3 py-1.5 text-xs font-semibold text-cyan transition-colors hover:bg-cyan/10"
-                                    type="button"
-                                    onClick={() => handleAnalyzeCandidate(item)}
-                                  >
-                                    進一步深度分析
-                                  </button>
-                                </div>
-                                {item.dsaAnalysisSummary ? (
-                                  <div>
-                                    <p className="text-xs font-semibold text-secondary-text">增強摘要</p>
-                                    <p className="mt-1 text-sm leading-6 text-foreground">
-                                      {formatEnrichmentSummary(item.dsaAnalysisSummary)}
-                                    </p>
-                                  </div>
-                                ) : null}
-                                {llmInsightAvailable ? (
-                                  <div>
-                                    <p className="text-xs font-semibold text-secondary-text">智能判斷</p>
-                                    <p className="mt-1 text-sm leading-6 text-foreground">{item.llmThesis || item.reason}</p>
-                                    <p className="mt-1 text-xs text-secondary-text">
-                                      板塊 {item.llmSector || '-'} · 主題 {item.llmTheme || '-'} · 置信度 {formatPercent(item.llmConfidence)}
-                                    </p>
-                                  </div>
-                                ) : null}
-                                <div>
-                                  <p className="text-xs font-semibold text-secondary-text">風險標籤</p>
-                                  <p className="mt-1 text-sm text-foreground">
-                                    {[...(item.riskFlags || []), ...(item.llmRisks || [])].length
-                                      ? [...(item.riskFlags || []), ...(item.llmRisks || [])].join('，')
-                                      : '無'}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="space-y-3">
-                                <div>
-                                  <p className="text-xs font-semibold text-secondary-text">主要因子</p>
-                                  <div className="mt-2 grid grid-cols-2 gap-2">
-                                    {factors.length > 0 ? (
-                                      factors.map(([key, value]) => (
-                                        <div key={key} className="rounded-lg border border-border bg-card px-3 py-2">
-                                          <span className="block text-xs text-secondary-text">{FACTOR_LABELS[key] || key}</span>
-                                          <span className="text-sm font-semibold text-foreground">{formatNumber(value)}</span>
-                                        </div>
-                                      ))
-                                    ) : (
-                                      <span className="text-sm text-secondary-text">無因子明細</span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div>
-                                  <p className="text-xs font-semibold text-secondary-text">成交額</p>
-                                  <p className="mt-1 text-sm text-foreground">{formatAmount(item.amount)}</p>
-                                </div>
-                                {item.llmWatchItems?.length ? (
-                                  <div>
-                                    <p className="text-xs font-semibold text-secondary-text">智能關注項</p>
-                                    <p className="mt-1 text-sm text-foreground">{item.llmWatchItems.join('，')}</p>
-                                  </div>
-                                ) : null}
-                                {item.llmCatalysts?.length ? (
-                                  <div>
-                                    <p className="text-xs font-semibold text-secondary-text">催化因素</p>
-                                    <p className="mt-1 text-sm text-foreground">{item.llmCatalysts.join('，')}</p>
-                                  </div>
-                                ) : null}
-                                <div>
-                                  <p className="text-xs font-semibold text-secondary-text">相關新聞</p>
-                                  {dsaNews.length > 0 ? (
-                                    <ul className="mt-1 space-y-1 text-sm text-foreground">
-                                      {dsaNews.slice(0, 3).map((newsItem, newsIndex) => (
-                                        <li key={`${item.code}-dsa-news-${newsIndex}`}>
-                                          {newsItem.title || newsItem.snippet || '-'}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p className="mt-1 text-sm text-secondary-text">無</p>
-                                  )}
-                                </div>
-                                <div>
-                                  <p className="text-xs font-semibold text-secondary-text">公告與事件</p>
-                                  {dsaEvents.length > 0 ? (
-                                    <ul className="mt-1 space-y-1 text-sm text-foreground">
-                                      {dsaEvents.slice(0, 3).map((eventItem, eventIndex) => (
-                                        <li key={`${item.code}-dsa-event-${eventIndex}`}>
-                                          {eventItem.title || eventItem.snippet || '-'}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p className="mt-1 text-sm text-secondary-text">無</p>
-                                  )}
-                                </div>
-                                {dsaWarnings.length > 0 ? (
-                                  <div>
-                                    <p className="text-xs font-semibold text-secondary-text">數據補充提示</p>
-                                    <p className="mt-1 text-sm text-secondary-text">{dsaWarnings.join('，')}</p>
-                                  </div>
-                                ) : null}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+          {candidates.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border bg-surface/70 px-5 py-10 text-center">
+              <p className="text-sm font-medium text-foreground">{t('screener.noCandidates')}</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <ScreenerToolbar
+                search={gridView.search}
+                onSearchChange={gridView.setSearch}
+                filtersOpen={gridView.view.filtersOpen}
+                onToggleFilters={() => gridView.setFiltersOpen(!gridView.view.filtersOpen)}
+                filters={gridView.view.filters}
+                onRemoveFilter={(columnId) => gridView.setFilter(columnId, '')}
+                onClearFilters={gridView.clearFilters}
+                shownCount={gridView.processedRows.length}
+                totalCount={candidates.length}
+                onExport={handleExportCsv}
+                hiddenIds={gridView.view.hiddenIds}
+                presetId={gridView.view.presetId}
+                visibleColumnCount={gridView.visibleColumns.length}
+                onToggleColumn={gridView.toggleColumn}
+                onApplyPreset={gridView.applyPreset}
+                onResetLayout={gridView.resetView}
+                getColumnLabel={getScreenerColumnLabel}
+              />
+              <ScreenerDataGrid
+                rows={gridView.processedRows}
+                columns={gridView.visibleColumns}
+                sort={gridView.view.sort}
+                onToggleSort={gridView.toggleSort}
+                filters={gridView.view.filters}
+                onFilterChange={gridView.setFilter}
+                filtersOpen={gridView.view.filtersOpen}
+                expandedCode={expandedCode}
+                onToggleExpanded={setExpandedCode}
+                onAnalyze={handleAnalyzeCandidate}
+                onClearFilters={gridView.clearFilters}
+                renderExpanded={renderCandidateDetail}
+              />
+              {gridView.view.filtersOpen ? (
+                <p className="text-[11px] text-secondary-text">{t('screener.filterHint')}</p>
+              ) : null}
+            </div>
+          )}
         </section>
       ) : null}
 

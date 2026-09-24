@@ -8,7 +8,7 @@ import { historyApi } from '../api/history';
 import { agentApi, type SkillInfo } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
 import { ApiErrorAlert, Button, Drawer, EmptyState, InlineAlert } from '../components/common';
-import { DashboardStateBlock } from '../components/dashboard';
+import { DashboardStateBlock, MarketSessionsBar } from '../components/dashboard';
 import { StockAutocomplete } from '../components/StockAutocomplete';
 import { StockHistoryTrendDrawer } from '../components/history';
 import { ReportMarkdownDrawer } from '../components/report/ReportMarkdownDrawer';
@@ -1642,6 +1642,10 @@ const HomePage: React.FC = () => {
             </div>
           </div>
         </header>
+
+        <div className="hidden justify-end px-3 pb-1 pt-0 md:flex md:px-4">
+          <MarketSessionsBar className="hidden md:flex" />
+        </div>
 
         {inputError || (duplicateError && duplicateBannerVisible) ? (
           <div className="px-3 pb-2 md:px-4">

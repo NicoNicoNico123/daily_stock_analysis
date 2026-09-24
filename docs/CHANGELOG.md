@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 浅色主题涨跌色对比度不足：加深 --home-price-up/--home-price-down 亮色取值至 ≥4.5:1，并修正选股表格涨跌着色无效（颜色变量重复包裹 hsl() 导致声明被丢弃）。
+- [改进] 选股引擎候选 raw 字段补齐流通市值（circ_mv）：CN/US 快照已抓取该列但在 Pick 构造时丢失，现随 raw 下发供估值指标栏展示。
+- [新功能] Web 选股结果升级为 TradingView 式指标表格：指标栏选择器可自由增删 30+ 指标（估值/技术/行业热度/风险/AI 分组）、核心/估值/技术/热度/风险/AI/全部版面预设、表头点击排序（降→升→关，数值/文本/风险等级均可排序，空值恒排最后）、行内快速筛选（`>10`、`<20`、`>=5`、`5~20`、`5-20` 区间，文本栏包含匹配，筛选 chip 可逐个移除）、代码/名称冻结列、涨跌着色（A 股惯例涨红跌绿）、关键词搜索（代码/名称/行业/题材/概念）、CSV 导出（含 BOM、名称列、金额原始数值）与版面 localStorage 持久化；因子降级时结果区显示「因子排序」徽章。
+- [新功能] 仪表板新增全球市场交易时段条：A股/港股/美股当地时钟与开/休市状态（纯前端 Intl 时区计算，自动处理夏令时与周末，30 秒刷新，开市绿点脉冲动画并尊重 prefers-reduced-motion；不含交易所节假日判断）。
 - [新功能] 多用户模式新增三种登录方式：注册可选登录邮箱并在 SMTP 已配置时发送一次性验证邮件（`/api/v1/auth/verify-email`，未配置 SMTP 时跳过发送、不阻断登录）；登录 `username` 字段兼任用户名或邮箱；新增 Google / Facebook OAuth 登录（`/api/v1/auth/oauth/{provider}/authorize|callback`，HMAC 签名一次性 state、`OAUTH_REDIRECT_BASE` 回调地址、自动建号受 `AUTH_REGISTRATION_ENABLED` 约束、随机密码哈希不可密码登录、secret 不落日志），新增 `GOOGLE_OAUTH_CLIENT_ID/SECRET`、`FACEBOOK_OAUTH_APP_ID/SECRET`、`OAUTH_REDIRECT_BASE` 配置，`/api/v1/auth/status` 新增 `oauthProviders` 与 `emailLoginEnabled`，登录/注册页展示品牌按钮与「或」分隔。
 - [文档] README / 完整指南补充本地 Web 多用户预览：登录页与管理员 `admin` / 测试用户 `testuser` 示例账号表、用户管理页建号、隔离范围与密码重置。
 - [测试] 修复股票名称解析冷启动超时并发测试的同步竞态：在放行后台抓取前确认两个等待者均已结束并返回空结果，避免 Docker 发布门禁偶发失败。

@@ -591,6 +591,7 @@ def _df_to_picks(df: pd.DataFrame) -> list[Pick]:
             change_pct=float(row.get("change_pct", row.get("涨跌幅", 0)) or 0),
             amount=float(row.get("amount", row.get("成交额", 0)) or 0),
             total_mv=_safe_float(row.get("total_mv", row.get("总市值"))),
+            circ_mv=_safe_float(row.get("circ_mv", row.get("流通市值"))),
             turnover_rate=_safe_float(row.get("turnover_rate", row.get("换手率"))),
             volume_ratio=_safe_float(row.get("volume_ratio", row.get("量比"))),
             pe_ratio=_safe_float(row.get("pe_ratio", row.get("市盈率"))),

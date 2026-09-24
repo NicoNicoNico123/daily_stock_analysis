@@ -177,8 +177,8 @@
   --home-accent-text: hsl(var(--primary));
   --home-secondary-accent-text: hsl(247 84% 66%);
   --home-title-accent: hsl(247 84% 66%);
-  --home-price-up: hsl(0 88% 62%);
-  --home-price-down: hsl(149 100% 42%);
+  --home-price-up: hsl(0 74% 46%);
+  --home-price-down: hsl(149 78% 30%);
   --home-strategy-buy: hsl(149 100% 42%);
   --home-strategy-secondary: hsl(var(--primary));
   --home-strategy-stop: hsl(346 100% 63%);
@@ -3396,5 +3396,106 @@ textarea {
 
   .backtest-table-scroll-hint {
     text-align: left;
+  }
+}
+
+/* ============================================================
+   Screener data grid (TradingView-style metric table)
+   ============================================================ */
+.screener-grid-scroll {
+  overscroll-behavior: contain;
+}
+.screener-grid-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.screener-grid-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.screener-grid-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--foreground) / 0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.screener-grid-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--foreground) / 0.24);
+  background-clip: padding-box;
+}
+.screener-head-row {
+  background: linear-gradient(to bottom, hsl(var(--elevated) / 0.98), hsl(var(--card) / 0.96));
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 -1px 0 hsl(var(--foreground) / 0.07);
+}
+.screener-filter-row {
+  background: hsl(var(--elevated) / 0.92);
+  box-shadow: inset 0 -1px 0 hsl(var(--foreground) / 0.05);
+}
+/* 凍結左側 # 與代碼列（TradingView 式橫向滾動錨點） */
+.screener-sticky {
+  position: sticky;
+  background: hsl(var(--card));
+  z-index: 1;
+}
+.screener-sticky-rank {
+  left: 0;
+  min-width: 3rem;
+}
+.screener-sticky-code {
+  left: 3rem;
+  min-width: 8.5rem;
+  box-shadow: 1px 0 0 hsl(var(--foreground) / 0.06);
+}
+thead .screener-sticky {
+  z-index: 2;
+  background: transparent;
+}
+thead .screener-sticky-rank,
+thead .screener-sticky-code {
+  background: inherit;
+}
+tbody .screener-row-expanded .screener-sticky {
+  background: hsl(var(--card));
+}
+.screener-row:hover .screener-sticky,
+.screener-row:hover td {
+  background-color: hsl(var(--hover) / 0.45);
+}
+tbody .screener-detail-row td,
+tbody .screener-detail-row .screener-sticky {
+  background-color: var(--surface-2);
+}
+
+/* 行內篩選輸入框：tailwind 無 surface token，樣式在此定義（dark/light 經 CSS 變量適配） */
+.screener-filter-input {
+  color: hsl(var(--foreground));
+  background-color: var(--surface-2);
+  border-color: hsl(var(--foreground) / 0.12);
+}
+.screener-filter-input::placeholder {
+  color: hsl(var(--foreground) / 0.38);
+}
+.screener-filter-input:focus {
+  border-color: hsl(var(--primary));
+}
+
+/* Market session pulse (dashboard terminal strip) */
+@keyframes market-session-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 hsl(var(--success) / 0.45);
+  }
+  50% {
+    opacity: 0.75;
+    box-shadow: 0 0 0 3px hsl(var(--success) / 0);
+  }
+}
+.market-session-dot-open {
+  animation: market-session-pulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .market-session-dot-open {
+    animation: none;
   }
 }

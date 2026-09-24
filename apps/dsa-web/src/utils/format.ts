@@ -58,3 +58,20 @@ export const formatReportType = (value?: string): string => {
   if (value === 'market_review') return '大盤';
   return value;
 };
+
+/**
+ * 緊湊中文金額格式（億 / 萬），供行情與選股表格共用。
+ */
+export const formatCompactCnAmount = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return '-';
+  }
+  const abs = Math.abs(value);
+  if (abs >= 100_000_000) {
+    return `${(value / 100_000_000).toFixed(2)} 億`;
+  }
+  if (abs >= 10_000) {
+    return `${(value / 10_000).toFixed(2)} 萬`;
+  }
+  return value.toFixed(2);
+};

@@ -126,6 +126,7 @@ class Pick:
     change_pct: float = 0.0
     amount: float = 0.0
     total_mv: float | None = None
+    circ_mv: float | None = None
     turnover_rate: float | None = None
     volume_ratio: float | None = None
     pe_ratio: float | None = None
