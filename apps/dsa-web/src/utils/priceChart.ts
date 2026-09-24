@@ -172,6 +172,47 @@ export const buildCandlesticks = (points: PriceChartKlinePoint[]): CandlestickDa
 };
 
 /** 成交量柱数据（按 K 线同序），缺失成交量的日期被跳过；颜色跟随当根涨跌。 */
+/** 收盘价连线（线性图 / 面积图数据源） */
+export const buildCloseLine = (candles: CandlestickDatum[]): LineDatum[] =>
+  candles.map((candle) => ({ time: candle.time, value: candle.close }));
+
+export interface ChartWindowStats {
+  high: number | null;
+  low: number | null;
+  volumeSum: number | null;
+}
+
+/** 可见区间统计：最高 / 最低 / 成交量合计（成交量来自带 volume 字段的原始点） */
+export const buildWindowStats = (
+  candles: CandlestickDatum[],
+  points: Array<{ volume?: number | string | null }>,
+): ChartWindowStats => {
+  let high: number | null = null;
+  let low: number | null = null;
+  for (const candle of candles) {
+    // 日 K 各字段可能缺失（數據源降級），只統計有限數值
+    const candleHigh = Number(candle.high);
+    const candleLow = Number(candle.low);
+    if (Number.isFinite(candleHigh) && (high == null || candleHigh > high)) {
+      high = candleHigh;
+    }
+    if (Number.isFinite(candleLow) && (low == null || candleLow < low)) {
+      low = candleLow;
+    }
+  }
+  if (high == null && low == null) {
+    return { high: null, low: null, volumeSum: null };
+  }
+  let volumeSum: number | null = null;
+  for (const point of points) {
+    const volume = Number(point?.volume);
+    if (point?.volume != null && point.volume !== '' && Number.isFinite(volume)) {
+      volumeSum = (volumeSum ?? 0) + volume;
+    }
+  }
+  return { high, low, volumeSum };
+};
+
 export const buildVolumeHistogram = (
   points: PriceChartKlinePoint[],
   colors: { up: string; down: string },

@@ -1,21 +1,25 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
+import { AreaChart, CandlestickChart, LineChart, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
 import type { ParsedApiError } from '../../api/error';
 import { getParsedApiError } from '../../api/error';
 import { stocksApi, type DailyKlinePoint } from '../../api/stocks';
 import { ApiErrorAlert, Card } from '../common';
-import { DashboardPanelHeader, DashboardStateBlock } from '../dashboard';
+import { DashboardStateBlock } from '../dashboard';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import { formatCompactCnAmount } from '../../utils/format';
 import {
   buildAnalystForecastLine,
   buildCandlesticks,
+  buildCloseLine,
   buildForecastCone,
   buildLevelLines,
   buildMovingAverage,
   buildOhlcHud,
   buildTradeMarkers,
   buildVolumeHistogram,
+  buildWindowStats,
   CHART_RANGE_DAYS,
   filterFromTime,
   isUpwardBias,
@@ -69,6 +73,14 @@ type MaVisibility = {
   ma10: boolean;
   ma20: boolean;
 };
+
+type ChartType = 'candles' | 'line' | 'area';
+
+const CHART_TYPE_META: Array<{ id: ChartType; labelKey: 'report.priceChartTypeCandles' | 'report.priceChartTypeLine' | 'report.priceChartTypeArea'; Icon: React.ComponentType<{ className?: string }> }> = [
+  { id: 'candles', labelKey: 'report.priceChartTypeCandles', Icon: CandlestickChart },
+  { id: 'line', labelKey: 'report.priceChartTypeLine', Icon: LineChart },
+  { id: 'area', labelKey: 'report.priceChartTypeArea', Icon: AreaChart },
+];
 
 type FallbackSwatch = {
   up: string;
@@ -216,9 +228,12 @@ const ToolbarButton: React.FC<{
   </button>
 );
 
-const formatHudPrice = (value: number): string => (
-  Number.isInteger(value) ? value.toFixed(2) : value.toFixed(value < 10 ? 3 : 2)
-);
+const formatHudPrice = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return '-';
+  }
+  return Number.isInteger(value) ? value.toFixed(2) : value.toFixed(value < 10 ? 3 : 2);
+};
 
 /**
  * 报告页交易台式 K 线图（lightweight-charts v5）。
@@ -242,6 +257,10 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
   const [rangeDays, setRangeDays] = useState<ChartRangeDays>(120);
   const [showMa, setShowMa] = useState<MaVisibility>(DEFAULT_MA);
   const [hoverHud, setHoverHud] = useState<OhlcHud | null>(null);
+  const [chartType, setChartType] = useState<ChartType>('candles');
+  const [showLevels, setShowLevels] = useState(true);
+  const [showForecast, setShowForecast] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -317,6 +336,11 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
     ma20: filterFromTime(buildMovingAverage(candles, 20), visibleStart),
   }), [candles, visibleStart]);
 
+  const closeLine = useMemo(() => buildCloseLine(visibleCandles), [visibleCandles]);
+  const headerChange = lastCandle && previousClose != null && previousClose !== 0
+    ? ((lastCandle.close - previousClose) / previousClose) * 100
+    : null;
+
   const tradeMarkers = useMemo<TradeMarkerSpec[]>(
     () => (lastCandle ? buildTradeMarkers(lastCandle.time, parsedLevels) : []),
     [lastCandle, parsedLevels],
@@ -336,6 +360,28 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
     }
     return points.filter((point) => typeof point.date === 'string' && point.date >= visibleStart);
   }, [points, visibleStart]);
+  const windowStats = useMemo(
+    () => buildWindowStats(visibleCandles, visiblePoints),
+    [visibleCandles, visiblePoints],
+  );
+
+  useEffect(() => {
+    if (!expanded) {
+      return undefined;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setExpanded(false);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [expanded]);
 
   useEffect(() => {
     if (!hasData || renderFailed) {
@@ -353,6 +399,7 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
       try {
         const {
           createChart,
+          AreaSeries,
           CandlestickSeries,
           CrosshairMode,
           HistogramSeries,
@@ -410,15 +457,38 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
           return;
         }
 
-        const candleSeries = chart.addSeries(CandlestickSeries, {
-          upColor: palette.up,
-          downColor: palette.down,
-          borderUpColor: palette.up,
-          borderDownColor: palette.down,
-          wickUpColor: palette.up,
-          wickDownColor: palette.down,
-        });
-        candleSeries.setData(visibleCandles);
+        // 主序列按圖表類型切換：K 線 / 收盤線 / 面積
+        let primarySeries;
+        if (chartType === 'candles') {
+          primarySeries = chart.addSeries(CandlestickSeries, {
+            upColor: palette.up,
+            downColor: palette.down,
+            borderUpColor: palette.up,
+            borderDownColor: palette.down,
+            wickUpColor: palette.up,
+            wickDownColor: palette.down,
+          });
+          primarySeries.setData(visibleCandles);
+        } else if (chartType === 'line') {
+          primarySeries = chart.addSeries(LineSeries, {
+            color: palette.ma10,
+            lineWidth: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
+          primarySeries.setData(closeLine);
+        } else {
+          primarySeries = chart.addSeries(AreaSeries, {
+            lineColor: palette.ma10,
+            topColor: withAlpha(palette.ma10, 0.28),
+            bottomColor: withAlpha(palette.ma10, 0.02),
+            lineWidth: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
+          primarySeries.setData(closeLine);
+        }
+        const candleSeries = primarySeries;
 
         const volumeSeries = chart.addSeries(HistogramSeries, {
           priceFormat: { type: 'volume' },
@@ -457,29 +527,44 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
           stopLoss: t('report.priceChartLevelStop'),
           takeProfit: t('report.priceChartLevelTakeProfit'),
         };
-        levelLines.forEach((line) => {
-          candleSeries.createPriceLine({
-            price: line.price,
-            color: palette.levels[line.key],
-            lineWidth: line.key === 'idealBuy' || line.key === 'takeProfit' ? 2 : 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: levelTitles[line.key],
+        if (showLevels) {
+          levelLines.forEach((line) => {
+            candleSeries.createPriceLine({
+              price: line.price,
+              color: palette.levels[line.key],
+              lineWidth: line.key === 'idealBuy' || line.key === 'takeProfit' ? 2 : 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: levelTitles[line.key],
+            });
           });
-        });
+        }
+
+        // 最新價虛線（TradingView 式右軸標籤）
+        if (lastCandle) {
+          const lastUp = previousClose == null || lastCandle.close >= previousClose;
+          candleSeries.createPriceLine({
+            price: lastCandle.close,
+            color: lastUp ? palette.up : palette.down,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: t('report.priceChartLast'),
+          });
+        }
 
         const forecastOptions = {
           ...overlayLine,
           lineWidth: 1 as const,
           lineStyle: LineStyle.LargeDashed,
         };
-        if (cone.bull.length > 0) {
+        if (showForecast && cone.bull.length > 0) {
           chart.addSeries(LineSeries, { ...forecastOptions, color: palette.bull }).setData(cone.bull);
         }
-        if (cone.bear.length > 0) {
+        if (showForecast && cone.bear.length > 0) {
           chart.addSeries(LineSeries, { ...forecastOptions, color: palette.bear }).setData(cone.bear);
         }
-        if (analystLine.length > 0) {
+        if (showForecast && analystLine.length > 0) {
           chart.addSeries(LineSeries, {
             ...overlayLine,
             color: palette.analyst,
@@ -527,33 +612,42 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
 
         const candleIndex = new Map(visibleCandles.map((candle, index) => [candle.time, index]));
         chart.subscribeCrosshairMove((param) => {
-          const point = param.seriesData.get(candleSeries) as CandlestickDatum | undefined;
-          if (!point || typeof param.time !== 'string') {
-            setHoverHud(null);
-            return;
+          try {
+            const point = param.seriesData.get(candleSeries) as CandlestickDatum | undefined;
+            if (!point || typeof param.time !== 'string') {
+              setHoverHud(null);
+              return;
+            }
+            const index = candleIndex.get(param.time);
+            const previous = index !== undefined && index > 0 ? visibleCandles[index - 1].close : previousClose;
+            setHoverHud(buildOhlcHud({
+              time: param.time,
+              open: point.open,
+              high: point.high,
+              low: point.low,
+              close: point.close,
+            }, previous));
+          } catch {
+            // 圖表銷毀瞬間的殘留事件直接忽略
           }
-          const index = candleIndex.get(param.time);
-          const previous = index !== undefined && index > 0 ? visibleCandles[index - 1].close : previousClose;
-          setHoverHud(buildOhlcHud({
-            time: param.time,
-            open: point.open,
-            high: point.high,
-            low: point.low,
-            close: point.close,
-          }, previous));
         });
 
         chart.timeScale().fitContent();
 
         const resizeObserver = new ResizeObserver((entries) => {
-          const rect = entries[0]?.contentRect;
-          if (!rect) {
-            return;
-          }
-          const nextWidth = Math.floor(rect.width);
-          const nextHeight = Math.floor(rect.height);
-          if (nextWidth > 0 && nextHeight > 0) {
-            chart.applyOptions({ width: nextWidth, height: nextHeight });
+          // 回調運行在 effect 的 try/catch 之外，異常會擊穿錯誤邊界，必須就地吞掉
+          try {
+            const rect = entries[0]?.contentRect;
+            if (!rect) {
+              return;
+            }
+            const nextWidth = Math.floor(rect.width);
+            const nextHeight = Math.floor(rect.height);
+            if (nextWidth > 0 && nextHeight > 0) {
+              chart.applyOptions({ width: nextWidth, height: nextHeight });
+            }
+          } catch {
+            // 圖表已隨上一次渲染銷毀時忽略本次尺寸同步
           }
         });
         resizeObserver.observe(container);
@@ -580,6 +674,8 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
     };
   }, [
     analystLine,
+    chartType,
+    closeLine,
     cone,
     hasData,
     lastCandle,
@@ -587,6 +683,8 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
     maLines,
     previousClose,
     renderFailed,
+    showForecast,
+    showLevels,
     showMa,
     t,
     theme,
@@ -632,78 +730,123 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
     },
   ];
 
+  const statUp = headerChange == null || headerChange >= 0;
+
   return (
-    <Card variant="bordered" padding="md" className="home-panel-card tv-desk">
-      <DashboardPanelHeader
-        eyebrow={t('report.priceChartTitle')}
-        title={t('report.priceChartRange', { days: rangeDays })}
-        actions={(
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="tv-desk-tools" role="group" aria-label={t('report.priceChartTitle')}>
-              {CHART_RANGE_DAYS.map((daysOption) => (
-                <ToolbarButton
-                  key={daysOption}
-                  pressed={rangeDays === daysOption}
-                  onClick={() => setRangeDays(daysOption)}
-                >
-                  {t(RANGE_LABEL_KEYS[daysOption])}
-                </ToolbarButton>
-              ))}
-            </div>
-            {isLoading ? (
-              <div className="home-spinner h-3.5 w-3.5 animate-spin border-2" aria-hidden="true" />
+    <Card
+      variant="bordered"
+      padding="md"
+      className={`home-panel-card tv-desk ${expanded ? 'tv-desk-expanded' : ''}`}
+    >
+      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-text">
+            {t('report.priceChartTitle')}
+          </p>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="font-mono text-lg font-bold text-foreground">{code}</span>
+            {lastCandle ? (
+              <span
+                className="num text-2xl font-bold leading-6"
+                style={{ color: statUp ? 'var(--home-price-up)' : 'var(--home-price-down)' }}
+              >
+                {formatHudPrice(lastCandle.close)}
+              </span>
             ) : null}
-            <button
-              type="button"
-              onClick={() => void fetchKline()}
-              className="home-accent-link text-xs"
-            >
-              {t('common.retry')}
-            </button>
+            {headerChange != null ? (
+              <span
+                className="num text-sm font-semibold"
+                style={{ color: statUp ? 'var(--home-price-up)' : 'var(--home-price-down)' }}
+              >
+                {headerChange >= 0 ? '+' : ''}{headerChange.toFixed(2)}%
+              </span>
+            ) : null}
+            <span className="num flex flex-wrap gap-x-3 text-[11px] text-muted-text">
+              <span>{t('report.priceChartStatHigh')} {windowStats.high != null ? formatHudPrice(windowStats.high) : '-'}</span>
+              <span>{t('report.priceChartStatLow')} {windowStats.low != null ? formatHudPrice(windowStats.low) : '-'}</span>
+              <span>{t('report.priceChartStatVolume')} {windowStats.volumeSum != null ? formatCompactCnAmount(windowStats.volumeSum) : '-'}</span>
+            </span>
           </div>
-        )}
-      />
-
-      {hud ? (
-        <div
-          data-testid="price-chart-hud"
-          className="tv-desk-hud mb-3 font-mono text-xs"
-        >
-          <span className="tv-desk-hud-time">{hud.time}</span>
-          <span><em>{t('report.priceChartHudOpen')}</em> {formatHudPrice(hud.open)}</span>
-          <span><em>{t('report.priceChartHudHigh')}</em> {formatHudPrice(hud.high)}</span>
-          <span><em>{t('report.priceChartHudLow')}</em> {formatHudPrice(hud.low)}</span>
-          <span className={hudUp ? 'is-up' : 'is-down'}>
-            <em>{t('report.priceChartHudClose')}</em> {formatHudPrice(hud.close)}
-            {hud.changePct !== null ? ` ${hud.changePct >= 0 ? '+' : ''}${hud.changePct.toFixed(2)}%` : ''}
-          </span>
         </div>
-      ) : null}
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="tv-desk-tools" role="group" aria-label={t('report.priceChartMa5')}>
-          <ToolbarButton
-            pressed={showMa.ma5}
-            tone={FALLBACK_COLORS[theme].ma5}
-            onClick={() => setShowMa((current) => ({ ...current, ma5: !current.ma5 }))}
-          >
-            {t('report.priceChartMa5')}
-          </ToolbarButton>
-          <ToolbarButton
-            pressed={showMa.ma10}
-            tone={FALLBACK_COLORS[theme].ma10}
-            onClick={() => setShowMa((current) => ({ ...current, ma10: !current.ma10 }))}
-          >
-            {t('report.priceChartMa10')}
-          </ToolbarButton>
-          <ToolbarButton
-            pressed={showMa.ma20}
-            tone={FALLBACK_COLORS[theme].ma20}
-            onClick={() => setShowMa((current) => ({ ...current, ma20: !current.ma20 }))}
-          >
-            {t('report.priceChartMa20')}
-          </ToolbarButton>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="tv-desk-tools" role="group" aria-label={t('report.priceChartRange', { days: rangeDays })}>
+            {CHART_RANGE_DAYS.map((daysOption) => (
+              <ToolbarButton
+                key={daysOption}
+                pressed={rangeDays === daysOption}
+                onClick={() => setRangeDays(daysOption)}
+              >
+                {t(RANGE_LABEL_KEYS[daysOption])}
+              </ToolbarButton>
+            ))}
+          </div>
+
+          <div className="tv-desk-tools" role="group" aria-label={t('report.priceChartTypeCandles')}>
+            {CHART_TYPE_META.map(({ id, labelKey, Icon }) => (
+              <ToolbarButton
+                key={id}
+                pressed={chartType === id}
+                onClick={() => setChartType(id)}
+              >
+                <Icon className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                {t(labelKey)}
+              </ToolbarButton>
+            ))}
+          </div>
+
+          <div className="tv-desk-tools" role="group" aria-label={t('report.priceChartMa5')}>
+            <ToolbarButton
+              pressed={showMa.ma5}
+              tone={FALLBACK_COLORS[theme].ma5}
+              onClick={() => setShowMa((current) => ({ ...current, ma5: !current.ma5 }))}
+            >
+              {t('report.priceChartMa5')}
+            </ToolbarButton>
+            <ToolbarButton
+              pressed={showMa.ma10}
+              tone={FALLBACK_COLORS[theme].ma10}
+              onClick={() => setShowMa((current) => ({ ...current, ma10: !current.ma10 }))}
+            >
+              {t('report.priceChartMa10')}
+            </ToolbarButton>
+            <ToolbarButton
+              pressed={showMa.ma20}
+              tone={FALLBACK_COLORS[theme].ma20}
+              onClick={() => setShowMa((current) => ({ ...current, ma20: !current.ma20 }))}
+            >
+              {t('report.priceChartMa20')}
+            </ToolbarButton>
+          </div>
+
+          <div className="tv-desk-tools" role="group" aria-label={t('report.priceChartLevels')}>
+            <ToolbarButton pressed={showLevels} onClick={() => setShowLevels((current) => !current)}>
+              {t('report.priceChartLevels')}
+            </ToolbarButton>
+            <ToolbarButton pressed={showForecast} onClick={() => setShowForecast((current) => !current)}>
+              {t('report.priceChartForecastToggle')}
+            </ToolbarButton>
+          </div>
+
+          <div className="tv-desk-tools">
+            <ToolbarButton pressed={false} onClick={() => void fetchKline()}>
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+              {t('report.priceChartRefresh')}
+            </ToolbarButton>
+            <ToolbarButton
+              pressed={expanded}
+              onClick={() => setExpanded((current) => !current)}
+            >
+              {expanded
+                ? <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" />
+                : <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />}
+              {expanded ? t('report.priceChartCollapse') : t('report.priceChartExpand')}
+            </ToolbarButton>
+          </div>
         </div>
+      </div>
+
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         {levelChips.map((chip) => (
           <LevelChip key={chip.key} label={chip.label} colorVar={chip.colorVar} value={chip.value} dashed />
         ))}
@@ -717,8 +860,6 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
           dashed
         />
       </div>
-
-      <p className="mb-3 text-[11px] leading-5 text-muted-text">{t('report.priceChartHint')}</p>
 
       {error && !isLoading ? (
         <ApiErrorAlert
@@ -755,14 +896,30 @@ export const PriceChartPanel: React.FC<PriceChartPanelProps> = ({
 
       {!isLoading && !error && hasData && !renderFailed ? (
         <div className="tv-desk-frame">
+          {hud ? (
+            <div
+              data-testid="price-chart-hud"
+              className="tv-desk-legend font-mono text-xs"
+            >
+              <span className="tv-desk-hud-time">{hud.time}</span>
+              <span><em>{t('report.priceChartHudOpen')}</em> {formatHudPrice(hud.open)}</span>
+              <span><em>{t('report.priceChartHudHigh')}</em> {formatHudPrice(hud.high)}</span>
+              <span><em>{t('report.priceChartHudLow')}</em> {formatHudPrice(hud.low)}</span>
+              <span className={hudUp ? 'is-up' : 'is-down'}>
+                <em>{t('report.priceChartHudClose')}</em> {formatHudPrice(hud.close)}
+                {hud.changePct !== null ? ` ${hud.changePct >= 0 ? '+' : ''}${hud.changePct.toFixed(2)}%` : ''}
+              </span>
+            </div>
+          ) : null}
           <div
             ref={containerRef}
-            className="tv-desk-canvas h-[22.5rem] w-full md:h-[28.75rem]"
+            className={`tv-desk-canvas w-full ${expanded ? 'h-[calc(100vh-11rem)]' : 'h-[22.5rem] md:h-[28.75rem]'}`}
             role="img"
             aria-label={t('report.priceChartTitle')}
           />
         </div>
       ) : null}
+      <p className="mt-2 text-[11px] leading-5 text-muted-text">{t('report.priceChartHint')}</p>
     </Card>
   );
 };

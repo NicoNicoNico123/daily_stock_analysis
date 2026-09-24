@@ -3499,3 +3499,50 @@ tbody .screener-detail-row .screener-sticky {
     animation: none;
   }
 }
+
+/* TradingView-style chart legend overlay + fullscreen panel */
+.tv-desk-legend {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.7rem;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--home-panel-border);
+  background: color-mix(in oklab, var(--home-panel-bg, hsl(var(--card))) 82%, transparent);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  color: var(--text-secondary-text);
+}
+.tv-desk-legend em {
+  font-style: normal;
+  margin-right: 0.25rem;
+  color: var(--text-muted-text);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.tv-desk-legend .is-up {
+  color: var(--home-price-up);
+  font-weight: 600;
+}
+.tv-desk-legend .is-down {
+  color: var(--home-price-down);
+  font-weight: 600;
+}
+.tv-desk-expanded {
+  position: fixed;
+  inset: 0.85rem;
+  z-index: 130;
+  overflow: auto;
+  background: var(--surface-1);
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.45);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tv-desk-expanded {
+    animation: zoomIn 160ms ease-out;
+  }
+}

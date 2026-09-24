@@ -3,6 +3,7 @@ import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
+import { MarketSessionsBar } from '../dashboard';
 import { UiLanguageToggle } from '../i18n/UiLanguageToggle';
 import { ThemeToggle } from '../theme/ThemeToggle';
 
@@ -58,6 +59,7 @@ export const ShellHeader: React.FC<ShellHeaderProps> = ({
           <p className="truncate text-xs text-secondary-text">{current ? t(current.description) : t('layout.appFallbackDescription')}</p>
         </div>
 
+        <MarketSessionsBar className="hidden xl:flex" />
         <UiLanguageToggle />
         <ThemeToggle />
       </div>
