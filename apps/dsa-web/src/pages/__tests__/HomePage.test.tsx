@@ -287,9 +287,13 @@ describe('HomePage', () => {
     expect(dashboard).toBeInTheDocument();
     expect(dashboard.className).toContain('h-[calc(100vh-5rem)]');
     expect(dashboard.className).toContain('lg:h-[calc(100vh-2rem)]');
-    expect(dashboard.firstElementChild?.className).toContain('min-h-0');
-    expect(dashboard.querySelector('.flex-1.flex.min-h-0.overflow-hidden')).toBeTruthy();
+    // 終端網格：頂部跑馬燈 → 全幅主欄（命令列 + 三欄面板網格）→ 底部狀態列
+    expect(dashboard.firstElementChild?.className).toContain('ticker-tape');
+    const terminalColumn = dashboard.children[1] as HTMLElement;
+    expect(terminalColumn.className).toContain('min-h-0');
+    expect(dashboard.querySelector('.flex-1.min-h-0.gap-2.overflow-hidden')).toBeTruthy();
     expect(screen.getByTestId('home-dashboard-scroll')).toBeInTheDocument();
+    expect(screen.getByRole('marquee', { name: '市場跑馬燈' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('輸入股票代碼或名稱，如 600519、貴州茅臺、AAPL')).toBeInTheDocument();
     expect(await screen.findByText('趨勢維持強勢')).toBeInTheDocument();
     expect(

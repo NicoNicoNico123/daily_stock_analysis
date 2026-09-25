@@ -67,9 +67,10 @@ export const AccentToggle: React.FC<{ className?: string }> = ({ className = '' 
     if (!open) {
       return undefined;
     }
+    const trigger = triggerRef.current;
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
-      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) {
+      if (trigger?.contains(target) || panelRef.current?.contains(target)) {
         return;
       }
       setOpen(false);
@@ -89,8 +90,8 @@ export const AccentToggle: React.FC<{ className?: string }> = ({ className = '' 
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
       // 焦點返還觸發按鈕，避免關閉後焦點落空
-      if (triggerRef.current && document.activeElement && !triggerRef.current.contains(document.activeElement)) {
-        triggerRef.current.focus();
+      if (trigger && document.activeElement && !trigger.contains(document.activeElement)) {
+        trigger.focus();
       }
     };
   }, [open, updatePosition]);

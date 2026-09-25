@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, Check, SlidersHorizontal, X } from 'lucide-react';
+import { BarChart3, Bell, Briefcase, Check, LineChart, Search, SlidersHorizontal, X, type LucideIcon } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 import { analysisApi, DuplicateTaskError } from '../api/analysis';
@@ -8,7 +8,8 @@ import { historyApi } from '../api/history';
 import { agentApi, type SkillInfo } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
 import { ApiErrorAlert, Button, Drawer, EmptyState, InlineAlert } from '../components/common';
-import { DashboardStateBlock } from '../components/dashboard';
+import { DashboardStateBlock, MarketTickerTape, TerminalPanel, TerminalStatusBar } from '../components/dashboard';
+import type { UiTextKey } from '../i18n/uiText';
 import { StockAutocomplete } from '../components/StockAutocomplete';
 import { StockHistoryTrendDrawer } from '../components/history';
 import { ReportMarkdownDrawer } from '../components/report/ReportMarkdownDrawer';
@@ -1413,8 +1414,9 @@ const HomePage: React.FC = () => {
     watchlistState.watchlistCodes,
   ]);
 
+  const latestMarketReview = marketReviewHistoryItems[0];
+
   const mergedStockBarItems = useMemo<StockBarItem[]>(() => {
-    const latestMarketReview = marketReviewHistoryItems[0];
     const stockItems = stockBarItems.filter((item) => item.stockCode !== 'MARKET');
     if (!latestMarketReview) {
       return stockItems;
@@ -1438,17 +1440,30 @@ const HomePage: React.FC = () => {
       const rightTime = right.lastAnalysisTime ? Date.parse(right.lastAnalysisTime) : 0;
       return rightTime - leftTime;
     });
-  }, [marketReviewHistoryItems, stockBarItems, t]);
+  }, [latestMarketReview, marketReviewHistoryItems, stockBarItems, t]);
+
+  const tickerItems = useMemo(
+    () =>
+      mergedStockBarItems.slice(0, 18).map((item) => ({
+        key: `${item.stockCode}-${item.id}`,
+        name: item.stockName || item.stockCode,
+        tag: item.reportType === 'market_review' ? 'MKT' : null,
+        score: item.sentimentScore,
+        hint: item.operationAdvice || null,
+      })),
+    [mergedStockBarItems],
+  );
+
+  const QUICK_NAV_ITEMS: Array<{ route: string; labelKey: UiTextKey; Icon: LucideIcon }> = [
+    { route: '/screening', labelKey: 'home.navScreening', Icon: Search },
+    { route: '/backtest', labelKey: 'home.navBacktest', Icon: LineChart },
+    { route: '/alerts', labelKey: 'home.navAlerts', Icon: Bell },
+    { route: '/portfolio', labelKey: 'home.navPortfolio', Icon: Briefcase },
+  ];
 
   const sidebarContent = useMemo(
     () => (
       <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
-        <TaskPanel
-          tasks={activeTasks}
-          onOpenRunFlow={openTaskRunFlow}
-          collapsed={isTaskPanelCollapsed}
-          onCollapsedChange={handleTaskPanelCollapsedChange}
-        />
         <HomeStockWorkspace
           activeTab={sidebarWorkspaceTab}
           onTabChange={setSidebarWorkspaceTab}
@@ -1479,7 +1494,6 @@ const HomePage: React.FC = () => {
       </div>
     ),
     [
-      activeTasks,
       batchAnalyzeStatus,
       handleAnalyzeWatchlist,
       handleDeleteStock,
@@ -1491,7 +1505,6 @@ const HomePage: React.FC = () => {
       isLoadingStockBar,
       isLoadingTodayAnalysisItems,
       isStockIndexReady,
-      isTaskPanelCollapsed,
       todayAnalysisLoadFailed,
       mergedStockBarItems,
       openTaskRunFlow,
@@ -1513,10 +1526,11 @@ const HomePage: React.FC = () => {
   return (
     <div
       data-testid="home-dashboard"
-      className="flex h-[calc(100vh-5rem)] w-full flex-col overflow-hidden md:flex-row sm:h-[calc(100vh-5.5rem)] lg:h-[calc(100vh-2rem)]"
+      className="flex h-[calc(100vh-5rem)] w-full flex-col overflow-hidden sm:h-[calc(100vh-5.5rem)] lg:h-[calc(100vh-2rem)]"
     >
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 max-w-full lg:max-w-6xl mx-auto w-full">
-        <header className="home-command-bar relative z-30 flex min-w-0 flex-shrink-0 items-center overflow-visible px-3 py-3 md:px-4 md:py-4">
+      <MarketTickerTape items={tickerItems} />
+      <div className="flex w-full flex-1 flex-col min-h-0 min-w-0">
+        <header className="home-command-bar relative z-30 flex min-w-0 flex-shrink-0 items-center overflow-visible px-3 py-2.5 md:px-4 md:py-3">
           <div className="flex min-w-0 flex-1 flex-col gap-2.5 md:flex-row md:items-center">
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <button
@@ -1699,10 +1713,10 @@ const HomePage: React.FC = () => {
           </div>
         ) : null}
 
-        <div className="flex-1 flex min-h-0 overflow-hidden">
-          <div className="hidden min-h-0 w-64 shrink-0 flex-col overflow-hidden pl-4 pb-4 md:flex lg:w-72">
+        <div className="flex flex-1 min-h-0 gap-2 overflow-hidden px-2 pb-2 md:px-3">
+          <aside className="hidden min-h-0 w-64 shrink-0 flex-col overflow-hidden border-border/40 md:flex lg:w-72 md:border-r md:pr-2">
             {sidebarContent}
-          </div>
+          </aside>
 
           {sidebarOpen ? (
             <div className="fixed inset-0 z-40 md:hidden" onClick={() => setSidebarOpen(false)}>
@@ -1877,8 +1891,55 @@ const HomePage: React.FC = () => {
               </div>
             ) : null}
           </section>
+
+          <aside className="hidden min-h-0 w-80 shrink-0 flex-col gap-2 overflow-hidden xl:flex">
+            <TaskPanel
+              tasks={activeTasks}
+              onOpenRunFlow={openTaskRunFlow}
+              collapsed={isTaskPanelCollapsed}
+              onCollapsedChange={handleTaskPanelCollapsedChange}
+            />
+            <TerminalPanel label={t('home.pulseTitle')} className="min-h-[9rem]" bodyClassName="p-3">
+              {latestMarketReview ? (
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="num text-3xl font-black leading-8 text-cyan">
+                      {latestMarketReview.sentimentScore ?? '--'}
+                    </span>
+                    <span className="text-right text-[11px] leading-4 text-secondary-text">
+                      {latestMarketReview.operationAdvice || t('home.pulseEmpty')}
+                    </span>
+                  </div>
+                  {latestMarketReview.marketPhaseSummary ? (
+                    <p className="line-clamp-2 text-[11px] leading-5 text-muted-text">
+                      {String(latestMarketReview.marketPhaseSummary)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-[11px] leading-5 text-muted-text">{t('home.pulseEmpty')}</p>
+              )}
+            </TerminalPanel>
+            <TerminalPanel label={t('home.quickNavTitle')} bodyClassName="p-2">
+              <div className="grid grid-cols-2 gap-1.5">
+                {QUICK_NAV_ITEMS.map(({ route, labelKey, Icon }) => (
+                  <button
+                    key={route}
+                    type="button"
+                    onClick={() => navigate(route)}
+                    className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 text-xs font-medium text-secondary-text transition-all hover:border-cyan/40 hover:text-foreground"
+                  >
+                    <Icon className="h-3.5 w-3.5 text-cyan" aria-hidden="true" />
+                    {t(labelKey)}
+                  </button>
+                ))}
+              </div>
+            </TerminalPanel>
+          </aside>
         </div>
       </div>
+
+      <TerminalStatusBar taskCount={activeTasks.length} stockCount={mergedStockBarItems.length} />
 
       {markdownDrawerOpen && selectedReport?.meta.id ? (
         <ReportMarkdownDrawer

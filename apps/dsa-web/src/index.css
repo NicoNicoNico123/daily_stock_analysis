@@ -3716,3 +3716,44 @@ body::before {
     radial-gradient(46rem 28rem at 92% 8%, hsl(45 95% 55% / 0.1), transparent 64%),
     radial-gradient(38rem 24rem at 50% 112%, hsl(16 85% 50% / 0.08), transparent 60%);
 }
+
+/* =========================================
+   TERMINAL DASHBOARD CHROME
+   Ticker tape / side panels / status bar
+   ========================================= */
+.ticker-tape-track {
+  animation: ticker-scroll 45s linear infinite;
+}
+.ticker-tape:hover .ticker-tape-track {
+  animation-play-state: paused;
+}
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticker-tape-track {
+    animation: none;
+  }
+  .ticker-tape {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ticker-tape::-webkit-scrollbar {
+    display: none;
+  }
+}
+.ticker-chip {
+  border-right: none;
+}
+.terminal-panel {
+  border-radius: 0.65rem;
+  border: 1px solid hsl(var(--foreground) / 0.08);
+  background: var(--glass-bg-strong, hsl(var(--card) / 0.9));
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-soft-card);
+}
