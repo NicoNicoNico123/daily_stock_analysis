@@ -81,7 +81,7 @@ export const ParticleBackground = () => {
         if (distMouse > 0 && distMouse < 250) {
           c.beginPath();
           const opacity = 0.8 * (1 - distMouse / 250);
-          c.strokeStyle = `rgba(6, 182, 212, ${opacity})`;
+          c.strokeStyle = `hsl(var(--primary) / ${opacity})`;
           c.lineWidth = 2.0;
           c.moveTo(particles[i].x, particles[i].y);
           c.lineTo(mouse.x, mouse.y);

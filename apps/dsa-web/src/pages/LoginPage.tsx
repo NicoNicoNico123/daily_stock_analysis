@@ -159,9 +159,9 @@ const LoginPage: React.FC = () => {
             }}
             className="pointer-events-none absolute -top-[20vh] -z-10 opacity-80"
           >
-            <div className="relative flex h-[120vh] w-[120vh] items-center justify-center rounded-full border border-[var(--login-accent-soft)] bg-gradient-to-br from-[var(--login-accent-soft)] to-[hsl(214_100%_20%_/_0.18)] shadow-[inset_0_0_200px_var(--login-accent-glow)] blur-[4px]">
-              <Cpu className="h-[70vh] w-[70vh] text-[hsl(200_80%_22%_/_0.4)] brightness-50" />
-              <TrendingUp className="absolute h-[25vh] w-[25vh] translate-x-[15vh] translate-y-[15vh] text-emerald-900/30 brightness-50" />
+            <div className="relative flex h-[120vh] w-[120vh] items-center justify-center rounded-full border border-[var(--login-accent-soft)] bg-gradient-to-br from-[var(--login-accent-soft)] to-[hsl(var(--primary)_/_0.08)] shadow-[inset_0_0_200px_var(--login-accent-glow)] blur-[4px]">
+              <Cpu className="h-[70vh] w-[70vh] text-[hsl(var(--primary)_/_0.16)]" />
+              <TrendingUp className="absolute h-[25vh] w-[25vh] translate-x-[15vh] translate-y-[15vh] text-[hsl(var(--color-purple)_/_0.28)]" />
             </div>
           </motion.div>
 

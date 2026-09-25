@@ -5,6 +5,7 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { MarketSessionsBar } from '../dashboard';
 import { UiLanguageToggle } from '../i18n/UiLanguageToggle';
+import { AccentToggle } from '../theme/AccentToggle';
 import { ThemeToggle } from '../theme/ThemeToggle';
 
 type ShellHeaderProps = {
@@ -61,6 +62,7 @@ export const ShellHeader: React.FC<ShellHeaderProps> = ({
 
         <MarketSessionsBar className="hidden xl:flex" />
         <UiLanguageToggle />
+        <AccentToggle />
         <ThemeToggle />
       </div>
     </header>

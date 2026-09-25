@@ -23,37 +23,37 @@
 
   /* HSL tokens used by Tailwind-based components */
 
-  --background: 216 33% 97%;
-  --foreground: 228 35% 12%;
+  --background: 258 50% 98%;
+  --foreground: 262 32% 13%;
   --card: 0 0% 100%;
   --card-foreground: 228 35% 12%;
   --popover: 0 0% 100%;
   --popover-foreground: 228 35% 12%;
-  --primary: 193 100% 43%;
+  --primary: 262 78% 54%;
   --primary-foreground: 216 33% 97%;
-  --secondary: 214 32% 91%;
-  --secondary-foreground: 228 35% 16%;
-  --muted: 214 30% 94%;
-  --muted-foreground: 224 12% 42%;
-  --accent: 214 32% 93%;
-  --accent-foreground: 228 35% 16%;
+  --secondary: 258 30% 92%;
+  --secondary-foreground: 262 30% 18%;
+  --muted: 258 28% 95%;
+  --muted-foreground: 258 10% 42%;
+  --accent: 258 28% 94%;
+  --accent-foreground: 262 30% 18%;
   --destructive: 349 82% 56%;
   --destructive-foreground: 210 33% 98%;
-  --border: 217 28% 84%;
-  --input: 217 28% 84%;
-  --ring: 193 100% 43%;
+  --border: 258 22% 86%;
+  --input: 258 22% 86%;
+  --ring: 262 78% 54%;
   --radius: 1rem;
-  --elevated: 0 0% 100%;
-  --hover: 214 29% 90%;
-  --secondary-text: 224 18% 28%;
-  --muted-text: 224 12% 35%;
+  --elevated: 258 40% 99%;
+  --hover: 258 26% 91%;
+  --secondary-text: 258 16% 30%;
+  --muted-text: 258 10% 38%;
 
   --color-cyan: hsl(var(--primary));
   --color-cyan-dim: hsl(var(--primary) / 0.8);
   --color-cyan-glow: hsl(var(--primary) / 0.18);
-  --color-purple: 247 84% 66%;
-  --color-purple-dim: 247 84% 56%;
-  --color-purple-glow: hsl(247 84% 66% / 0.18);
+  --color-purple: 174 62% 32%;
+  --color-purple-dim: 174 62% 28%;
+  --color-purple-glow: hsl(174 62% 32% / 0.18);
   --color-success: 152 69% 40%;
   --color-warning: 37 92% 50%;
   --color-danger: 0 90% 55%;
@@ -61,7 +61,7 @@
   --color-danger-alert-border: 349 82% 56%;
   --color-danger-alert-bg: 349 82% 56%;
   /* Tailwind-compatible accent colors (Light theme) */
-  --color-cyan-400: 188 78% 41%;
+  --color-cyan-400: var(--primary);
   --color-emerald-400: 152 69% 40%;
   --color-red-400: 0 90% 55%;
   --color-amber-400: 37 92% 50%;
@@ -134,7 +134,7 @@
 
   /* Compatibility preservation */
   --border-accent: hsl(var(--primary) / 0.7);
-  --border-purple: hsl(247 84% 66% / 0.24);
+  --border-purple: hsl(var(--color-purple) / 0.24);
   --border-cyan: hsl(var(--primary));
   --text-primary: hsl(var(--foreground));
   --text-secondary-text: hsl(var(--secondary-text));
@@ -155,7 +155,7 @@
   --nav-brand-shadow: hsl(var(--primary) / 0.2);
 
   /* Shell Sidebar Custom */
-  --shell-sidebar-border: hsl(193 100% 43% / 0.26);
+  --shell-sidebar-border: hsl(var(--primary) / 0.26);
 
   /* Home page related (using HSL format) */
   --home-loading-ring-track: hsl(var(--primary) / 0.2);
@@ -166,95 +166,95 @@
   --home-action-ai-border: hsl(var(--primary) / 0.2);
   --home-action-ai-text: hsl(var(--primary));
   --home-action-ai-hover-bg: hsl(var(--primary) / 0.18);
-  --home-action-report-bg: hsl(247 84% 66% / 0.1);
-  --home-action-report-border: hsl(247 84% 66% / 0.2);
-  --home-action-report-text: hsl(247 84% 66%);
-  --home-action-report-hover-bg: hsl(247 84% 66% / 0.18);
+  --home-action-report-bg: hsl(var(--color-purple) / 0.1);
+  --home-action-report-border: hsl(var(--color-purple) / 0.2);
+  --home-action-report-text: hsl(var(--color-purple));
+  --home-action-report-hover-bg: hsl(var(--color-purple) / 0.18);
   --home-accent-bg: hsl(var(--primary) / 0.1);
   --home-accent-bg-hover: hsl(var(--primary) / 0.16);
   --home-accent-border: hsl(var(--primary) / 0.2);
   --home-accent-border-hover: hsl(var(--primary) / 0.28);
   --home-accent-text: hsl(var(--primary));
-  --home-secondary-accent-text: hsl(247 84% 66%);
-  --home-title-accent: hsl(247 84% 66%);
+  --home-secondary-accent-text: hsl(var(--color-purple));
+  --home-title-accent: hsl(var(--color-purple));
   --home-price-up: hsl(0 74% 46%);
   --home-price-down: hsl(149 78% 30%);
   --home-strategy-buy: hsl(149 100% 42%);
   --home-strategy-secondary: hsl(var(--primary));
   --home-strategy-stop: hsl(346 100% 63%);
   --home-strategy-take: hsl(38 100% 52%);
-  --home-panel-border: hsl(218 24% 82% / 0.92);
-  --home-panel-border-hover: hsl(193 100% 43% / 0.2);
-  --home-panel-border-selected: hsl(193 100% 43% / 0.34);
-  --home-panel-gradient-start: hsl(193 100% 43% / 0.1);
-  --home-panel-gradient-mid: hsl(247 84% 66% / 0.08);
-  --home-panel-gradient-end: hsl(218 22% 78% / 0.08);
+  --home-panel-border: hsl(260 24% 82% / 0.92);
+  --home-panel-border-hover: hsl(var(--primary) / 0.2);
+  --home-panel-border-selected: hsl(var(--primary) / 0.34);
+  --home-panel-gradient-start: hsl(var(--primary) / 0.1);
+  --home-panel-gradient-mid: hsl(var(--color-purple) / 0.08);
+  --home-panel-gradient-end: hsl(260 22% 78% / 0.08);
   --home-panel-selected-shadow:
-    0 0 0 1px hsl(193 100% 43% / 0.08),
-    0 10px 24px hsl(220 24% 36% / 0.1);
-  --home-panel-subtle-bg: hsl(214 32% 98% / 0.98);
-  --home-panel-subtle-bg-hover: hsl(214 36% 96% / 0.99);
+    0 0 0 1px hsl(var(--primary) / 0.08),
+    0 10px 24px hsl(260 24% 36% / 0.1);
+  --home-panel-subtle-bg: hsl(258 32% 98% / 0.98);
+  --home-panel-subtle-bg-hover: hsl(258 36% 96% / 0.99);
   --home-history-item-bg: hsl(0 0% 100% / 0.82);
-  --home-history-item-hover-bg: hsl(214 34% 96% / 0.99);
+  --home-history-item-hover-bg: hsl(258 34% 96% / 0.99);
   --home-history-item-selected-bg:
-    linear-gradient(180deg, hsl(193 100% 43% / 0.08), hsl(214 42% 96% / 0.98));
-  --home-divider-border: hsl(218 24% 84% / 0.9);
-  --home-surface-button-bg: hsl(214 36% 97% / 0.98);
-  --home-surface-button-bg-hover: hsl(214 40% 95% / 0.99);
-  --home-surface-button-border: hsl(218 24% 84% / 0.94);
-  --home-surface-button-border-hover: hsl(193 100% 43% / 0.22);
+    linear-gradient(180deg, hsl(var(--primary) / 0.08), hsl(258 42% 96% / 0.98));
+  --home-divider-border: hsl(260 24% 84% / 0.9);
+  --home-surface-button-bg: hsl(258 36% 97% / 0.98);
+  --home-surface-button-bg-hover: hsl(258 40% 95% / 0.99);
+  --home-surface-button-border: hsl(260 24% 84% / 0.94);
+  --home-surface-button-border-hover: hsl(var(--primary) / 0.22);
   --home-state-icon-muted: hsl(var(--muted-text) / 0.85);
   --home-prose-border: hsl(var(--foreground) / 0.1);
   --home-prose-border-strong: hsl(var(--foreground) / 0.16);
-  --home-prose-blockquote-border: hsl(247 84% 66% / 0.28);
-  --home-prose-blockquote-bg: hsl(247 84% 66% / 0.08);
-  --home-panel-shadow: 0 14px 32px hsl(220 22% 34% / 0.08), 0 4px 10px hsl(220 18% 28% / 0.04);
-  --home-panel-shadow-hover: 0 18px 40px hsl(220 24% 32% / 0.12), 0 6px 16px hsl(220 20% 28% / 0.06);
-  --home-hero-border: hsl(193 100% 43% / 0.32);
-  --home-hero-gradient-start: hsl(193 100% 43% / 0.24);
-  --home-hero-gradient-mid: hsl(247 84% 66% / 0.14);
-  --home-hero-gradient-end: hsl(218 22% 82% / 0.14);
-  --home-hero-shadow: 0 18px 44px hsl(220 24% 34% / 0.12), 0 8px 18px hsl(220 20% 30% / 0.06);
-  --home-rail-border: hsl(218 24% 82% / 0.9);
-  --home-rail-bg: linear-gradient(180deg, hsl(0 0% 100% / 0.98), hsl(214 36% 97% / 0.98));
-  --home-rail-shadow: 0 14px 30px hsl(220 22% 34% / 0.09), 0 4px 10px hsl(220 18% 28% / 0.05);
-  --home-history-glow: hsl(193 100% 43% / 0.14);
-  --autocomplete-hover-bg: #04d1f6;
+  --home-prose-blockquote-border: hsl(var(--color-purple) / 0.28);
+  --home-prose-blockquote-bg: hsl(var(--color-purple) / 0.08);
+  --home-panel-shadow: 0 14px 32px hsl(260 22% 34% / 0.08), 0 4px 10px hsl(260 18% 28% / 0.04);
+  --home-panel-shadow-hover: 0 18px 40px hsl(260 24% 32% / 0.12), 0 6px 16px hsl(260 20% 28% / 0.06);
+  --home-hero-border: hsl(var(--primary) / 0.32);
+  --home-hero-gradient-start: hsl(var(--primary) / 0.24);
+  --home-hero-gradient-mid: hsl(var(--color-purple) / 0.14);
+  --home-hero-gradient-end: hsl(260 22% 82% / 0.14);
+  --home-hero-shadow: 0 18px 44px hsl(260 24% 34% / 0.12), 0 8px 18px hsl(260 20% 30% / 0.06);
+  --home-rail-border: hsl(260 24% 82% / 0.9);
+  --home-rail-bg: linear-gradient(180deg, hsl(0 0% 100% / 0.98), hsl(258 36% 97% / 0.98));
+  --home-rail-shadow: 0 14px 30px hsl(260 22% 34% / 0.09), 0 4px 10px hsl(260 18% 28% / 0.05);
+  --home-history-glow: hsl(var(--primary) / 0.14);
+  --autocomplete-hover-bg: #ede9fe;
 
   /* Shadows (using HSL format) */
-  --shadow-soft-card: 0 12px 24px hsl(220 20% 34% / 0.09), 0 3px 8px hsl(220 16% 28% / 0.05);
-  --shadow-soft-card-strong: 0 18px 34px hsl(220 20% 32% / 0.12), 0 6px 16px hsl(220 16% 28% / 0.07);
+  --shadow-soft-card: 0 12px 24px hsl(260 20% 34% / 0.09), 0 3px 8px hsl(260 16% 28% / 0.05);
+  --shadow-soft-card-strong: 0 18px 34px hsl(260 20% 32% / 0.12), 0 6px 16px hsl(260 16% 28% / 0.07);
   --settings-surface: hsl(0 0% 100% / 0.97);
-  --settings-surface-hover: hsl(214 44% 95% / 0.99);
+  --settings-surface-hover: hsl(258 44% 95% / 0.99);
   --settings-surface-strong: hsl(0 0% 100% / 0.99);
-  --settings-surface-panel: hsl(213 48% 97% / 0.99);
-  --settings-surface-overlay: hsl(214 36% 94% / 0.88);
-  --settings-surface-overlay-soft: hsl(214 34% 95% / 0.94);
-  --settings-surface-overlay-muted: hsl(214 30% 93% / 0.97);
-  --settings-border: hsl(218 24% 78% / 0.94);
-  --settings-border-soft: hsl(218 22% 84% / 0.94);
-  --settings-border-strong: hsl(218 18% 68% / 0.98);
-  --settings-border-overlay: hsl(218 22% 72% / 0.92);
-  --settings-accent-shadow: hsl(190 100% 50% / 0.08);
-  --settings-primary-border: hsl(190 100% 50% / 0.26);
+  --settings-surface-panel: hsl(257 48% 97% / 0.99);
+  --settings-surface-overlay: hsl(258 36% 94% / 0.88);
+  --settings-surface-overlay-soft: hsl(258 34% 95% / 0.94);
+  --settings-surface-overlay-muted: hsl(258 30% 93% / 0.97);
+  --settings-border: hsl(260 24% 78% / 0.94);
+  --settings-border-soft: hsl(260 22% 84% / 0.94);
+  --settings-border-strong: hsl(260 18% 68% / 0.98);
+  --settings-border-overlay: hsl(260 22% 72% / 0.92);
+  --settings-accent-shadow: hsl(var(--primary) / 0.08);
+  --settings-primary-border: hsl(var(--primary) / 0.26);
   --settings-primary-gradient:
-    linear-gradient(135deg, hsl(190 100% 50% / 0.96), hsl(191 100% 40% / 0.96));
+    linear-gradient(135deg, hsl(var(--primary) / 0.96), hsl(var(--primary) / 0.78));
   --settings-primary-text: hsl(205 71% 6%);
-  --settings-primary-shadow: hsl(190 100% 50% / 0.2);
-  --settings-primary-shadow-hover: hsl(190 100% 50% / 0.22);
-  --settings-secondary-border: hsl(218 22% 74% / 0.96);
-  --settings-secondary-bg: hsl(214 36% 95% / 0.98);
-  --settings-secondary-border-hover: hsl(190 100% 50% / 0.38);
-  --settings-secondary-bg-hover: hsl(190 100% 50% / 0.12);
-  --settings-glow-hover: hsl(190 100% 50% / 0.38);
-  --settings-skeleton-strong: hsl(218 20% 84% / 0.92);
-  --settings-skeleton-soft: hsl(218 22% 92% / 0.96);
+  --settings-primary-shadow: hsl(var(--primary) / 0.2);
+  --settings-primary-shadow-hover: hsl(var(--primary) / 0.22);
+  --settings-secondary-border: hsl(260 22% 74% / 0.96);
+  --settings-secondary-bg: hsl(258 36% 95% / 0.98);
+  --settings-secondary-border-hover: hsl(var(--primary) / 0.38);
+  --settings-secondary-bg-hover: hsl(var(--primary) / 0.12);
+  --settings-glow-hover: hsl(var(--primary) / 0.38);
+  --settings-skeleton-strong: hsl(260 20% 84% / 0.92);
+  --settings-skeleton-soft: hsl(260 22% 92% / 0.96);
   --input-surface-bg: var(--bg-card);
-  --input-surface-border: hsl(218 24% 80% / 0.92);
-  --input-surface-border-hover: hsl(218 20% 70% / 0.92);
+  --input-surface-border: hsl(260 24% 80% / 0.92);
+  --input-surface-border-hover: hsl(260 20% 70% / 0.92);
   --input-surface-border-focus: hsl(var(--primary) / 0.38);
   --input-surface-focus-ring: 0 0 0 4px hsl(var(--primary) / 0.15);
-  --settings-input-rest-border: hsl(218 22% 82% / 0.72);
+  --settings-input-rest-border: hsl(260 22% 82% / 0.72);
   --gradient-primary:
     linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.74));
 
@@ -284,86 +284,86 @@
   --backtest-table-bg: hsl(var(--card) / 0.72);
 
   /* Login Page Tokens (Light) */
-  --login-bg-main: hsl(214 34% 96%);
-  --login-bg-card: hsl(210 43% 92% / 0.78);
-  --login-border-card: hsl(221 28% 28% / 0.58);
-  --login-border-input: hsl(201 56% 46% / 0.7);
+  --login-bg-main: hsl(258 45% 97%);
+  --login-bg-card: hsl(258 40% 94% / 0.82);
+  --login-border-card: hsl(261 28% 28% / 0.58);
+  --login-border-input: hsl(262 50% 50% / 0.62);
   --login-border-focus: hsl(var(--primary) / 0.48);
   --login-error-text: hsl(var(--destructive));
   --login-error-bg: hsl(var(--destructive) / 0.1);
   --login-error-border: hsl(var(--destructive) / 0.2);
   --login-text-primary: hsl(223 36% 12%);
-  --login-text-secondary: hsl(220 17% 28%);
-  --login-text-muted: hsl(221 18% 32% / 0.72);
+  --login-text-secondary: hsl(260 17% 28%);
+  --login-text-muted: hsl(261 18% 32% / 0.72);
   --login-accent-soft: hsl(var(--primary) / 0.08);
-  --login-accent-border: hsl(220 22% 32% / 0.72);
+  --login-accent-border: hsl(260 22% 32% / 0.72);
   --login-accent-text: hsl(223 36% 18%);
   --login-accent-glow: hsl(var(--primary) / 0.18);
-  --login-brand-start: hsl(222 36% 16%);
-  --login-brand-end: hsl(205 88% 48%);
-  --login-brand-button-start: hsl(194 78% 56%);
-  --login-brand-button-end: hsl(213 88% 56%);
-  --login-brand-button-start-hover: hsl(194 82% 52%);
-  --login-brand-button-end-hover: hsl(213 90% 52%);
-  --login-button-text: hsl(210 40% 98%);
+  --login-brand-start: hsl(262 45% 17%);
+  --login-brand-end: hsl(262 80% 58%);
+  --login-brand-button-start: hsl(262 72% 46%);
+  --login-brand-button-end: hsl(296 65% 42%);
+  --login-brand-button-start-hover: hsl(262 74% 50%);
+  --login-brand-button-end-hover: hsl(296 66% 46%);
+  --login-button-text: hsl(256 40% 98%);
   --login-label-text: hsl(223 36% 14%);
-  --login-hint-text: hsl(220 14% 34% / 0.9);
-  --login-input-icon: hsl(205 66% 38% / 0.86);
-  --login-input-toggle-bg: hsl(210 44% 96% / 0.92);
-  --login-input-toggle-border: hsl(208 42% 46% / 0.32);
-  --login-input-toggle-text: hsl(220 24% 22% / 0.82);
-  --login-input-toggle-border-hover: hsl(205 82% 46% / 0.42);
-  --login-input-toggle-bg-hover: hsl(205 100% 92% / 0.98);
-  --login-input-toggle-text-hover: hsl(205 88% 34%);
+  --login-hint-text: hsl(260 14% 34% / 0.9);
+  --login-input-icon: hsl(262 45% 44% / 0.86);
+  --login-input-toggle-bg: hsl(256 44% 96% / 0.92);
+  --login-input-toggle-border: hsl(262 40% 50% / 0.32);
+  --login-input-toggle-text: hsl(260 24% 22% / 0.82);
+  --login-input-toggle-border-hover: hsl(262 70% 52% / 0.42);
+  --login-input-toggle-bg-hover: hsl(262 80% 94% / 0.98);
+  --login-input-toggle-text-hover: hsl(262 70% 38%);
   --login-input-toggle-ring: hsl(var(--primary) / 0.22);
   --login-input-toggle-active-bg: hsl(var(--primary) / 0.14);
   --login-input-toggle-active-border: hsl(var(--primary) / 0.34);
-  --login-input-toggle-active-text: hsl(205 88% 28%);
-  --login-grid-line: hsl(214 20% 55% / 0.08);
+  --login-input-toggle-active-text: hsl(262 70% 32%);
+  --login-grid-line: hsl(258 22% 55% / 0.08);
   --login-grid-mask: radial-gradient(ellipse 80% 50% at 50% 50%, #000 70%, transparent 100%);
 }
 
 .dark {
   /* Obsidian Terminal canvas: layered near-black navy, hue-locked to the cyan primary. */
-  --background: 222 47% 4%;
-  --foreground: 210 33% 98%;
+  --background: 259 45% 4%;
+  --foreground: 256 40% 97%;
   --card: 217 47% 7%;
-  --card-foreground: 210 33% 98%;
+  --card-foreground: 256 40% 97%;
   --popover: 218 45% 8%;
-  --popover-foreground: 210 33% 98%;
-  --primary: 190 100% 50%;
+  --popover-foreground: 256 40% 97%;
+  --primary: 263 90% 70%;
   --primary-foreground: 222 47% 6%;
-  --secondary: 220 40% 11%;
-  --secondary-foreground: 210 24% 94%;
-  --muted: 219 38% 11%;
-  --muted-foreground: 218 14% 66%;
-  --accent: 219 40% 12%;
-  --accent-foreground: 210 33% 98%;
+  --secondary: 260 36% 11%;
+  --secondary-foreground: 256 24% 94%;
+  --muted: 260 34% 11%;
+  --muted-foreground: 258 12% 60%;
+  --accent: 260 36% 12%;
+  --accent-foreground: 256 40% 97%;
   --destructive: 349 100% 63%;
   --destructive-foreground: 210 33% 98%;
-  --border: 217 32% 16%;
-  --input: 217 32% 16%;
-  --ring: 190 100% 50%;
-  --elevated: 218 44% 9%;
-  --hover: 219 42% 13%;
-  --secondary-text: 216 20% 76%;
-  --muted-text: 218 13% 55%;
+  --border: 259 30% 16%;
+  --input: 259 30% 16%;
+  --ring: 263 90% 70%;
+  --elevated: 260 40% 9%;
+  --hover: 260 38% 13%;
+  --secondary-text: 257 18% 76%;
+  --muted-text: 258 12% 56%;
 
   --color-cyan: hsl(var(--primary));
   --color-cyan-dim: hsl(var(--primary) / 0.8);
   --color-cyan-glow: hsl(var(--primary) / 0.4);
-  --color-purple: 247 84% 72%;
-  --color-purple-dim: 247 84% 62%;
-  --color-purple-glow: hsl(247 84% 72% / 0.3);
+  --color-purple: 172 66% 52%;
+  --color-purple-dim: 172 62% 46%;
+  --color-purple-glow: hsl(172 66% 52% / 0.3);
   --color-success: 152 69% 40%;
   --color-warning: 37 92% 50%;
   --color-danger: 0 90% 55%;
   --color-danger-alert-text: 349 100% 75%; /* Bright/light pink for dark mode */
   --color-danger-alert-border: 349 100% 63%;
   --color-danger-alert-bg: 349 100% 63%;
-  --autocomplete-hover-bg: #2dcae6;
+  --autocomplete-hover-bg: #8b5cf6;
   /* Tailwind-compatible accent colors (Dark theme) */
-  --color-cyan-400: 188 78% 41%;
+  --color-cyan-400: var(--primary);
   --color-emerald-400: 152 69% 40%;
   --color-red-400: 0 90% 55%;
   --color-amber-400: 37 92% 50%;
@@ -435,7 +435,7 @@
 
   /* Compatibility preservation */
   --border-accent: hsl(var(--primary) / 0.8);
-  --border-purple: hsl(247 84% 72% / 0.28);
+  --border-purple: hsl(var(--color-purple) / 0.28);
   --border-cyan: hsl(var(--primary));
   --text-primary: hsl(var(--foreground));
   --text-secondary-text: hsl(var(--secondary-text));
@@ -465,17 +465,17 @@
   --home-action-ai-border: hsl(var(--primary) / 0.2);
   --home-action-ai-text: hsl(var(--primary));
   --home-action-ai-hover-bg: hsl(var(--primary) / 0.2);
-  --home-action-report-bg: hsl(247 84% 72% / 0.1);
-  --home-action-report-border: hsl(247 84% 72% / 0.2);
-  --home-action-report-text: hsl(247 84% 72%);
-  --home-action-report-hover-bg: hsl(247 84% 72% / 0.2);
+  --home-action-report-bg: hsl(var(--color-purple) / 0.1);
+  --home-action-report-border: hsl(var(--color-purple) / 0.2);
+  --home-action-report-text: hsl(var(--color-purple));
+  --home-action-report-hover-bg: hsl(var(--color-purple) / 0.2);
   --home-accent-bg: hsl(var(--primary) / 0.1);
   --home-accent-bg-hover: hsl(var(--primary) / 0.18);
   --home-accent-border: hsl(var(--primary) / 0.22);
   --home-accent-border-hover: hsl(var(--primary) / 0.34);
   --home-accent-text: hsl(var(--primary));
-  --home-secondary-accent-text: hsl(247 84% 72%);
-  --home-title-accent: hsl(247 84% 72%);
+  --home-secondary-accent-text: hsl(var(--color-purple));
+  --home-title-accent: hsl(var(--color-purple));
   --home-price-up: hsl(0 88% 64%);
   --home-price-down: hsl(149 100% 44%);
   --home-strategy-buy: hsl(149 100% 44%);
@@ -486,7 +486,7 @@
   --home-panel-border-hover: hsl(var(--primary) / 0.38);
   --home-panel-border-selected: hsl(var(--primary) / 0.5);
   --home-panel-gradient-start: hsl(var(--primary) / 0.26);
-  --home-panel-gradient-mid: hsl(247 84% 72% / 0.18);
+  --home-panel-gradient-mid: hsl(var(--color-purple) / 0.18);
   --home-panel-gradient-end: hsl(0 0% 100% / 0.04);
   --home-panel-selected-shadow:
     0 0 0 1px hsl(var(--primary) / 0.14),
@@ -496,7 +496,7 @@
   --home-history-item-bg: hsl(0 0% 100% / 0.028);
   --home-history-item-hover-bg: hsl(0 0% 100% / 0.06);
   --home-history-item-selected-bg:
-    linear-gradient(180deg, hsl(247 84% 72% / 0.12), hsl(var(--primary) / 0.08));
+    linear-gradient(180deg, hsl(var(--color-purple) / 0.12), hsl(var(--primary) / 0.08));
   --home-divider-border: hsl(0 0% 100% / 0.07);
   --home-surface-button-bg: hsl(0 0% 100% / 0.04);
   --home-surface-button-bg-hover: hsl(0 0% 100% / 0.08);
@@ -505,8 +505,8 @@
   --home-state-icon-muted: hsl(var(--muted-text) / 0.85);
   --home-prose-border: hsl(var(--foreground) / 0.12);
   --home-prose-border-strong: hsl(var(--foreground) / 0.18);
-  --home-prose-blockquote-border: hsl(247 84% 72% / 0.3);
-  --home-prose-blockquote-bg: hsl(247 84% 72% / 0.1);
+  --home-prose-blockquote-border: hsl(var(--color-purple) / 0.3);
+  --home-prose-blockquote-bg: hsl(var(--color-purple) / 0.1);
 
   /* Shadows (Dark theme) — soft ambient depth plus a tight key light. */
   --shadow-soft-card:
@@ -528,18 +528,18 @@
   --settings-border-soft: hsl(0 0% 100% / 0.08);
   --settings-border-strong: hsl(0 0% 100% / 0.2);
   --settings-border-overlay: hsl(0 0% 100% / 0.45);
-  --settings-accent-shadow: hsl(190 100% 50% / 0.1);
-  --settings-primary-border: hsl(190 100% 50% / 0.26);
+  --settings-accent-shadow: hsl(var(--primary) / 0.1);
+  --settings-primary-border: hsl(var(--primary) / 0.26);
   --settings-primary-gradient:
-    linear-gradient(135deg, hsl(190 100% 50% / 0.96), hsl(191 100% 40% / 0.96));
+    linear-gradient(135deg, hsl(var(--primary) / 0.96), hsl(var(--primary) / 0.78));
   --settings-primary-text: hsl(205 71% 6%);
-  --settings-primary-shadow: hsl(190 100% 50% / 0.2);
-  --settings-primary-shadow-hover: hsl(190 100% 50% / 0.22);
+  --settings-primary-shadow: hsl(var(--primary) / 0.2);
+  --settings-primary-shadow-hover: hsl(var(--primary) / 0.22);
   --settings-secondary-border: hsl(0 0% 100% / 0.08);
   --settings-secondary-bg: hsl(0 0% 100% / 0.03);
-  --settings-secondary-border-hover: hsl(190 100% 50% / 0.3);
-  --settings-secondary-bg-hover: hsl(190 100% 50% / 0.06);
-  --settings-glow-hover: hsl(190 100% 50% / 0.38);
+  --settings-secondary-border-hover: hsl(var(--primary) / 0.3);
+  --settings-secondary-bg-hover: hsl(var(--primary) / 0.06);
+  --settings-glow-hover: hsl(var(--primary) / 0.38);
   --settings-skeleton-strong: hsl(0 0% 100% / 0.1);
   --settings-skeleton-soft: hsl(0 0% 100% / 0.06);
   --input-surface-bg: var(--bg-card);
@@ -549,7 +549,7 @@
   --input-surface-focus-ring: 0 0 0 4px hsl(var(--primary) / 0.18);
   --settings-input-rest-border: hsl(var(--border) / 0.58);
   --gradient-primary:
-    linear-gradient(135deg, rgba(0, 212, 255, 0.96), rgba(0, 168, 204, 0.96));
+    linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.74));
 
   /* Chat UI Tokens (Dark) */
   --chat-avatar-user-bg: hsl(var(--primary) / 0.8);
@@ -593,11 +593,11 @@
   --login-accent-text: hsl(var(--primary) / 0.92);
   --login-accent-glow: hsl(var(--primary) / 0.2);
   --login-brand-start: hsl(var(--primary));
-  --login-brand-end: hsl(214 100% 62%);
-  --login-brand-button-start: hsl(194 96% 45%);
-  --login-brand-button-end: hsl(214 100% 56%);
-  --login-brand-button-start-hover: hsl(194 96% 50%);
-  --login-brand-button-end-hover: hsl(214 100% 62%);
+  --login-brand-end: hsl(172 66% 52%);
+  --login-brand-button-start: hsl(262 72% 46%);
+  --login-brand-button-end: hsl(172 72% 30%);
+  --login-brand-button-start-hover: hsl(262 72% 50%);
+  --login-brand-button-end-hover: hsl(172 72% 34%);
   --login-button-text: hsl(210 33% 98%);
   --login-label-text: hsl(0 0% 100%);
   --login-hint-text: hsl(215 20% 65%);
@@ -2154,8 +2154,8 @@ textarea {
 
 .home-rail-card {
   --terminal-card-border: var(--home-rail-border);
-  --terminal-card-gradient-start: hsl(193 100% 43% / 0.08);
-  --terminal-card-gradient-mid: hsl(247 84% 66% / 0.12);
+  --terminal-card-gradient-start: hsl(var(--primary) / 0.08);
+  --terminal-card-gradient-mid: hsl(var(--color-purple) / 0.12);
   --terminal-card-gradient-end: hsl(218 22% 80% / 0.08);
   --terminal-card-shadow: var(--home-rail-shadow);
   background: var(--home-rail-bg);
@@ -2291,7 +2291,7 @@ textarea {
 .dark .home-rail-card {
   --terminal-card-border: var(--home-panel-border);
   --terminal-card-gradient-start: hsl(var(--primary) / 0.2);
-  --terminal-card-gradient-mid: hsl(247 84% 72% / 0.12);
+  --terminal-card-gradient-mid: hsl(var(--color-purple) / 0.12);
   --terminal-card-gradient-end: hsl(0 0% 100% / 0.04);
   --terminal-card-shadow: var(--shadow-soft-card);
   background:
@@ -2465,14 +2465,14 @@ textarea {
 }
 
 .btn-primary {
-  border: 1px solid rgba(0, 212, 255, 0.26);
+  border: 1px solid hsl(var(--primary) / 0.32);
   background: linear-gradient(
     135deg,
-    rgba(0, 212, 255, 0.96),
-    rgba(0, 168, 204, 0.96)
+    hsl(var(--primary) / 0.96),
+    hsl(var(--primary) / 0.72)
   );
-  color: #041118;
-  box-shadow: 0 12px 28px rgba(0, 212, 255, 0.2);
+  color: hsl(var(--primary-foreground));
+  box-shadow: 0 12px 28px hsl(var(--primary) / 0.2);
 }
 
 .btn-primary:hover {
@@ -3545,4 +3545,174 @@ tbody .screener-detail-row .screener-sticky {
   .tv-desk-expanded {
     animation: zoomIn 160ms ease-out;
   }
+}
+
+/* =========================================
+   AURORA THEME LAYER
+   Default identity: violet × teal with a slow
+   aurora gradient wash behind the app shell.
+   ========================================= */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -12%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(42rem 26rem at 14% -6%, hsl(var(--color-purple) / 0.16), transparent 62%),
+    radial-gradient(46rem 28rem at 92% 8%, hsl(var(--primary) / 0.14), transparent 64%),
+    radial-gradient(38rem 24rem at 50% 112%, hsl(300 72% 58% / 0.08), transparent 60%);
+  opacity: 0.9;
+}
+#root {
+  position: relative;
+  z-index: 1;
+}
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(-1.5%, -1%, 0) scale(1.02);
+  }
+  50% {
+    transform: translate3d(1.5%, 1.5%, 0) scale(1.06);
+  }
+  100% {
+    transform: translate3d(-0.5%, 1%, 0) scale(1.02);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  body::before {
+    animation: aurora-drift 30s ease-in-out infinite alternate;
+  }
+}
+
+/* =========================================
+   ACCENT: OBSIDIAN（原青色終端）
+   ========================================= */
+:root[data-accent='obsidian'] {
+  --primary: 193 100% 43%;
+  --ring: 193 100% 43%;
+  --color-purple: 247 84% 66%;
+  --color-purple-dim: 247 84% 56%;
+  --color-purple-glow: hsl(247 84% 66% / 0.18);
+  --autocomplete-hover-bg: #04d1f6;
+  --background: 216 33% 97%;
+  --foreground: 228 35% 12%;
+  --secondary: 214 32% 91%;
+  --secondary-foreground: 228 35% 16%;
+  --muted: 214 30% 94%;
+  --muted-foreground: 224 12% 42%;
+  --accent: 214 32% 93%;
+  --accent-foreground: 228 35% 16%;
+  --border: 217 28% 84%;
+  --input: 217 28% 84%;
+  --elevated: 0 0% 100%;
+  --hover: 214 29% 90%;
+  --secondary-text: 224 18% 28%;
+  --muted-text: 224 12% 35%;
+  --login-brand-start: hsl(222 36% 16%);
+  --login-brand-end: hsl(205 88% 48%);
+  --login-brand-button-start: hsl(194 78% 56%);
+  --login-brand-button-end: hsl(213 88% 56%);
+  --login-brand-button-start-hover: hsl(194 82% 52%);
+  --login-brand-button-end-hover: hsl(213 90% 52%);
+}
+:root.dark[data-accent='obsidian'] {
+  --primary: 190 100% 50%;
+  --ring: 190 100% 50%;
+  --color-purple: 247 84% 72%;
+  --color-purple-dim: 247 84% 62%;
+  --color-purple-glow: hsl(247 84% 72% / 0.3);
+  --autocomplete-hover-bg: #2dcae6;
+  --background: 222 47% 4%;
+  --foreground: 210 33% 98%;
+  --card: 217 47% 7%;
+  --popover: 218 45% 8%;
+  --secondary: 220 40% 11%;
+  --secondary-foreground: 210 24% 94%;
+  --muted: 219 38% 11%;
+  --muted-foreground: 218 14% 66%;
+  --accent: 219 40% 12%;
+  --accent-foreground: 210 33% 98%;
+  --border: 217 32% 16%;
+  --input: 217 32% 16%;
+  --elevated: 218 44% 9%;
+  --hover: 219 42% 13%;
+  --secondary-text: 216 20% 76%;
+  --muted-text: 218 13% 55%;
+  --login-brand-end: hsl(214 100% 62%);
+  --login-brand-button-start: hsl(194 96% 45%);
+  --login-brand-button-end: hsl(214 100% 56%);
+  --login-brand-button-start-hover: hsl(194 96% 50%);
+  --login-brand-button-end-hover: hsl(214 100% 62%);
+}
+:root[data-accent='obsidian'] body::before {
+  display: none;
+}
+
+/* =========================================
+   ACCENT: AMBER（琥珀終端）
+   ========================================= */
+:root[data-accent='amber'] {
+  --primary: 28 90% 32%;
+  --ring: 28 90% 32%;
+  --color-purple: 16 74% 38%;
+  --color-purple-dim: 16 74% 34%;
+  --color-purple-glow: hsl(16 74% 38% / 0.16);
+  --autocomplete-hover-bg: #fef3c7;
+  --background: 38 55% 97%;
+  --foreground: 26 34% 12%;
+  --secondary: 36 34% 91%;
+  --secondary-foreground: 26 34% 17%;
+  --muted: 36 32% 94%;
+  --muted-foreground: 28 12% 40%;
+  --accent: 36 32% 93%;
+  --accent-foreground: 26 34% 17%;
+  --border: 33 24% 82%;
+  --input: 33 24% 82%;
+  --elevated: 38 50% 99%;
+  --hover: 35 30% 90%;
+  --secondary-text: 28 18% 29%;
+  --muted-text: 28 12% 37%;
+  --login-brand-start: hsl(24 45% 15%);
+  --login-brand-end: hsl(32 90% 46%);
+  --login-brand-button-start: hsl(34 90% 38%);
+  --login-brand-button-end: hsl(16 82% 36%);
+  --login-brand-button-start-hover: hsl(34 90% 42%);
+  --login-brand-button-end-hover: hsl(16 82% 40%);
+}
+:root.dark[data-accent='amber'] {
+  --primary: 40 96% 62%;
+  --ring: 40 96% 62%;
+  --color-purple: 18 85% 60%;
+  --color-purple-dim: 18 80% 54%;
+  --color-purple-glow: hsl(18 85% 60% / 0.28);
+  --autocomplete-hover-bg: #f59e0b;
+  --background: 26 18% 4%;
+  --foreground: 38 40% 96%;
+  --card: 260 42% 7%;
+  --popover: 260 40% 8%;
+  --secondary: 26 13% 10%;
+  --secondary-foreground: 38 28% 92%;
+  --muted: 26 12% 10%;
+  --muted-foreground: 34 12% 58%;
+  --accent: 26 13% 11%;
+  --accent-foreground: 38 40% 96%;
+  --border: 28 14% 15%;
+  --input: 28 14% 15%;
+  --elevated: 26 14% 8%;
+  --hover: 26 13% 12%;
+  --secondary-text: 34 16% 74%;
+  --muted-text: 32 12% 54%;
+  --login-brand-start: hsl(24 45% 12%);
+  --login-brand-end: hsl(34 90% 56%);
+  --login-brand-button-start: hsl(38 92% 42%);
+  --login-brand-button-end: hsl(20 85% 36%);
+  --login-brand-button-start-hover: hsl(38 92% 46%);
+  --login-brand-button-end-hover: hsl(20 85% 40%);
+}
+:root[data-accent='amber'] body::before {
+  background:
+    radial-gradient(42rem 26rem at 14% -6%, hsl(30 90% 50% / 0.1), transparent 62%),
+    radial-gradient(46rem 28rem at 92% 8%, hsl(45 95% 55% / 0.1), transparent 64%),
+    radial-gradient(38rem 24rem at 50% 112%, hsl(16 85% 50% / 0.08), transparent 60%);
 }

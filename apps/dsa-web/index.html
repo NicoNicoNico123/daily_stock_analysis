@@ -13,6 +13,13 @@
         root.classList.remove('light', 'dark');
         root.classList.add(theme);
         root.style.colorScheme = theme;
+    // Accent identity (aurora default) — applied before first paint to avoid a flash.
+    try {
+      const storedAccent = localStorage.getItem('dsa.accent');
+      root.dataset.accent = storedAccent === 'obsidian' || storedAccent === 'amber' ? storedAccent : 'aurora';
+    } catch (e) {
+      root.dataset.accent = 'aurora';
+    }
       })();
     </script>
     <title>DSA 股票智能分析</title>
