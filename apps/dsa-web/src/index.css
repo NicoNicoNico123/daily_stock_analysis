@@ -3757,3 +3757,421 @@ body::before {
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-soft-card);
 }
+
+/* =========================================
+   BRUTALIST CONTROL DESK
+   Paper ground, ink rules, lime action.
+   ========================================= */
+:root {
+  --background: 42 33% 94%;
+  --foreground: 0 0% 7%;
+  --card: 42 45% 98%;
+  --card-foreground: 0 0% 7%;
+  --popover: 40 40% 97%;
+  --popover-foreground: 0 0% 7%;
+  --primary: 73 100% 50%;
+  --primary-foreground: 0 0% 7%;
+  --secondary: 40 14% 90%;
+  --secondary-foreground: 0 0% 8%;
+  --muted: 40 16% 91%;
+  --muted-foreground: 30 5% 32%;
+  --accent: 73 100% 50%;
+  --accent-foreground: 0 0% 7%;
+  --border: 0 0% 8%;
+  --input: 0 0% 8%;
+  --ring: 73 100% 42%;
+  --radius: 0px;
+  --elevated: 40 30% 96%;
+  --hover: 42 18% 88%;
+  --secondary-text: 30 6% 22%;
+  --muted-text: 30 5% 36%;
+  --color-cyan: #111111;
+  font-family: "Schibsted Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.dark {
+  --background: 0 0% 6%;
+  --foreground: 42 28% 96%;
+  --card: 0 0% 9%;
+  --card-foreground: 42 28% 96%;
+  --popover: 0 0% 8%;
+  --popover-foreground: 42 28% 96%;
+  --primary: 73 100% 58%;
+  --primary-foreground: 0 0% 6%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 42 20% 94%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 40 8% 70%;
+  --accent: 73 100% 58%;
+  --accent-foreground: 0 0% 6%;
+  --border: 42 20% 88%;
+  --input: 42 20% 88%;
+  --ring: 73 100% 58%;
+  --elevated: 0 0% 10%;
+  --hover: 0 0% 16%;
+  --secondary-text: 40 12% 78%;
+  --muted-text: 40 8% 64%;
+  --color-cyan: #d6ff3c;
+}
+
+:root:not(.dark) body {
+  background-color: #f3f0e6;
+  background-image: radial-gradient(rgba(17, 17, 17, 0.08) 0.6px, transparent 0.6px);
+  background-size: 3px 3px;
+}
+
+.control-brand-mark {
+  font-family: "Archivo Black", "Arial Black", Impact, sans-serif;
+  font-size: 1.85rem;
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+
+.control-rail {
+  background: #111111;
+  color: #f6f3ea;
+}
+
+.control-mobile-bar {
+  background: #111111;
+  color: #f6f3ea;
+  border-bottom: 3px solid #d6ff3c;
+}
+
+.control-user-menu,
+.control-user-menu button,
+.control-user-menu p {
+  color: #111111;
+}
+
+.control-mast,
+.control-strip,
+.control-panel {
+  border: 2px solid #111111;
+  background: #fffdf8;
+  color: #111111;
+}
+
+.dark .control-mast,
+.dark .control-strip,
+.dark .control-panel {
+  border-color: #f4f1ea;
+  background: #121212;
+  color: #f6f3ea;
+}
+
+.control-mast {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem 1.5rem;
+  align-items: end;
+  padding: 1rem 1.1rem 0.95rem;
+}
+
+.control-kicker {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.control-title {
+  margin: 0.15rem 0 0;
+  font-family: "Archivo Black", "Arial Black", Impact, sans-serif;
+  font-size: clamp(3rem, 7vw, 5.4rem);
+  line-height: 0.82;
+  letter-spacing: -0.045em;
+  text-transform: uppercase;
+}
+
+.control-lead {
+  max-width: 34rem;
+  margin-top: 0.55rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.control-stamp {
+  display: inline-block;
+  margin-top: 0.7rem;
+  background: #d6ff3c;
+  color: #111111;
+  padding: 0.28rem 0.45rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.control-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(5.4rem, 1fr));
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.control-stats div {
+  border: 2px solid currentColor;
+  min-width: 5.6rem;
+  padding: 0.4rem 0.55rem 0.3rem;
+}
+
+.control-stats dt {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.control-stats dd {
+  margin: 0.15rem 0 0;
+  font-family: "Archivo Black", "Arial Black", Impact, sans-serif;
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.control-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem;
+}
+
+.control-strip button,
+.control-strip label,
+.control-strip input {
+  border-radius: 0;
+}
+
+.control-index {
+  background: #d6ff3c;
+  color: #111111;
+  padding: 0.12rem 0.28rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.08em;
+}
+
+.control-pulse-score {
+  font-family: "Archivo Black", "Arial Black", Impact, sans-serif;
+  font-size: 3rem;
+  line-height: 0.9;
+}
+
+.control-go.btn-primary {
+  border: 2px solid #111111;
+  border-radius: 0;
+  background: #d6ff3c;
+  color: #111111;
+  box-shadow: 4px 4px 0 #111111;
+  font-family: "Archivo Black", "Arial Black", Impact, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.control-go.btn-primary:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 #111111;
+  filter: none;
+}
+
+.control-nav-chip:hover {
+  background: #d6ff3c;
+  color: #111111;
+  border-color: #111111;
+}
+
+.ticker-tape {
+  height: 2rem;
+  border-bottom: 2px solid #111111;
+  background: #111111;
+  color: #f6f3ea;
+}
+
+.ticker-tape span {
+  color: #f6f3ea;
+}
+
+.control-desk > footer {
+  height: auto;
+  min-height: 1.75rem;
+  flex-wrap: wrap;
+  white-space: normal;
+  border-top: 2px solid #111111;
+  background: #111111;
+  color: #f6f3ea;
+}
+
+.dark .control-desk > footer {
+  border-top-color: #d6ff3c;
+}
+
+@media (min-width: 1024px) {
+  .control-mast {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem 1rem;
+    padding: 0.35rem 0.7rem;
+  }
+
+  .control-mast > .min-w-0 {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    min-width: 0;
+  }
+
+  .control-title {
+    margin: 0;
+    font-size: 1.2rem;
+    line-height: 1;
+  }
+
+  .control-lead,
+  .control-stamp {
+    display: none;
+  }
+
+  .control-stats {
+    margin-left: auto;
+    grid-template-columns: repeat(3, max-content);
+    gap: 0.35rem;
+  }
+
+  .control-stats div {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    min-width: 0;
+    padding: 0.15rem 0.4rem;
+  }
+
+  .control-stats dd {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+}
+
+@media (max-width: 800px) {
+  .control-mast {
+    grid-template-columns: 1fr;
+  }
+
+  .control-title {
+    font-size: 3.1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control-go.btn-primary:hover {
+    transform: none;
+  }
+}
+
+/* Reading column: ink text, paper cards, actions that stay legible on lime. */
+:root {
+  --home-action-ai-text: #111111;
+  --home-action-ai-bg: #fffdf8;
+  --home-action-ai-border: #111111;
+  --home-action-ai-hover-bg: #d6ff3c;
+  --home-accent-text: #111111;
+  --home-accent-bg: #f7f4ec;
+  --home-accent-border: #111111;
+}
+
+.dark {
+  --home-action-ai-text: #f6f3ea;
+  --home-action-ai-bg: #141414;
+  --home-action-ai-border: #f6f3ea;
+  --home-action-ai-hover-bg: #d6ff3c;
+  --home-accent-text: #f6f3ea;
+  --home-accent-bg: #141414;
+  --home-accent-border: #f6f3ea;
+}
+
+.home-insight-card .home-insight-title {
+  color: #111111;
+}
+
+.dark .home-insight-card .home-insight-title {
+  color: #f6f3ea;
+}
+
+.home-insight-card .home-insight-body,
+.home-news-title,
+.home-news-snippet {
+  color: #1c1c1c;
+}
+
+.dark .home-insight-card .home-insight-body,
+.dark .home-news-title,
+.dark .home-news-snippet {
+  color: #f3f0e6;
+}
+
+.home-strategy-card .home-strategy-value:not(.home-strategy-value-empty) {
+  background: none;
+  -webkit-text-fill-color: #111111;
+  color: #111111;
+}
+
+.dark .home-strategy-card .home-strategy-value:not(.home-strategy-value-empty) {
+  -webkit-text-fill-color: #f6f3ea;
+  color: #f6f3ea;
+}
+
+.home-report-toolbar button {
+  border: 2px solid #111111;
+  border-radius: 0;
+  background: #fffdf8;
+  color: #111111;
+  box-shadow: none;
+}
+
+.home-report-toolbar button:hover {
+  background: #d6ff3c;
+  color: #111111;
+}
+
+.dark .home-report-toolbar button {
+  border-color: #f6f3ea;
+  background: #141414;
+  color: #f6f3ea;
+}
+
+.dark .home-report-toolbar button:hover {
+  background: #d6ff3c;
+  color: #111111;
+}
+
+.report-readout {
+  container-type: inline-size;
+}
+
+.report-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+.report-summary-copy {
+  max-width: 68ch;
+  color: #161616;
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.dark .report-summary-copy {
+  color: #f6f3ea;
+}
+
+@container (min-width: 880px) {
+  .report-overview-grid {
+    grid-template-columns: minmax(0, 1fr) 220px;
+  }
+}

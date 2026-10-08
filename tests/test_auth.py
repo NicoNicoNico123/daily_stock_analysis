@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Unit tests for src.auth module."""
 
+import base64
 import hashlib
 import os
 import secrets
@@ -22,6 +23,60 @@ def _reset_auth_globals() -> None:
     auth._password_hash_salt = None
     auth._password_hash_stored = None
     auth._rate_limit = {}
+
+
+class AuthDeploymentFlagTestCase(unittest.TestCase):
+    """Auth flags and cookie policy used by hosted deployments."""
+
+    def setUp(self) -> None:
+        _reset_auth_globals()
+
+    def tearDown(self) -> None:
+        _reset_auth_globals()
+
+    def test_auth_flag_uses_process_env_when_dotenv_file_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = str(Path(tmp) / "missing.env")
+            with patch.dict(os.environ, {"ENV_FILE": missing, "ADMIN_AUTH_ENABLED": "true"}):
+                self.assertTrue(auth.is_auth_enabled())
+
+    def test_cookie_samesite_none_requires_https(self) -> None:
+        class _Url:
+            scheme = "https"
+
+        class _Request:
+            url = _Url()
+            headers: dict = {}
+
+        with patch.dict(os.environ, {"ADMIN_COOKIE_SAMESITE": "none", "TRUST_X_FORWARDED_FOR": "false"}):
+            params = auth.build_session_cookie_params(_Request())
+        self.assertEqual(params["samesite"], "none")
+        self.assertTrue(params["secure"])
+
+        class _HttpUrl:
+            scheme = "http"
+
+        class _HttpRequest:
+            url = _HttpUrl()
+            headers: dict = {}
+
+        with patch.dict(os.environ, {"ADMIN_COOKIE_SAMESITE": "none", "TRUST_X_FORWARDED_FOR": "false"}):
+            http_params = auth.build_session_cookie_params(_HttpRequest())
+        self.assertEqual(http_params["samesite"], "lax")
+        self.assertFalse(http_params["secure"])
+
+    def test_session_secret_env_overrides_instance_file(self) -> None:
+        secret = secrets.token_bytes(32)
+        encoded = base64.standard_b64encode(secret).decode()
+        auth._session_secret = None
+        with patch.dict(os.environ, {"DSA_SESSION_SECRET": encoded}):
+            loaded = auth._load_session_secret()
+        self.assertEqual(loaded, secret)
+
+    def test_bootstrap_skips_when_unset(self) -> None:
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("DSA_BOOTSTRAP_USERS_JSON", None)
+            self.assertEqual(auth.bootstrap_configured_users(), 0)
 
 
 class AuthValidationTestCase(unittest.TestCase):

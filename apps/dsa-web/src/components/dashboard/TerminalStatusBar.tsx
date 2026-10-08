@@ -61,7 +61,7 @@ export const TerminalStatusBar: React.FC<TerminalStatusBarProps> = ({
 
   return (
     <footer
-      className={className ?? 'flex h-6 w-full shrink-0 flex-nowrap items-center justify-between gap-4 overflow-hidden whitespace-nowrap border-t border-border/60 bg-elevated/70 px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-secondary-text'}
+      className={className ?? 'flex min-h-7 w-full shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border/60 bg-elevated/70 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-secondary-text'}
       role="contentinfo"
       aria-label={t('home.statusBarLabel')}
     >

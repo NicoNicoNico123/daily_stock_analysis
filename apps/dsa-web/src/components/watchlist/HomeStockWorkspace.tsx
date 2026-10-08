@@ -355,7 +355,7 @@ export const HomeStockWorkspace: React.FC<HomeStockWorkspaceProps> = ({
   };
 
   const renderTabs = (
-    <div className="grid grid-cols-3 gap-1 rounded-xl border border-subtle bg-base/40 p-1">
+    <div className="grid grid-cols-3 gap-1 border-2 border-current p-1">
       {tabs.map((tab) => {
         const selected = activeTab === tab.key;
         return (
@@ -363,8 +363,8 @@ export const HomeStockWorkspace: React.FC<HomeStockWorkspaceProps> = ({
             key={tab.key}
             type="button"
             aria-pressed={selected}
-            className={`h-8 rounded-lg px-2 text-xs font-medium transition-colors ${
-              selected ? 'bg-primary/15 text-primary shadow-inner' : 'text-secondary-text hover:bg-hover hover:text-foreground'
+            className={`min-h-8 min-w-0 whitespace-normal px-1 py-1 text-[10px] font-bold leading-tight ${
+              selected ? 'bg-[#d6ff3c] text-[#111]' : 'hover:bg-[#d6ff3c]/40'
             }`}
             onClick={() => {
               setWorkspaceNotice(null);

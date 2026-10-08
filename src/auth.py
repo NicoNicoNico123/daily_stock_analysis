@@ -17,6 +17,7 @@ import base64
 import getpass
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
@@ -98,16 +99,43 @@ def _get_credential_path() -> Path:
     return _get_data_dir() / ".admin_password_hash"
 
 
-def _is_auth_enabled_from_env() -> bool:
-    """Read ADMIN_AUTH_ENABLED from .env file."""
-    _ensure_env_loaded()
+def _env_file_path() -> Path:
+    """Path of the .env file used as the auth-flag source of truth when it exists."""
     env_file = os.getenv("ENV_FILE")
-    env_path = Path(env_file) if env_file else Path(__file__).resolve().parent.parent / ".env"
+    if env_file:
+        return Path(env_file)
+    return Path(__file__).resolve().parent.parent / ".env"
+
+
+def _read_dotenv_value(key: str) -> Optional[str]:
+    """Return a key from the .env file, or None when the file or key is absent."""
+    env_path = _env_file_path()
     if not env_path.exists():
-        return False
-    values = dotenv_values(env_path)
-    val = (values.get("ADMIN_AUTH_ENABLED") or "").strip().lower()
-    return val in ("true", "1", "yes")
+        return None
+    try:
+        values = dotenv_values(env_path)
+    except OSError:
+        return None
+    if key not in values or values.get(key) is None:
+        return None
+    return str(values.get(key))
+
+
+def _is_truthy_flag(value: Optional[str]) -> bool:
+    return (value or "").strip().lower() in ("true", "1", "yes")
+
+
+def _is_auth_enabled_from_env() -> bool:
+    """Read ADMIN_AUTH_ENABLED from the .env file, then process environment.
+
+    Cloud Run and other hosts inject the flag as a process environment variable
+    and do not ship a .env file. A present .env value still wins.
+    """
+    _ensure_env_loaded()
+    file_value = _read_dotenv_value("ADMIN_AUTH_ENABLED")
+    if file_value is not None:
+        return _is_truthy_flag(file_value)
+    return _is_truthy_flag(os.getenv("ADMIN_AUTH_ENABLED"))
 
 
 def rotate_session_secret() -> bool:
@@ -130,10 +158,36 @@ def rotate_session_secret() -> bool:
         return False
 
 
+def _configured_session_secret() -> Optional[bytes]:
+    """Return a 32-byte session key from DSA_SESSION_SECRET, if configured.
+
+    Hosted deployments set this so every instance accepts the same login cookie.
+    A per-instance file secret would log the user out whenever another instance
+    handled the next request.
+    """
+    configured = (os.getenv("DSA_SESSION_SECRET") or "").strip()
+    if not configured:
+        return None
+    try:
+        raw = base64.standard_b64decode(configured)
+    except (ValueError, TypeError):
+        logger.warning("DSA_SESSION_SECRET is not valid standard base64; ignoring")
+        return None
+    if len(raw) != 32:
+        logger.warning("DSA_SESSION_SECRET must decode to 32 bytes; ignoring")
+        return None
+    return raw
+
+
 def _load_session_secret() -> Optional[bytes]:
     """Load or create session secret."""
     global _session_secret
     if _session_secret is not None:
+        return _session_secret
+
+    configured = _configured_session_secret()
+    if configured is not None:
+        _session_secret = configured
         return _session_secret
 
     data_dir = _get_data_dir()
@@ -247,15 +301,12 @@ def is_auth_enabled() -> bool:
 
 
 def _read_env_flag(key: str) -> bool:
-    """Read a boolean flag from the .env file (same source as ADMIN_AUTH_ENABLED)."""
+    """Read a boolean flag from the .env file, then the process environment."""
     _ensure_env_loaded()
-    env_file = os.getenv("ENV_FILE")
-    env_path = Path(env_file) if env_file else Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return False
-    values = dotenv_values(env_path)
-    val = (values.get(key) or "").strip().lower()
-    return val in ("true", "1", "yes")
+    file_value = _read_dotenv_value(key)
+    if file_value is not None:
+        return _is_truthy_flag(file_value)
+    return _is_truthy_flag(os.getenv(key))
 
 
 def is_multi_user_enabled() -> bool:
@@ -515,14 +566,78 @@ def is_request_secure(request: Any) -> bool:
 
 
 def build_session_cookie_params(request: Any) -> dict:
-    """会话 cookie 参数（登录、注册与 OAuth 回调共用同一份）。"""
+    """会话 cookie 参数（登录、注册与 OAuth 回调共用同一份）。
+
+    ADMIN_COOKIE_SAMESITE=none is for an HTTPS frontend on another site
+    (for example Cloudflare Pages calling Cloud Run). Browsers reject
+    SameSite=None without Secure, so HTTP requests keep Lax.
+    """
+    secure = is_request_secure(request)
+    requested = (os.getenv("ADMIN_COOKIE_SAMESITE") or "lax").strip().lower()
+    if requested not in {"lax", "strict", "none"}:
+        requested = "lax"
+    if requested == "none" and not secure:
+        requested = "lax"
     return {
         "httponly": True,
-        "samesite": "lax",
-        "secure": is_request_secure(request),
+        "samesite": requested,
+        "secure": secure,
         "path": "/",
         "max_age": session_max_age_seconds(),
     }
+
+
+def bootstrap_configured_users() -> int:
+    """Create accounts from DSA_BOOTSTRAP_USERS_JSON when the database has none.
+
+    Used by Cloud Run, where the SQLite file is empty on each new instance.
+    Existing users are left unchanged. Returns the number of accounts inserted.
+    """
+    raw = (os.getenv("DSA_BOOTSTRAP_USERS_JSON") or "").strip()
+    if not raw:
+        return 0
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("DSA_BOOTSTRAP_USERS_JSON is not valid JSON; skipping user bootstrap")
+        return 0
+    if not isinstance(payload, list) or not payload:
+        return 0
+
+    manager = _get_db_manager()
+    if manager.list_users():
+        return 0
+
+    created = 0
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        username = str(item.get("username") or "").strip()
+        role = str(item.get("role") or USER_ROLE_USER).strip()
+        if role not in {USER_ROLE_ADMIN, USER_ROLE_USER}:
+            logger.warning("Skipping bootstrap user %s: unsupported role", username or "<empty>")
+            continue
+        if not username or not USERNAME_PATTERN.match(username):
+            logger.warning("Skipping bootstrap user with invalid username")
+            continue
+        try:
+            salt = base64.standard_b64decode(str(item.get("password_salt_b64") or ""))
+            password_hash = base64.standard_b64decode(str(item.get("password_hash_b64") or ""))
+        except (ValueError, TypeError):
+            logger.warning("Skipping bootstrap user %s: invalid password material", username)
+            continue
+        if not salt or not password_hash:
+            logger.warning("Skipping bootstrap user %s: missing password material", username)
+            continue
+        try:
+            manager.create_user(username, salt, password_hash, role=role)
+        except IntegrityError:
+            logger.warning("Skipping bootstrap user %s: username already exists", username)
+            continue
+        created += 1
+    if created:
+        logger.info("Bootstrapped %s user account(s) into an empty database", created)
+    return created
 
 
 def _sign_payload(secret: bytes, payload: str) -> str:

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] Cloud Run 在设置 `SQLITE_FIREBASE_BUCKET` 后，把 SQLite 数据库快照保存到 Firebase Storage，并在下次启动时恢复，分析历史不再随实例退出消失。
+- [修复] Cloud Run 多实例各自生成会话密钥，登录成功后的下一次请求落到另一实例会被判未登录并退回登录页；`DSA_SESSION_SECRET` 让所有实例共用同一把会话密钥。
+- [改进] Cloud Run 可通过进程环境变量开启 `ADMIN_AUTH_ENABLED` / `MULTI_USER_ENABLED`（无 .env 文件时），并用 `ADMIN_COOKIE_SAMESITE=none` 让 HTTPS 跨站前端携带登录 cookie；空库可从 `DSA_BOOTSTRAP_USERS_JSON` 导入已有账号。
+- [修复] Docker 与 Cloud Build 忽略规则从 `data/` 收窄为 `/data/`，避免把 `src/data` 排除出镜像导致 Cloud Run 启动时报 `No module named 'src.data'`。
+- [chore] 增加 Cloud Run 构建配置 `cloudbuild.yaml` 与 `.gcloudignore`，用现有 `docker/Dockerfile` 构建 API 镜像并忽略本地虚拟环境与密钥文件。
+- [chore] 前端静态托管补充 Cloudflare Pages 的 SPA 回退规则 `public/_redirects`，深链路径回到 `index.html`。
+- [改进] 桌面端首页标题栏收成单行：缩小 Analyze 字号，隐藏说明与标语，任务/覆盖/情绪改为紧凑计数，把高度让给报告阅读区。
+- [修复] 首页报告阅读区在窄栏里被三列概览挤窄，且主操作按钮使用高亮柠色字导致对比度不足；阅读列加宽，结论改为单列正文，买卖价不再使用透明渐变字。
+- [改进] 工作台控制面改为粗野主义网格：黑底侧栏、纸色主区、酸柠主操作、直角硬边框，首页命令区改为标题统计条加整行控制条。
 - [新功能] 儀表板重排為終端式多面板網格：頂部新增 DSA LIVE 市場跑馬燈（自選/最近標的情緒信號無縫滾動，懸浮暫停、reduced-motion 降級）、命令列升為全幅、新增右側面板欄（市場脈動情緒卡 + 選股/回測/告警/持倉快速導航，xl 屏顯示，任務面板自左欄遷入）、底部新增終端狀態列（上海時鐘/任務數/覆蓋數/當前主題色）；左欄改為純個股工作區並加分隔線，突破原置中單欄版面。
 - [新功能] 全新「極光」默認主題：整站換為紫羅蘭 × Teal 雙色身份（原青色系整體讓位），背景改為深紫墨色系並新增緩動極光漸變背景層（尊重 prefers-reduced-motion），登入頁品牌區/按鈕/浮水印同步換膚；新增主題色切換器（極光 / 黑曜-原青色 / 琥珀-黑金終端，data-accent 驅動 CSS 變量覆蓋層，localStorage 持久化，index.html 開機前應用避免閃爍），與明暗模式正交組合。
 - [新功能] 报告页价格图表升级为 TradingView 式交易台：新增 K 线/线性/面积图表类型切换、最新价虚线（右轴标签）、叠加式 OHLC 图例（悬浮十字线联动，替代独立横条）、支撑压力/预测开关、全屏模式（Esc 退出）、刷新按钮与「区间高/低/量」统计头部；工具栏整合为一行终端式分组（时间轴/图表类型/MA/开关/操作）。

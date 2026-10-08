@@ -28,9 +28,9 @@ env/
 .git/
 .github/
 .claude/reviews/
-data/
-logs/
-reports/
+/data/
+/logs/
+/reports/
 *.log
 
 # 忽略测试和文档

@@ -8,7 +8,7 @@ import { historyApi } from '../api/history';
 import { agentApi, type SkillInfo } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
 import { ApiErrorAlert, Button, Drawer, EmptyState, InlineAlert } from '../components/common';
-import { DashboardStateBlock, MarketTickerTape, TerminalPanel, TerminalStatusBar } from '../components/dashboard';
+import { DashboardStateBlock, HudPanel, MarketTickerTape, TerminalStatusBar } from '../components/dashboard';
 import type { UiTextKey } from '../i18n/uiText';
 import { StockAutocomplete } from '../components/StockAutocomplete';
 import { StockHistoryTrendDrawer } from '../components/history';
@@ -1526,11 +1526,34 @@ const HomePage: React.FC = () => {
   return (
     <div
       data-testid="home-dashboard"
-      className="flex h-[calc(100vh-5rem)] w-full flex-col overflow-hidden sm:h-[calc(100vh-5.5rem)] lg:h-[calc(100vh-2rem)]"
+      className="control-desk flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden lg:h-[calc(100vh-2.5rem)]"
     >
       <MarketTickerTape items={tickerItems} />
-      <div className="flex w-full flex-1 flex-col min-h-0 min-w-0">
-        <header className="home-command-bar relative z-30 flex min-w-0 flex-shrink-0 items-center overflow-visible px-3 py-2.5 md:px-4 md:py-3">
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3 p-3 md:p-4">
+        <header className="control-mast">
+          <div className="min-w-0">
+            <p className="control-kicker">{t('home.controlKicker')}</p>
+            <h1 className="control-title">{t('home.controlTitle')}</h1>
+            <p className="control-lead">{t('home.controlLead')}</p>
+            <p className="control-stamp">{t('home.controlStamp')}</p>
+          </div>
+          <dl className="control-stats">
+            <div>
+              <dt>{t('home.statusTasks')}</dt>
+              <dd>{activeTasks.length}</dd>
+            </div>
+            <div>
+              <dt>{t('home.statusWatchlist')}</dt>
+              <dd>{mergedStockBarItems.length}</dd>
+            </div>
+            <div>
+              <dt>{t('home.pulseTitle')}</dt>
+              <dd>{latestMarketReview?.sentimentScore ?? '--'}</dd>
+            </div>
+          </dl>
+        </header>
+
+        <section className="control-strip relative z-30">
           <div className="flex min-w-0 flex-1 flex-col gap-2.5 md:flex-row md:items-center">
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <button
@@ -1639,7 +1662,7 @@ const HomePage: React.FC = () => {
                 type="button"
                 onClick={() => handleSubmitAnalysis()}
                 disabled={!query || isAnalyzing}
-                className="btn-primary flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap md:flex-none"
+                className="control-go btn-primary flex h-11 flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-5 md:flex-none"
               >
                 {isAnalyzing ? (
                   <>
@@ -1655,7 +1678,7 @@ const HomePage: React.FC = () => {
               </button>
             </div>
           </div>
-        </header>
+        </section>
 
         {inputError || (duplicateError && duplicateBannerVisible) ? (
           <div className="px-3 pb-2 md:px-4">
@@ -1713,9 +1736,16 @@ const HomePage: React.FC = () => {
           </div>
         ) : null}
 
-        <div className="flex flex-1 min-h-0 gap-2 overflow-hidden px-2 pb-2 md:px-3">
-          <aside className="hidden min-h-0 w-64 shrink-0 flex-col overflow-hidden border-border/40 md:flex lg:w-72 md:border-r md:pr-2">
-            {sidebarContent}
+        <div className="grid min-h-0 flex-1 grid-cols-12 gap-2 overflow-y-auto xl:overflow-hidden">
+          <aside className="col-span-12 hidden min-h-0 min-w-0 md:col-span-4 md:flex xl:col-span-3">
+            <HudPanel
+              index="02"
+              label={t('home.workspaceTitle')}
+              className="h-full w-full"
+              bodyClassName="flex flex-col p-2"
+            >
+              {sidebarContent}
+            </HudPanel>
           </aside>
 
           {sidebarOpen ? (
@@ -1733,7 +1763,7 @@ const HomePage: React.FC = () => {
           <section
             ref={dashboardScrollRef}
             data-testid="home-dashboard-scroll"
-            className="flex-1 min-w-0 min-h-0 overflow-x-auto overflow-y-auto px-3 pb-4 md:px-6 touch-pan-y"
+            className="col-span-12 min-w-0 min-h-0 overflow-x-auto overflow-y-auto px-3 pb-4 md:col-span-8 md:px-5 xl:col-span-7 touch-pan-y"
           >
             {marketReviewNotice ? (
               <div className="mb-3">
@@ -1776,8 +1806,8 @@ const HomePage: React.FC = () => {
                 <DashboardStateBlock title={t('home.loadingReport')} loading />
               </div>
             ) : !marketReviewReport && selectedReport ? (
-              <div className="max-w-6xl space-y-4 pb-8">
-                <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="home-report-read w-full max-w-6xl space-y-4 pb-8">
+                <div className="home-report-toolbar flex flex-wrap items-center gap-2">
                   {!isMarketReviewHistoryReport ? (
                     <>
                       <Button
@@ -1892,49 +1922,51 @@ const HomePage: React.FC = () => {
             ) : null}
           </section>
 
-          <aside className="hidden min-h-0 w-80 shrink-0 flex-col gap-2 overflow-hidden xl:flex">
+          <aside className="col-span-12 flex min-h-0 flex-col gap-3 overflow-y-auto xl:col-span-2 xl:overflow-hidden">
+            <HudPanel
+              index="01"
+              label={t('home.pulseTitle')}
+              bodyClassName="p-3"
+            >
+              {latestMarketReview ? (
+                <div className="space-y-2">
+                  <p className="control-pulse-score">{latestMarketReview.sentimentScore ?? '--'}</p>
+                  <p className="text-sm leading-5">
+                    {latestMarketReview.operationAdvice || t('home.pulseEmpty')}
+                  </p>
+                  {latestMarketReview.marketPhaseSummary ? (
+                    <p className="text-xs leading-5 text-muted-text">
+                      {String(latestMarketReview.marketPhaseSummary)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm leading-5">{t('home.pulseEmpty')}</p>
+              )}
+            </HudPanel>
+            <div className="control-panel flex min-h-0 flex-col overflow-hidden">
             <TaskPanel
               tasks={activeTasks}
               onOpenRunFlow={openTaskRunFlow}
               collapsed={isTaskPanelCollapsed}
               onCollapsedChange={handleTaskPanelCollapsedChange}
             />
-            <TerminalPanel label={t('home.pulseTitle')} className="min-h-[9rem]" bodyClassName="p-3">
-              {latestMarketReview ? (
-                <div className="space-y-2">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="num text-3xl font-black leading-8 text-cyan">
-                      {latestMarketReview.sentimentScore ?? '--'}
-                    </span>
-                    <span className="text-right text-[11px] leading-4 text-secondary-text">
-                      {latestMarketReview.operationAdvice || t('home.pulseEmpty')}
-                    </span>
-                  </div>
-                  {latestMarketReview.marketPhaseSummary ? (
-                    <p className="line-clamp-2 text-[11px] leading-5 text-muted-text">
-                      {String(latestMarketReview.marketPhaseSummary)}
-                    </p>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-[11px] leading-5 text-muted-text">{t('home.pulseEmpty')}</p>
-              )}
-            </TerminalPanel>
-            <TerminalPanel label={t('home.quickNavTitle')} bodyClassName="p-2">
-              <div className="grid grid-cols-2 gap-1.5">
+            </div>
+            <HudPanel index="03" label={t('home.quickNavTitle')} bodyClassName="p-2">
+              <div className="grid grid-cols-1 gap-1.5">
                 {QUICK_NAV_ITEMS.map(({ route, labelKey, Icon }) => (
                   <button
                     key={route}
                     type="button"
                     onClick={() => navigate(route)}
-                    className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 text-xs font-medium text-secondary-text transition-all hover:border-cyan/40 hover:text-foreground"
+                    className="control-nav-chip flex items-center gap-2 border-2 border-current px-2.5 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]"
                   >
                     <Icon className="h-3.5 w-3.5 text-cyan" aria-hidden="true" />
                     {t(labelKey)}
                   </button>
                 ))}
               </div>
-            </TerminalPanel>
+            </HudPanel>
           </aside>
         </div>
       </div>

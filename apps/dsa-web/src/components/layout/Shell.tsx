@@ -5,7 +5,6 @@ import { Outlet } from 'react-router-dom';
 import { Drawer } from '../common/Drawer';
 import { SidebarNav } from './SidebarNav';
 import { DesktopUpdateIndicator } from './DesktopUpdateIndicator';
-import { cn } from '../../utils/cn';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import { UiLanguageToggle } from '../i18n/UiLanguageToggle';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
@@ -37,38 +36,36 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
   }, [mobileOpen]);
 
   return (
-    <div className="min-h-screen text-foreground">
-      <div className="pointer-events-none fixed inset-x-0 top-3 z-40 flex items-start justify-between px-3">
+    <div className="control-app min-h-screen text-foreground">
+      <div className="control-mobile-bar flex items-center justify-between gap-3 px-3 py-2 lg:hidden">
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-card/85 text-secondary-text shadow-soft-card backdrop-blur-md transition-colors hover:bg-hover hover:text-foreground lg:hidden"
+          className="inline-flex h-10 w-10 items-center justify-center border-2 border-[#d6ff3c] text-[#f6f3ea]"
           aria-label={t('layout.openNav')}
         >
           <Menu className="h-5 w-5" />
         </button>
-        <div className="pointer-events-auto ml-auto flex items-center gap-2">
+        <p className="control-brand-mark">DSA</p>
+        <div className="flex items-center gap-2">
           <DesktopUpdateIndicator />
-          <div className="flex items-center gap-2 lg:hidden">
-            <UiLanguageToggle />
-            <ThemeToggle />
-          </div>
+          <UiLanguageToggle />
+          <ThemeToggle />
         </div>
       </div>
 
-      <div className="mx-auto flex min-h-screen w-full max-w-[1680px] px-3 py-3 sm:px-4 sm:py-4 lg:px-5">
+      <div className="flex min-h-screen w-full">
         <aside
-          className={cn(
-            'sticky top-3 z-40 hidden shrink-0 overflow-visible rounded-[1.5rem] border border-[var(--shell-sidebar-border)] bg-[var(--glass-bg)] p-2.5 shadow-[inset_0_1px_0_var(--glass-highlight),var(--shadow-soft-card)] backdrop-blur-md transition-[width] duration-200 lg:flex',
-            'max-h-[calc(100vh-1.5rem)] self-start sm:top-4 sm:max-h-[calc(100vh-2rem)]',
-            collapsed ? 'w-[64px]' : 'w-[136px]'
-          )}
+          className="control-rail sticky top-0 z-40 hidden h-screen w-[232px] shrink-0 flex-col overflow-y-auto p-3 lg:flex"
           aria-label={t('layout.desktopSidebar')}
         >
-          <SidebarNav collapsed={collapsed} variant="rail" onNavigate={() => setMobileOpen(false)} />
+          <SidebarNav collapsed={collapsed} onNavigate={() => setMobileOpen(false)} />
         </aside>
 
-        <main className="min-h-0 min-w-0 flex-1 pt-14 lg:pl-3 lg:pt-0 touch-pan-y">
+        <main className="min-h-0 min-w-0 flex-1 touch-pan-y">
+          <div className="hidden justify-end px-4 pt-3 lg:flex">
+            <DesktopUpdateIndicator />
+          </div>
           {children ?? <Outlet />}
         </main>
       </div>
@@ -81,7 +78,9 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         zIndex={90}
         side="left"
       >
-        <SidebarNav onNavigate={() => setMobileOpen(false)} />
+        <div className="control-rail min-h-[70vh] p-3">
+          <SidebarNav onNavigate={() => setMobileOpen(false)} />
+        </div>
       </Drawer>
     </div>
   );

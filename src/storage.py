@@ -1600,7 +1600,13 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         try:
             config = get_config()
             if db_url is None:
+                from src.services.sqlite_firebase_sync import (
+                    restore_sqlite_from_firebase,
+                    start_sqlite_firebase_sync,
+                )
+                restore_sqlite_from_firebase(config.database_path)
                 db_url = config.get_db_url()
+                start_sqlite_firebase_sync(config.database_path)
 
             self._db_url = db_url
             self._sqlite_wal_enabled = config.sqlite_wal_enabled

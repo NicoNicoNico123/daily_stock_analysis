@@ -248,11 +248,11 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
   );
 
   return (
-    <StaggerGroup className="space-y-5" stagger={0.06}>
-      {/* 主信息区 - 两列布局 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+    <StaggerGroup className="report-readout space-y-5" stagger={0.06}>
+      {/* 主信息区：窄栏单列阅读，容器够宽时情绪卡才靠右 */}
+      <div className="report-overview-grid items-start">
         {/* 左侧：股票信息与结论 */}
-        <div className="lg:col-span-2 space-y-5">
+        <div className="min-w-0 space-y-5">
           {/* 股票头部 */}
           <Card variant="gradient" padding="md" className="home-report-hero">
             <div className="mb-5 flex items-start justify-between gap-3">
@@ -312,7 +312,7 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
                 <span aria-hidden="true" className="keyline-gradient h-px w-8 shrink-0" />
                 {text.keyInsights}
               </span>
-              <p className="mt-2 max-w-[62ch] whitespace-pre-wrap text-left text-[15px] leading-7 text-foreground">
+              <p className="report-summary-copy mt-3 whitespace-pre-wrap text-left text-base leading-8 text-foreground">
                 {summary.analysisSummary || text.noAnalysisSummary}
               </p>
               {details?.emptyNewsDisclosure ? (

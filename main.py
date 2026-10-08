@@ -1714,6 +1714,8 @@ def main() -> int:
         if getattr(args, "portfolio", None):
             runtime_scheduler_args["portfolio"] = args.portfolio
         os.environ[RUNTIME_SCHEDULER_ARGS_ENV] = json.dumps(runtime_scheduler_args)
+        from src.auth import bootstrap_configured_users
+        bootstrap_configured_users()
         if not prepare_webui_frontend_assets():
             logger.warning("前端静态资源未就绪，继续启动 FastAPI 服务（Web 页面可能不可用）")
         try:
